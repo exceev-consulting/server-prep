@@ -12,7 +12,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Syntax
         run: bash -n server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh
