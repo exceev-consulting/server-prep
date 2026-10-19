@@ -10,6 +10,8 @@ and get it ready for a self-hosted PaaS panel
 that connects to servers over SSH with a key).
 A security check runs before and after, so you see exactly what changed.
 
+Built and maintained by [Exceev Consulting](https://exceev.com).
+
 | Script | What it does |
 |---|---|
 | `server-preconfig.sh` | **Run first** on a fresh server: SSH + sudo, hostname, network saved for reboots, never sleep, Tailscale, then a reboot-readiness check. Guide: [server-preconfig.md](server-preconfig.md) |
@@ -162,6 +164,14 @@ Help is welcome: tests on other providers and hardware, bug reports, support for
 - Security problems: report them privately, see [SECURITY.md](SECURITY.md).
 - Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
+## About Exceev Consulting
+
+server-prep is built and maintained by [Exceev Consulting](https://exceev.com), a consulting and tech company
+(France, Morocco): AI solutions, product development, platform engineering and enterprise strategy.
+We use server-prep to set up our clients' servers.
+
+Need help securing your servers or running your own deployment platform? [Contact us](https://exceev.com/contact).
+
 ## Credits
 
 - `server-audit.sh` is derived from [vps-audit](https://github.com/nuver-labs/vps-audit) (MIT).
@@ -172,4 +182,4 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 Exceev Consulting
+[MIT](LICENSE) © 2026 [Exceev Consulting](https://exceev.com)
