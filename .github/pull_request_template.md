@@ -16,5 +16,6 @@
 - [ ] `bash -n` and `shellcheck -S warning` pass
 - [ ] System changes go through `run` / `write_file` / `set_kv` / `backup_file` / `pkg_install`
 - [ ] A new or changed step also updates `server-prep.conf.example`, the README step table and an audit check
+- [ ] User-visible change: a line under `## [Unreleased]` in `CHANGELOG.md`
 - [ ] No secrets and no real IPs or hostnames
 - [ ] Messages and docs use simple words

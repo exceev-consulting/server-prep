@@ -66,16 +66,25 @@ If you use [Claude Code](https://claude.com/claude-code), the `/add-step` skill 
 - Pull requests are **squash-merged**. You don't need to sign your commits: the merge commit on `main`
   is signed by GitHub.
 
+## Changelog
+
+If your change matters to users, add a line under `## [Unreleased]` in `CHANGELOG.md`, in simple words.
+Every merged pull request is also listed in the release notes, grouped by its label
+(`security`, `enhancement`, `bug`, `documentation`; `skip-changelog` leaves it out).
+
 ## Releases (maintainers)
 
-1. Bump `PREP_VERSION` in `server-prep.sh` (and `AUDIT_VERSION` in `server-audit.sh` if it changed).
-2. Add a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md` with the highlights.
-3. Commit, then tag and push:
-   ```bash
-   git tag -a vX.Y.Z -m "server-prep X.Y.Z" && git push origin vX.Y.Z
-   ```
-The `release` workflow checks the version, lints, and creates the GitHub release: the `CHANGELOG.md`
-section, the merged pull requests grouped by label, and the scripts with a `SHA256SUMS` file.
+One button: **Actions → release → Run workflow**, then choose `patch` (fixes), `minor` (new features)
+or `major` (breaking changes). From a terminal: `gh workflow run release -f bump=patch`.
+
+The workflow:
+1. bumps `PREP_VERSION` in `server-prep.sh` and moves the `[Unreleased]` notes under the new version
+   in `CHANGELOG.md`, through a `release: vX.Y.Z` pull request that it lints and merges itself;
+2. tags the merge commit and publishes the GitHub release: the changelog notes, the merged pull requests,
+   and the scripts with a `SHA256SUMS` file.
+
+GitHub signs the commit, the merge and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
+in a normal pull request, when the audit changes a lot.
 
 ## License
 

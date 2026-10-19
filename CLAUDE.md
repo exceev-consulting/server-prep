@@ -42,7 +42,9 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
   - Syntax: `bash -n server-prep.sh server-audit.sh`.
   - Dry run: `sudo ./server-prep.sh --config <test.conf> --dry-run --only <step>`. The user has to run it, since it needs sudo.
   - Lint: `shellcheck -S warning server-*.sh extras/github-runners/*.sh`. CI runs it on every push and PR (`.github/workflows/lint.yml`), so keep it clean. It is not installed locally: download the static binary from the ShellCheck releases into the scratchpad.
-  - Releases: bump `PREP_VERSION`, add a `CHANGELOG.md` section, push a `vX.Y.Z` tag. `.github/workflows/release.yml` checks the version and publishes the release (see CONTRIBUTING.md).
+  - Changelog: user-visible changes add a line under `## [Unreleased]` in `CHANGELOG.md`, in the same PR.
+  - Releases: never bump `PREP_VERSION` or tag by hand. The user runs **Actions → release → Run workflow** (`gh workflow run release -f bump=patch|minor|major`): `.github/workflows/release.yml` bumps the version, moves `[Unreleased]` under it via a self-merged PR, tags and publishes (see CONTRIBUTING.md).
+  - Git: every fix or improvement goes on a branch + PR (`gh pr create`, with a label); never push to `main`.
 
 ## Hard-won gotchas (do not regress)
 

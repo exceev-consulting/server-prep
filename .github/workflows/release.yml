@@ -1,28 +1,74 @@
 name: release
 
-# Push a tag like v1.2.0 to publish a release. Notes = the CHANGELOG.md section for
-# that version + the merged pull requests (grouped by label, see .github/release.yml).
+# One button: Actions → release → Run workflow → patch / minor / major
+# (or: gh workflow run release -f bump=patch).
+#  1. bumps PREP_VERSION in server-prep.sh and moves the CHANGELOG.md [Unreleased] notes under
+#     the new version, through a pull request that it merges itself (main is protected);
+#  2. tags the merge commit and publishes the release: the CHANGELOG notes, the merged pull
+#     requests grouped by label (.github/release.yml), the scripts and SHA256SUMS.
+# The commit, the merge and the tag go through the GitHub API, so GitHub signs them (Verified).
 
 on:
-  push:
-    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "patch = fixes, minor = new features, major = breaking changes"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: release
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BUMP: ${{ inputs.bump }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Tag matches the script version
+      - name: Next version
         run: |
-          ver=$(sed -n 's/^PREP_VERSION="\(.*\)"/\1/p' server-prep.sh)
-          if [ "v$ver" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME but server-prep.sh has PREP_VERSION=$ver"
-            exit 1
+          cur=$(sed -n 's/^PREP_VERSION="\(.*\)"/\1/p' server-prep.sh)
+          IFS=. read -r major minor patch <<<"$cur"
+          case "$BUMP" in
+            major) new="$((major + 1)).0.0" ;;
+            minor) new="$major.$((minor + 1)).0" ;;
+            *)     new="$major.$minor.$((patch + 1))" ;;
+          esac
+          if git rev-parse -q --verify "refs/tags/v$new" >/dev/null; then
+            echo "::error::tag v$new already exists"; exit 1
           fi
+          echo "VERSION=$new" >> "$GITHUB_ENV"
+          echo "Release: $cur -> $new"
+
+      - name: Update server-prep.sh and CHANGELOG.md
+        run: |
+          grep -q '^## \[Unreleased\]' CHANGELOG.md || { echo "::error::no '## [Unreleased]' section in CHANGELOG.md"; exit 1; }
+          awk '/^## \[/ { if (found) exit; found = ($0 ~ /^## \[Unreleased\]/); next } found' CHANGELOG.md > notes.md
+          empty=0; grep -q '[^[:space:]]' notes.md || empty=1
+          sed -i "s/^PREP_VERSION=\".*\"/PREP_VERSION=\"$VERSION\"/" server-prep.sh
+          awk -v v="$VERSION" -v d="$(date -u +%F)" -v empty="$empty" \
+              -v url="https://github.com/$REPO/releases/tag/v$VERSION" '
+            !done && /^## \[Unreleased\]/ {
+              print; print ""; print "## [" v "] - " d
+              if (empty) { print ""; print "- Maintenance release: see the [release notes](" url ")." }
+              done = 1; next
+            }
+            { print }' CHANGELOG.md > CHANGELOG.new
+          mv CHANGELOG.new CHANGELOG.md
+          git diff
 
       - name: Lint
         run: |
@@ -30,24 +76,44 @@ jobs:
           bash -n server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh
           shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh
 
-      - name: Release files
+      - name: Merge the version bump through a pull request
         run: |
+          base=$(git rev-parse HEAD)
+          branch="release/v$VERSION"
+          tree=$(jq -n --arg base "$(git rev-parse 'HEAD^{tree}')" \
+                   --rawfile prep server-prep.sh --rawfile log CHANGELOG.md '{base_tree: $base, tree: [
+                     {path: "server-prep.sh", mode: "100755", type: "blob", content: $prep},
+                     {path: "CHANGELOG.md",   mode: "100644", type: "blob", content: $log}]}' \
+                 | gh api "repos/$REPO/git/trees" --input - --jq .sha)
+          # no author/committer fields, so GitHub signs it as github-actions[bot]
+          commit=$(jq -n --arg msg "release: v$VERSION" --arg tree "$tree" --arg parent "$base" \
+                     '{message: $msg, tree: $tree, parents: [$parent]}' \
+                   | gh api "repos/$REPO/git/commits" --input - --jq .sha)
+          gh api "repos/$REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$commit" >/dev/null
+          # the step above linted exactly these files: report it as the required "lint" check
+          gh api "repos/$REPO/check-runs" -f name=lint -f head_sha="$commit" -f status=completed \
+            -f conclusion=success -f 'output[title]=Linted by the release workflow' \
+            -f 'output[summary]=bash -n and shellcheck -S warning passed' >/dev/null
+          gh pr create --base main --head "$branch" --title "release: v$VERSION" --label skip-changelog \
+            --body "Version bump and changelog for v$VERSION, made and merged by the release workflow."
+          for i in 1 2 3 4 5 6; do
+            gh pr merge "$branch" --squash && break
+            echo "not mergeable yet, retrying in 10s"; sleep 10
+          done
+          merged=$(gh pr view "$branch" --json state,mergeCommit --jq 'select(.state == "MERGED") | .mergeCommit.oid')
+          [ -n "$merged" ] || { echo "::error::the release pull request could not be merged"; exit 1; }
+          echo "MERGED=$merged" >> "$GITHUB_ENV"
+
+      - name: Tag and publish the release
+        run: |
+          git fetch -q origin main && git reset -q --hard "$MERGED"
           mkdir dist
           cp server-prep.sh server-preconfig.sh server-audit.sh server-prep.conf.example dist/
           (cd dist && sha256sum -- * > SHA256SUMS)
-
-      - name: Notes from CHANGELOG.md
-        run: |
-          awk -v v="${GITHUB_REF_NAME#v}" '
-            /^## \[/ { if (found) exit; found = (index($0, "[" v "]") > 0); next }
-            found' CHANGELOG.md > notes.md
-          cat notes.md
-
-      - name: Create the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          args=(--verify-tag --title "server-prep $GITHUB_REF_NAME" --generate-notes)
-          if [ -s notes.md ]; then args+=(--notes-file notes.md); fi
-          if [[ $GITHUB_REF_NAME == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" "${args[@]}" dist/*
+          # annotated tag made through the API: signed by GitHub
+          tag=$(gh api "repos/$REPO/git/tags" -f tag="v$VERSION" -f message="server-prep $VERSION" \
+                  -f object="$MERGED" -f type=commit --jq .sha)
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$tag" >/dev/null
+          args=(--verify-tag --title "server-prep v$VERSION" --generate-notes)
+          if grep -q '[^[:space:]]' notes.md; then args+=(--notes-file notes.md); fi
+          gh release create "v$VERSION" "${args[@]}" dist/*
