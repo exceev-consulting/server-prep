@@ -6,7 +6,8 @@ Bash tooling to secure new Debian/Ubuntu servers (cloud VPS or dedicated / on-pr
 - `server-prep.sh`: interactive or config-driven security setup. It is idempotent, backs up every file it touches and writes a report.
 - `server-audit.sh`: read-only audit (a rework of vps-audit). Exits with 1 if any check FAILs.
 - `server-prep.conf.example`: every setting. Filled copies are gitignored because they contain keys.
-- `extras/`: helpers that are not steps (Telegraf output template, GitHub runner memory cap).
+- `extras/`: helpers that are not steps (complete Telegraf config template, GitHub runner memory cap).
+- `docs/`: guides. `cloudflare-tunnel.md` (Coolify + cloudflared service + Zero Trust), `monitoring.md` (Telegraf → InfluxDB 2.8 → Grafana). Examples use `example.com` / `web-01`, never real client names or domains.
 - `.claude/skills/`: guided workflows. Use `/new-server`, `/audit-review`, `/monitoring` and `/add-step`.
 
 ## Site-specific context

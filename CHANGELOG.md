@@ -5,6 +5,15 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- New guide [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md): publish apps through a Cloudflare Tunnel
+  run from Coolify's Cloudflared template, close 80/443, and put a Zero Trust login in front of admin tools.
+- New guide [docs/monitoring.md](docs/monitoring.md): server and Docker metrics with Telegraf, InfluxDB 2.8
+  and Grafana, through Cloudflare Access with a service token.
+- `extras/telegraf/telegraf.conf.example`: one complete Telegraf config (system + Docker metrics, Cloudflare
+  Access headers, secrets from `/etc/default/telegraf`). It replaces `influxdb.conf.example`: if a server has
+  `/etc/telegraf/telegraf.d/influxdb.conf`, delete it when switching, or metrics are sent twice.
+- The `telegraf` step's to-do now tests with `--once`, which really sends data.
+
 ## [1.1.1] - 2026-10-19
 
 - Fix: changing a password failed with "BAD PASSWORD: ... error loading dictionary". The `update` and `auth`
