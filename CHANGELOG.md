@@ -5,6 +5,8 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The `update` step also installs `vim`. Fresh Debian servers only ship `vim-tiny` (or `nano`).
+
 ## [1.1.1] - 2026-10-19
 
 - Fix: changing a password failed with "BAD PASSWORD: ... error loading dictionary". The `update` and `auth`

@@ -70,7 +70,7 @@ Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-ste
 
 | Step | Details |
 |---|---|
-| `update` | apt full-upgrade, base tools (curl, git, jq, ufw, chrony...), timezone |
+| `update` | apt full-upgrade, base tools (curl, git, jq, ufw, chrony, vim...), timezone |
 | `users` | admin user + your SSH key; the panel's key for root, restricted with `from="..."` to the panel's sources |
 | `docker` | Docker CE from download.docker.com if missing, container log rotation |
 | `firewall` | UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched) |

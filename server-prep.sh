@@ -696,7 +696,7 @@ step_update() {
         note "already up to date"
     fi
     pkg_install sudo curl wget git jq openssl ca-certificates gnupg ufw unattended-upgrades apt-listchanges \
-        libpam-pwquality cracklib-runtime chrony lsof || return 1
+        libpam-pwquality cracklib-runtime chrony lsof vim || return 1
     if [[ "$(timedatectl show -p Timezone --value 2>/dev/null)" != "$TIMEZONE" ]]; then
         run timedatectl set-timezone "$TIMEZONE" && { changed; note "timezone ${TIMEZONE}"; }
     fi
