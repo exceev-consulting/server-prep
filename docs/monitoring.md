@@ -22,7 +22,7 @@ All of it comes from one file, [extras/telegraf/telegraf.conf.example](../extras
 | Metrics | Telegraf inputs |
 |---|---|
 | CPU, memory, swap, disk, disk I/O, load, processes, uptime | `cpu`, `mem`, `swap`, `disk`, `diskio`, `system`, `processes`, `kernel` |
-| Network traffic and TCP connections | `net` (real interfaces only), `netstat` |
+| Network traffic and TCP connections | `net` (container and VM interfaces dropped), `netstat` |
 | Containers: CPU, memory, network, block I/O, status, health | `docker` |
 | Interrupts, open files | `interrupts`, `linux_sysctl_fs` |
 
@@ -101,7 +101,7 @@ sudo nano /etc/default/telegraf
 ```
 ```bash
 INFLUX_TOKEN=<the write token of this server>
-CF_ACCESS_CLIENT_ID=<client id>.access
+CF_ACCESS_CLIENT_ID=<client id>          # copy it as is: it already ends with .access
 CF_ACCESS_CLIENT_SECRET=<client secret>
 ```
 ```bash

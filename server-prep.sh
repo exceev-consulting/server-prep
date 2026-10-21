@@ -1559,7 +1559,7 @@ EOF
         # the package starts it with a sample config pointing to localhost:8086 - keep it off until configured
         run systemctl disable --now telegraf
         note "telegraf $(dpkg-query -W -f='${Version}' telegraf 2>/dev/null) installed, service left stopped"
-        todo "Telegraf: add an InfluxDB output in /etc/telegraf/telegraf.d/ (urls, token, organization, bucket), test with 'sudo -u telegraf telegraf --config /etc/telegraf/telegraf.conf --config-directory /etc/telegraf/telegraf.d --once', then 'sudo systemctl enable --now telegraf'. Guide, Docker metrics and Cloudflare Access: docs/monitoring.md."
+        todo "Telegraf: configure it from extras/telegraf/telegraf.conf.example and put its secrets in /etc/default/telegraf (guide: docs/monitoring.md). Test with: sudo -u telegraf bash -c \"set -a; . /etc/default/telegraf; telegraf --config /etc/telegraf/telegraf.conf --config-directory /etc/telegraf/telegraf.d --once\" (the secrets are only loaded by the service, so a plain telegraf command would run with an empty token), then: sudo systemctl enable --now telegraf"
     else
         note "telegraf $(dpkg-query -W -f='${Version}' telegraf) already installed ($(systemctl is-active telegraf 2>/dev/null)) - configuration untouched"
     fi
