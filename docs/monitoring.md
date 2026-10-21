@@ -35,7 +35,30 @@ servers `web-01` and `web-02`. Replace them with yours.
 - **Through Tailscale**: InfluxDB's port 8086 is published on the host and allowed only from the tailnet in
   UFW. Telegraf uses `http://<tailscale-ip>:8086` and needs no Cloudflare headers.
 
-## 1. Run InfluxDB 2.8 on Coolify
+## 1. Protect the InfluxDB hostname first
+
+With the tunnel's `*` route, a hostname is on the internet **as soon as an app uses it**. A new InfluxDB can
+show a **Get Started** page where the first visitor creates the admin. So put Cloudflare Access in front of
+the hostname **before** deploying InfluxDB: its setup page and its API are then never open to everyone.
+[cloudflare-tunnel.md, step 8](cloudflare-tunnel.md#8-secure-your-public-urls-with-zero-trust) explains
+Zero Trust.
+
+1. **Service token** for the agents: **Access controls → Service credentials → Service Tokens → Create
+   Service Token**, name `telegraf`. Copy the **Client ID** and the **Client Secret** (shown once).
+2. **Application:** **Access controls → Applications → Add an application → Self-hosted**, hostname
+   `influxdb.example.com`, with two policies:
+
+   | Policy | Action | Include |
+   |---|---|---|
+   | `team` | Allow | your team's emails (people log in with an email code) |
+   | `telegraf` | **Service Auth** | Service Token `telegraf` |
+
+3. Check it, even before InfluxDB exists: Access answers first.
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' https://influxdb.example.com    # 302: sent to the Cloudflare login
+   ```
+
+## 2. Run InfluxDB 2.8 on Coolify
 
 1. In Coolify, click **+ New** in your project, search **InfluxDB** (Services), and choose the server.
 2. The template ships `influxdb:2.7-alpine`. Click **Edit Compose File** and change the image:
@@ -46,18 +69,23 @@ servers `web-01` and `web-02`. Replace them with yours.
    **Redirect HTTP to HTTPS**, set it to **Disabled**.
    The tunnel's `*` route already covers it. If you only have named routes, add `influxdb`.
 4. **Save**, then **Deploy**. Wait until the container shows **healthy**.
-5. Open `https://influxdb.example.com` **right away**:
+5. Open `https://influxdb.example.com`. Cloudflare asks for your email code first (step 1), then:
    - a login page: use the user and password that Coolify generated (service → **Environment Variables**:
      `SERVICE_USER_INFLUXDB`, `SERVICE_PASSWORD_INFLUXDB`);
-   - a **Get Started** page: finish it **now** (user, password, organization `example`, first bucket).
-     Until you do, the first person who opens the URL becomes the admin.
+   - a **Get Started** page: finish it (user, password, organization `example`, first bucket). Only your team
+     can reach it, thanks to step 1.
+
+   Without a browser, you can also do the first setup from the server, which never goes through the internet:
+   ```bash
+   sudo docker exec -it $(sudo docker ps -qf name=influxdb) influx setup
+   ```
 
 **Upgrading an existing 2.7 to 2.8:** change the image and redeploy. The data stays in the service's
 volumes. 2.8 adds optional [token hashing](https://docs.influxdata.com/influxdb/v2/reference/config-options/):
 turn it on only **after** a first successful start on 2.8, and keep a copy of your tokens first,
 because hashed tokens can't be shown again.
 
-## 2. Buckets and tokens
+## 3. Buckets and tokens
 
 In InfluxDB (**Load Data**):
 
@@ -69,29 +97,13 @@ In InfluxDB (**Load Data**):
 
 One token per server means a leaked token can only write to one bucket, and you can revoke it alone.
 
-## 3. Install Telegraf on each server
+## 4. Install Telegraf on each server
 
 server-prep installs it (step `telegraf`, from the official InfluxData repository) and leaves it **stopped**
 until it has an output. If you skipped it:
 ```bash
 sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegraf --yes
 ```
-
-## 4. Protect InfluxDB with Cloudflare Access
-
-Without it, anyone who finds the URL can try to log in or call the API.
-[cloudflare-tunnel.md, step 8](cloudflare-tunnel.md#8-secure-your-public-urls-with-zero-trust) explains
-Zero Trust. For InfluxDB:
-
-1. **Service token** for the agents: **Access controls → Service credentials → Service Tokens → Create
-   Service Token**, name `telegraf`. Copy the **Client ID** and the **Client Secret** (shown once).
-2. **Application:** **Access controls → Applications → Add an application → Self-hosted**, hostname
-   `influxdb.example.com`, with two policies:
-
-   | Policy | Action | Include |
-   |---|---|---|
-   | `team` | Allow | your team's emails (people log in with an email code) |
-   | `telegraf` | **Service Auth** | Service Token `telegraf` |
 
 ## 5. Configure Telegraf (on each server)
 
@@ -156,12 +168,13 @@ sudo bash -c 'set -a; . /etc/default/telegraf; curl -s -o /dev/null -w "%{http_c
   https://influxdb.example.com/ping'
 
 # One real batch, as the telegraf user (also checks the docker group): expect "Wrote batch of N metrics"
+# (--debug: Telegraf only logs that line in debug mode)
 sudo -u telegraf bash -c 'set -a; . /etc/default/telegraf; telegraf --config /etc/telegraf/telegraf.conf \
-  --config-directory /etc/telegraf/telegraf.d --once' 2>&1 | tail -5
+  --config-directory /etc/telegraf/telegraf.d --once --debug' 2>&1 | grep -E 'Wrote batch|E!'
 
 # Docker metrics only: expect "Wrote batch" and no "permission denied"
 sudo -u telegraf bash -c 'set -a; . /etc/default/telegraf; telegraf --config /etc/telegraf/telegraf.conf \
-  --input-filter docker --once' 2>&1 | tail -3
+  --input-filter docker --once --debug' 2>&1 | grep -E 'Wrote batch|E!'
 
 sudo systemctl enable --now telegraf
 sudo systemctl restart telegraf          # picks up the docker group

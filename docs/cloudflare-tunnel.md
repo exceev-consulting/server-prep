@@ -182,6 +182,11 @@ the Coolify dashboard...), put a **Cloudflare Access** login in front: visitors 
 
 ### 8.3 Protect an app
 
+> [!IMPORTANT]
+> With the `*` route, a hostname is public **as soon as an app uses it**. Create the Access application
+> **before** you deploy an admin tool, so its setup page (InfluxDB, Grafana...) is never open to everyone.
+> Access works even before the app exists.
+
 **Access controls → Applications → Add an application → Self-hosted:**
 
 | Field | Value |
@@ -209,7 +214,7 @@ Scripts and agents (Telegraf, backups, CI) can't type an email code. Give them a
    CF-Access-Client-Id: <client id>
    CF-Access-Client-Secret: <client secret>
    ```
-   For Telegraf, see [monitoring.md](monitoring.md#4-protect-influxdb-with-cloudflare-access).
+   For Telegraf, see [monitoring.md](monitoring.md#1-protect-the-influxdb-hostname-first).
 
 ### Which URLs to protect
 
