@@ -85,7 +85,7 @@ Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-ste
 | `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands |
 | `rkhunter` / `aide` | rootkit scan + file-integrity baseline, daily |
 | `endlessh` | SSH tarpit on port 22 once SSH has moved |
-| `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you add an InfluxDB output in `/etc/telegraf/telegraf.d/` ([docs/monitoring.md](docs/monitoring.md)) |
+| `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md)) |
 | `telegram` | alert on every SSH login (except ignored users, e.g. the panel's root) + daily report at 09:00 |
 | `cloudflared` | install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) |
 | `suid` | list SUID binaries outside standard paths (review only) |

@@ -591,7 +591,7 @@ questions() {
     explain "Telegraf is the metrics agent of InfluxDB: it collects CPU, memory, disk, network, Docker" \
             "stats and sends them to an InfluxDB server (then shown in Grafana / InfluxDB UI)." \
             "It is only installed here, from InfluxData's official repository, and left stopped:" \
-            "point it to your InfluxDB later in /etc/telegraf/telegraf.d/, then enable the service."
+            "configure it later with extras/telegraf/telegraf.conf.example (docs/monitoring.md), then enable it."
     ask_yn INSTALL_TELEGRAF "Install Telegraf" "$INSTALL_TELEGRAF"
     explain "Telegram alerts: a message on your phone at every SSH login, plus a daily report at 09:00" \
             "(disk, memory, updates, bans, rootkit/integrity results, containers)."

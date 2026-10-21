@@ -184,15 +184,38 @@ sleep 20 && sudo journalctl -u telegraf -n 10 --no-pager    # no "E!" lines
 
 ## 7. Grafana
 
+**Which URL Grafana uses for InfluxDB:**
+
+| Grafana runs | URL | Cloudflare headers |
+|---|---|---|
+| on **another server** (or you're not sure) | `https://influxdb.example.com` | yes |
+| on **the same server**, as another Coolify resource | `http://<influxdb-container-name>:8086`, after connecting both to the `coolify` network (below) | no |
+
+**Same server: connect the two resources first.** In Coolify, each service has its own private Docker
+network, so Grafana can't see the InfluxDB container by default, even in the same project.
+1. In the **InfluxDB** service: **General → Connect To Predefined Network**, turn it on, **Save**, **Restart**.
+2. Do the same in the **Grafana** service (a Grafana *Application* is already on that network).
+3. Get InfluxDB's container name, the hostname to use:
+   ```bash
+   sudo docker ps --format '{{.Names}}' | grep -i influx
+   ```
+4. Check that both are on the shared network:
+   ```bash
+   sudo docker network inspect coolify --format '{{range .Containers}}{{.Name}} {{end}}' | tr ' ' '\n' | grep -iE 'influx|grafana'
+   ```
+See [Coolify networking](https://coolify.io/docs/services/configuration/networking).
+
 **Data source:** **Connections → Data sources → Add → InfluxDB**:
 
 | Field | Value |
 |---|---|
 | Query language | **Flux** |
-| URL | same server as InfluxDB: `http://<influxdb-container-name>:8086` (no Cloudflare). Elsewhere: `https://influxdb.example.com` |
-| Custom HTTP Headers | only when the URL goes through Cloudflare: `CF-Access-Client-Id` and `CF-Access-Client-Secret` (a service token for Grafana, allowed in the app's Service Auth policy) |
+| URL | from the table above |
+| Custom HTTP Headers | only with `https://influxdb.example.com`: `CF-Access-Client-Id` and `CF-Access-Client-Secret` (a service token for Grafana, allowed in the app's Service Auth policy) |
 | Organization | `example` |
 | Token | the **read** token |
+
+Click **Save & test**: `datasource is working` (or the number of buckets found).
 
 **Dashboard variables** (one dashboard for all servers):
 1. `bucket`: query `buckets()`.
@@ -250,6 +273,7 @@ from(bucket: "${bucket}")
 | Every metric twice in Grafana | two outputs: the full config **and** an old `telegraf.d/influxdb.conf` | delete the one in `telegraf.d` and restart |
 | InfluxDB grows very fast | Docker labels turned into tags | keep `docker_label_include` limited to the compose labels, as in the template |
 | Cloudflare "Host Error" (502) | the InfluxDB domain has no `:8086` in Coolify | `https://influxdb.example.com:8086`, then redeploy |
+| Grafana: `no such host` / `dial tcp ... lookup` with the container URL | Grafana and InfluxDB don't share a Docker network | turn on **Connect To Predefined Network** on both services, restart them, or use the public URL with the headers |
 | `permission denied` on disk mounts (`/run/user/...`, `netns`) | normal for some mounts | harmless; optionally extend `ignore_fs` in `[[inputs.disk]]` |
 
 ## Official docs
@@ -257,7 +281,8 @@ from(bucket: "${bucket}")
 - InfluxDB: [install (Docker)](https://docs.influxdata.com/influxdb/v2/install/),
   [create a token](https://docs.influxdata.com/influxdb/v2/admin/tokens/create-token/),
   [config options (token hashing)](https://docs.influxdata.com/influxdb/v2/reference/config-options/),
-  [Coolify InfluxDB service](https://coolify.io/docs/services/influxdb)
+  [Coolify InfluxDB service](https://coolify.io/docs/services/influxdb),
+  [Coolify service networking](https://coolify.io/docs/services/configuration/networking)
 - Telegraf: [InfluxDB v2 output](https://github.com/influxdata/telegraf/tree/master/plugins/outputs/influxdb_v2),
   [Docker input](https://github.com/influxdata/telegraf/tree/master/plugins/inputs/docker),
   [network input](https://github.com/influxdata/telegraf/tree/master/plugins/inputs/net)

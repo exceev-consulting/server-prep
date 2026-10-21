@@ -752,7 +752,7 @@ if have telegraf; then
         result mon.telegraf INFO "Telegraf" "${TG_VER} running - metrics are being shipped"
     else
         result mon.telegraf INFO "Telegraf" "${TG_VER} installed, service stopped (not configured yet)" \
-            "Add an InfluxDB output in /etc/telegraf/telegraf.d/ then: systemctl enable --now telegraf"
+            "Configure it from extras/telegraf/telegraf.conf.example (docs/monitoring.md), then: systemctl enable --now telegraf"
     fi
 fi
 
