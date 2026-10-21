@@ -112,8 +112,11 @@ sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegraf
 sudo nano /etc/default/telegraf
 ```
 ```bash
+# One VAR=value per line. Comments only on their own line: systemd reads this file
+# and keeps anything after the value, so a note at the end of a line breaks it.
 INFLUX_TOKEN=<the write token of this server>
-CF_ACCESS_CLIENT_ID=<client id>          # copy it as is: it already ends with .access
+# Copy the Client ID as is: it already ends with .access
+CF_ACCESS_CLIENT_ID=<client id>
 CF_ACCESS_CLIENT_SECRET=<client secret>
 ```
 ```bash
