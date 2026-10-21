@@ -15,6 +15,8 @@ Highlights of each release. The full list of merged pull requests is in each
   `/etc/telegraf/telegraf.d/influxdb.conf`, delete it when switching, or metrics are sent twice.
 - The `telegraf` step's to-do now tests with `--once`, which really sends data, after loading the
   secrets from `/etc/default/telegraf`.
+- Releases also ship `telegraf.conf.example`, and the scripts' messages link to the guides on GitHub, so a
+  release download (without the repo) has everything they mention.
 
 ## [1.1.1] - 2026-10-19
 

@@ -54,7 +54,7 @@ sudo ./server-prep.sh --dry-run        # 2. preview every change
 sudo ./server-prep.sh                  # 3. apply (interactive questions)
 ```
 
-Or download the scripts from the [latest release](https://github.com/exceev-consulting/server-prep/releases/latest)
+Or download the scripts (and the Telegraf template) from the [latest release](https://github.com/exceev-consulting/server-prep/releases/latest)
 and check them with `sha256sum -c SHA256SUMS`.
 
 For a client server, reuse a config file:

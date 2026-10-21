@@ -5,7 +5,7 @@ name: release
 #  1. bumps PREP_VERSION in server-prep.sh and moves the CHANGELOG.md [Unreleased] notes under
 #     the new version, through a pull request that it merges itself (main is protected);
 #  2. tags the merge commit and publishes the release: the CHANGELOG notes, the merged pull
-#     requests grouped by label (.github/release.yml), the scripts and SHA256SUMS.
+#     requests grouped by label (.github/release.yml), the scripts, the Telegraf template and SHA256SUMS.
 # The commit, the merge and the tag go through the GitHub API, so GitHub signs them (Verified).
 
 on:
@@ -108,7 +108,8 @@ jobs:
         run: |
           git fetch -q origin main && git reset -q --hard "$MERGED"
           mkdir dist
-          cp server-prep.sh server-preconfig.sh server-audit.sh server-prep.conf.example dist/
+          cp server-prep.sh server-preconfig.sh server-audit.sh server-prep.conf.example \
+             extras/telegraf/telegraf.conf.example dist/
           (cd dist && sha256sum -- * > SHA256SUMS)
           # annotated tag made through the API: signed by GitHub
           tag=$(gh api "repos/$REPO/git/tags" -f tag="v$VERSION" -f message="server-prep $VERSION" \

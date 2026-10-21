@@ -412,7 +412,7 @@ run_checks() {
   Reboot test:  sudo reboot
   then, after ~2 min, from your workstation:
     ssh ${admin:-<user>}@${TS_IP:-<tailscale-ip>} 'hostname; ip -br a show ${IFACE}; ping -c2 debian.org'
-  Next: server-prep.sh (see README.md)
+  Next: server-prep.sh (see https://github.com/exceev-consulting/server-prep#quick-start)
 EOF
     fi
 }
