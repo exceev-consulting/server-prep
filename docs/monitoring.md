@@ -126,7 +126,9 @@ sudo chown root:telegraf /etc/default/telegraf && sudo chmod 640 /etc/default/te
 **b. The config:** one file with the output, the system inputs and Docker. It replaces the package's file.
 ```bash
 sudo cp /etc/telegraf/telegraf.conf /etc/telegraf/telegraf.conf.orig        # keep the original
-sudo cp extras/telegraf/telegraf.conf.example /etc/telegraf/telegraf.conf
+sudo cp extras/telegraf/telegraf.conf.example /etc/telegraf/telegraf.conf   # from a git clone
+# or, from the release files (the template is at the top level there):
+# sudo cp telegraf.conf.example /etc/telegraf/telegraf.conf
 sudo nano /etc/telegraf/telegraf.conf
 ```
 Change only:
