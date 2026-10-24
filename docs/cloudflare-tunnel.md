@@ -166,8 +166,9 @@ the Coolify dashboard...), put a **Cloudflare Access** login in front: visitors 
 1. Go to [one.dash.cloudflare.com](https://one.dash.cloudflare.com) and choose a **team name**. Your login
    page becomes `<team>.cloudflareaccess.com`.
 2. Choose the **Free** plan. Cloudflare may ask for a payment method even for the free plan.
-3. **Settings → Authentication → Login methods**: check that **One-time PIN** is there (users get a code
-   by email). You can add Google, GitHub or Microsoft logins next to it.
+3. Add the email-code login: **Integrations → Identity providers → Add new identity provider → One-time PIN**.
+   New accounts don't have it: they only offer the Cloudflare login, limited to members of your Cloudflare
+   account, so colleagues listed in the `team` policy could not log in. Users then get a code by email. You can add Google, GitHub or Microsoft logins next to it.
 
 ### 8.2 A reusable policy for your team
 

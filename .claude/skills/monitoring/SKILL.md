@@ -23,20 +23,32 @@ sudo rm -f /etc/telegraf/telegraf.d/influxdb.conf         # old split setup: oth
 
 Through Cloudflare Access, `/etc/default/telegraf` also holds `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`, and the output keeps its `http_headers` line. Through Tailscale, remove that line.
 
-Optional:
-- Docker metrics are in the template. They need `sudo usermod -aG docker telegraf` (root-equivalent access), then a restart. Check with `sudo -u telegraf curl -s --unix-socket /var/run/docker.sock http://localhost/_ping`.
+Docker (required, the template has a Docker input):
+- `sudo usermod -aG docker telegraf` (root-equivalent access), then a restart. Check with `sudo -u telegraf curl -s --unix-socket /var/run/docker.sock http://localhost/_ping`.
+- Without it Telegraf doesn't start at all (`E! [agent] Starting input inputs.docker`): no metrics, not even the system ones. On a server without Docker, delete the `[[inputs.docker]]` block.
 - Never let `docker_label_include` be empty: Coolify/Dokploy labels would all become tags.
-- To show the bucket name instead of the OS host name: `hostname = "<name>"` under `[agent]`.
+
+Optional: to show the bucket name instead of the OS host name, set `hostname = "<name>"` under `[agent]`.
 
 ## 2. Test: send one real batch
+Through Cloudflare Access, check the service token first (same commands as `docs/monitoring.md` step 6). Don't go on until the second one gives `204`:
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://<influxdb-host>/ping     # 302: Access blocks requests without the token
+sudo bash -c 'set -a; . /etc/default/telegraf; curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+  https://<influxdb-host>/ping'                                            # 204
+```
+- **302 with the token:** the token isn't in the app's Service Auth policy, or the headers are wrong.
+- **403:** the token expired or was revoked.
+
+Then one real batch:
 ```bash
 sudo -u telegraf bash -c 'set -a; . /etc/default/telegraf; telegraf --config /etc/telegraf/telegraf.conf \
-  --config-directory /etc/telegraf/telegraf.d --once --debug' 2>&1 | tail -20
+  --config-directory /etc/telegraf/telegraf.d --once --debug' 2>&1 | grep -E 'Wrote batch|E!'
 ```
 
 How to read the output:
-- **OK:** `Wrote batch of N metrics`.
-- **302 / 403 from Cloudflare:** the service token is missing, wrong or not in a Service Auth policy.
+- **OK:** `Wrote batch of N metrics`. This only means the server answered OK. If Access refused the token, Telegraf followed the redirect to the login page and still logs it, so the metrics were lost. Telegraf never shows a 302: rely on the `204` test above, and check the data in InfluxDB's **Data Explorer** (bucket, `cpu`, last minutes).
 - **401:** bad InfluxDB token.
 - **404:** wrong bucket or org.
 - **refused / timeout:** wrong URL, or the server can't reach InfluxDB over Tailscale.

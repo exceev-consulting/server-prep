@@ -50,7 +50,7 @@
 [[inputs.cpu]]
   percpu = true                   # one series per core, plus...
   totalcpu = true                 # ...cpu-total, used by the dashboards
-  fielddrop = ["time_*"]          # keep percentages, drop raw CPU time counters
+  collect_cpu_time = false        # percentages only, no raw CPU time counters
 
 [[inputs.disk]]
   ## Skip virtual and container filesystems (also avoids "permission denied" noise)
@@ -87,6 +87,8 @@
 # Needs access to the Docker socket:
 #   sudo usermod -aG docker telegraf && sudo systemctl restart telegraf
 # The docker group gives root-equivalent access to the server.
+# Without that access, Telegraf does not start at all and sends NO metrics, not even the system ones.
+# On a server without Docker, delete this block.
 
 [[inputs.docker]]
   endpoint = "unix:///var/run/docker.sock"
