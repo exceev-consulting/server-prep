@@ -6,7 +6,8 @@ Bash tooling to secure new Debian/Ubuntu servers (cloud VPS or dedicated / on-pr
 - `server-prep.sh`: interactive or config-driven security setup. It is idempotent, backs up every file it touches and writes a report.
 - `server-audit.sh`: read-only audit (a rework of vps-audit). Exits with 1 if any check FAILs.
 - `server-prep.conf.example`: every setting. Filled copies are gitignored because they contain keys.
-- `extras/`: helpers that are not steps (Telegraf output template, GitHub runner memory cap).
+- `extras/`: helpers that are not steps (complete Telegraf config template, GitHub runner memory cap).
+- `docs/`: guides. `cloudflare-tunnel.md` (Coolify + cloudflared service + Zero Trust), `monitoring.md` (Telegraf → InfluxDB 2.8 → Grafana). Examples use `example.com` / `web-01`, never real client names or domains.
 - `.claude/skills/`: guided workflows. Use `/new-server`, `/audit-review`, `/monitoring` and `/add-step`.
 
 ## Site-specific context
@@ -65,6 +66,9 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
 | GitHub runners OOM-killed the laptop | `extras/github-runners/limit-runners-memory.sh`: a slice capped at 40% of RAM, about 3G per runner |
 | Coolify: the panel loses the server right after setting up cloudflared | The server-level **Cloudflare Tunnel** option in Coolify switches SSH to the tunnel hostname. For apps, deploy cloudflared as a **Service** resource. Keep the server IP = its Tailscale IP and the toggle off |
 | Telegraf `--test` shows "permission denied" on disk mounts | Harmless (docker/gvfs/netns mounts). Optionally extend `ignore_fs` in `[[inputs.disk]]` |
+| Telegraf logs "Wrote batch" but the bucket stays empty | Cloudflare Access refused the service token: Telegraf follows the 302 to the login page (200) and counts it as written. Pass the curl `/ping` test with the token (204) first, then check the bucket in Data Explorer |
+| Telegraf does not start at all, no metrics | `[[inputs.docker]]` can't reach docker.sock: `usermod -aG docker telegraf` + restart, or delete the block on a server without Docker |
+| Coolify InfluxDB starts empty with a public Get Started page | Its template uses `INFLUXDB_INIT_*`, which the image ignores. Rename them to `DOCKER_INFLUXDB_INIT_*` (with ORG and BUCKET set) before the first deploy |
 
 ## Expected audit result on a prepared host
 

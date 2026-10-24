@@ -1,0 +1,108 @@
+# /etc/telegraf/telegraf.conf - complete Telegraf config: system + Docker metrics to InfluxDB v2
+# Guide: docs/monitoring.md
+#
+# Secrets are NOT in this file. They come from /etc/default/telegraf (mode 640 root:telegraf),
+# which the telegraf service loads:
+#   INFLUX_TOKEN=...              write token for this server's bucket
+#   CF_ACCESS_CLIENT_ID=...       Cloudflare Access service token (only through Cloudflare)
+#   CF_ACCESS_CLIENT_SECRET=...
+#
+# This file replaces the default one. If an older setup left /etc/telegraf/telegraf.d/influxdb.conf,
+# delete it, or every metric is sent twice.
+
+[global_tags]
+  # env = "production"            # added to every metric
+
+[agent]
+  interval = "10s"
+  round_interval = true
+  metric_batch_size = 1000
+  metric_buffer_limit = 10000     # metrics kept in memory while InfluxDB is unreachable
+  collection_jitter = "0s"
+  flush_interval = "10s"
+  flush_jitter = "0s"
+  precision = ""
+  debug = false
+  quiet = false
+  hostname = ""                   # name shown in Grafana ("host" tag); empty = the OS host name
+  omit_hostname = false
+  skip_processors_after_aggregators = true   # Telegraf 1.40+ default, set to silence its warning
+
+###############################################################################
+# OUTPUT
+###############################################################################
+
+[[outputs.influxdb_v2]]
+  ## Through Cloudflare (tunnel + Access): https://influxdb.example.com   (no port)
+  ## Through Tailscale:                     http://<tailscale-ip-or-name>:8086
+  urls = ["https://influxdb.example.com"]
+  organization = "<org>"
+  bucket = "<server-name>"        # one bucket per server
+  token = "${INFLUX_TOKEN}"
+  ## Cloudflare Access service token. Remove this line when going through Tailscale.
+  http_headers = {"CF-Access-Client-Id" = "${CF_ACCESS_CLIENT_ID}", "CF-Access-Client-Secret" = "${CF_ACCESS_CLIENT_SECRET}"}
+  timeout = "5s"
+
+###############################################################################
+# SYSTEM INPUTS
+###############################################################################
+
+[[inputs.cpu]]
+  percpu = true                   # one series per core, plus...
+  totalcpu = true                 # ...cpu-total, used by the dashboards
+  collect_cpu_time = false        # percentages only, no raw CPU time counters
+
+[[inputs.disk]]
+  ## Skip virtual and container filesystems (also avoids "permission denied" noise)
+  ignore_fs = ["tmpfs", "devtmpfs", "devfs", "iso9660", "overlay", "aufs", "squashfs", "nsfs", "fuse.portal", "fuse.gvfsd-fuse"]
+
+[[inputs.diskio]]
+  # devices = ["sda", "nvme0n1"]  # all devices when empty
+
+[[inputs.kernel]]
+
+[[inputs.mem]]
+
+[[inputs.processes]]
+
+[[inputs.swap]]
+
+[[inputs.system]]
+
+[[inputs.net]]
+  ## Every interface that is up (eth0, enp3s0, bond0, em1, venet0, ppp0, wlp2s0, tailscale0...),
+  ## minus the virtual ones made by Docker and VMs: one veth per container would add a lot of series.
+  [inputs.net.tagdrop]
+    interface = ["veth*", "docker*", "br-*", "cni*", "flannel*", "virbr*", "vnet*"]
+
+[[inputs.netstat]]                # TCP connection states (established, time_wait...)
+
+[[inputs.interrupts]]             # many series (one per IRQ and CPU): remove if you don't graph it
+
+[[inputs.linux_sysctl_fs]]        # open files, inodes
+
+###############################################################################
+# DOCKER INPUT
+###############################################################################
+# Needs access to the Docker socket:
+#   sudo usermod -aG docker telegraf && sudo systemctl restart telegraf
+# The docker group gives root-equivalent access to the server.
+# Without that access, Telegraf does not start at all and sends NO metrics, not even the system ones.
+# On a server without Docker, delete this block.
+
+[[inputs.docker]]
+  endpoint = "unix:///var/run/docker.sock"
+  gather_services = false         # true only on one Swarm manager
+  source_tag = false
+  container_name_include = []     # all containers
+  container_name_exclude = []
+  ## Also report stopped and crashed containers (default: running only)
+  container_state_include = ["running", "restarting", "exited", "dead"]
+  timeout = "5s"
+  ## One total per container; no series per CPU core, disk or interface (much less data)
+  perdevice_include = []
+  total_include = ["cpu", "blkio", "network"]
+  ## Panels (Coolify, Dokploy...) put dozens of proxy labels on each container. With empty lists
+  ## EVERY label becomes a tag and the database grows very fast: keep only the compose ones.
+  docker_label_include = ["com.docker.compose.project", "com.docker.compose.service"]
+  docker_label_exclude = []

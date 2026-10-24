@@ -81,7 +81,7 @@ The workflow:
 1. bumps `PREP_VERSION` in `server-prep.sh` and moves the `[Unreleased]` notes under the new version
    in `CHANGELOG.md`, through a `release: vX.Y.Z` pull request that it lints and merges itself;
 2. tags the merge commit and publishes the GitHub release: the changelog notes, the merged pull requests,
-   and the scripts with a `SHA256SUMS` file.
+   the scripts, the Telegraf template (`telegraf.conf.example`) and a `SHA256SUMS` file.
 
 GitHub signs the commit, the merge and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
 in a normal pull request, when the audit changes a lot.

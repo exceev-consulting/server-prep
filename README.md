@@ -54,7 +54,7 @@ sudo ./server-prep.sh --dry-run        # 2. preview every change
 sudo ./server-prep.sh                  # 3. apply (interactive questions)
 ```
 
-Or download the scripts from the [latest release](https://github.com/exceev-consulting/server-prep/releases/latest)
+Or download the scripts (and the Telegraf template) from the [latest release](https://github.com/exceev-consulting/server-prep/releases/latest)
 and check them with `sha256sum -c SHA256SUMS`.
 
 For a client server, reuse a config file:
@@ -85,9 +85,9 @@ Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-ste
 | `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands |
 | `rkhunter` / `aide` | rootkit scan + file-integrity baseline, daily |
 | `endlessh` | SSH tarpit on port 22 once SSH has moved |
-| `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you add an InfluxDB output in `/etc/telegraf/telegraf.d/` |
+| `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md)) |
 | `telegram` | alert on every SSH login (except ignored users, e.g. the panel's root) + daily report at 09:00 |
-| `cloudflared` | install the Cloudflare Tunnel connector with your token |
+| `cloudflared` | install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) |
 | `suid` | list SUID binaries outside standard paths (review only) |
 
 Outputs (root only):
@@ -118,11 +118,19 @@ User `root`, port `822` (or your `SSH_PORT`), private key = the one whose public
 With the Cloudflare Tunnel, add these public hostnames in Zero Trust:
 `ssh-<host>.<domain>` → `ssh://localhost:822` and your app domains → `http://localhost:80` (the panel's reverse proxy).
 
+## Guides
+
+| Guide | What you set up |
+|---|---|
+| [server-preconfig.md](server-preconfig.md) | first setup of a new server: SSH, hostname, network saved for reboots, Tailscale |
+| [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) | publish apps through a Cloudflare Tunnel from Coolify: no open port, hidden server IP, Zero Trust login for admin tools |
+| [docs/monitoring.md](docs/monitoring.md) | server and Docker metrics: Telegraf → InfluxDB 2.8 → Grafana, through Cloudflare Access |
+
 ## Extras
 
 | File | Use |
 |---|---|
-| `extras/telegraf/influxdb.conf.example` | InfluxDB v2 output for Telegraf (token read from `/etc/default/telegraf`) |
+| `extras/telegraf/telegraf.conf.example` | complete Telegraf config: system + Docker metrics to InfluxDB v2, secrets read from `/etc/default/telegraf`, optional Cloudflare Access headers ([guide](docs/monitoring.md)) |
 | `extras/github-runners/limit-runners-memory.sh` | caps self-hosted GitHub runners to 40% of RAM (systemd slice): `sudo ./limit-runners-memory.sh [30%] [--remove]` |
 
 ## Working with Claude Code

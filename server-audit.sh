@@ -23,6 +23,7 @@
 set -u   # no pipefail: "cmd | grep -q" would report SIGPIPE as failure
 
 AUDIT_VERSION="1.0.0"
+PROJECT_URL="https://github.com/exceev-consulting/server-prep"
 
 # ----------------------------------------------------------------------------
 # Configuration (override with environment variables)
@@ -752,7 +753,7 @@ if have telegraf; then
         result mon.telegraf INFO "Telegraf" "${TG_VER} running - metrics are being shipped"
     else
         result mon.telegraf INFO "Telegraf" "${TG_VER} installed, service stopped (not configured yet)" \
-            "Add an InfluxDB output in /etc/telegraf/telegraf.d/ then: systemctl enable --now telegraf"
+            "Configure it from telegraf.conf.example (guide: ${PROJECT_URL}/blob/main/docs/monitoring.md), then: systemctl enable --now telegraf"
     fi
 fi
 

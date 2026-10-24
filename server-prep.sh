@@ -70,6 +70,7 @@ SWAP_SIZE="${SWAP_SIZE:-2G}"
 PTRACE_SCOPE="${PTRACE_SCOPE:-2}"
 AUDIT_SCRIPT="${AUDIT_SCRIPT:-}"
 AUDIT_URL="${AUDIT_URL:-}"                    # raw URL of server-audit.sh (single-file installs)
+PROJECT_URL="https://github.com/exceev-consulting/server-prep"   # guides linked from messages (release downloads have no docs/)
 
 SERVICE_CANDIDATES="avahi-daemon cups cups-browsed bluetooth ModemManager apport"
 
@@ -591,7 +592,8 @@ questions() {
     explain "Telegraf is the metrics agent of InfluxDB: it collects CPU, memory, disk, network, Docker" \
             "stats and sends them to an InfluxDB server (then shown in Grafana / InfluxDB UI)." \
             "It is only installed here, from InfluxData's official repository, and left stopped:" \
-            "point it to your InfluxDB later in /etc/telegraf/telegraf.d/, then enable the service."
+            "configure it later with telegraf.conf.example, then enable it. Guide:" \
+            "${PROJECT_URL}/blob/main/docs/monitoring.md"
     ask_yn INSTALL_TELEGRAF "Install Telegraf" "$INSTALL_TELEGRAF"
     explain "Telegram alerts: a message on your phone at every SSH login, plus a daily report at 09:00" \
             "(disk, memory, updates, bans, rootkit/integrity results, containers)."
@@ -1559,7 +1561,7 @@ EOF
         # the package starts it with a sample config pointing to localhost:8086 - keep it off until configured
         run systemctl disable --now telegraf
         note "telegraf $(dpkg-query -W -f='${Version}' telegraf 2>/dev/null) installed, service left stopped"
-        todo "Telegraf: add an InfluxDB output in /etc/telegraf/telegraf.d/ (urls, token, organization, bucket), test with 'sudo -u telegraf telegraf --config /etc/telegraf/telegraf.conf --config-directory /etc/telegraf/telegraf.d --test', then 'sudo systemctl enable --now telegraf'. For Docker metrics: 'sudo usermod -aG docker telegraf' (root-equivalent access)."
+        todo "Telegraf: configure it from telegraf.conf.example (in the release files, or extras/telegraf/ in the repo) and put its secrets in /etc/default/telegraf. The template reads Docker: run 'sudo usermod -aG docker telegraf' (root-equivalent access), or delete [[inputs.docker]] on a server without Docker, otherwise Telegraf does not start. Guide: ${PROJECT_URL}/blob/main/docs/monitoring.md. Test with: sudo -u telegraf bash -c \"set -a; . /etc/default/telegraf; telegraf --config /etc/telegraf/telegraf.conf --config-directory /etc/telegraf/telegraf.d --once --debug\" and look for 'Wrote batch' (the secrets are only loaded by the service, so a plain telegraf command would run with an empty token). Behind Cloudflare Access, 'Wrote batch' alone proves nothing: pass the guide's 204 test first, then check the data in the bucket. Then: sudo systemctl enable --now telegraf"
     else
         note "telegraf $(dpkg-query -W -f='${Version}' telegraf) already installed ($(systemctl is-active telegraf 2>/dev/null)) - configuration untouched"
     fi
