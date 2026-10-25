@@ -49,6 +49,11 @@ flowchart LR
 1. In Coolify, open a project (for example `infrastructure`), choose the **production** environment,
    and click **+ New**.
 2. Search for **Cloudflared**. It is in the **Services** section (one-click templates). Click it.
+
+   ![Coolify New Resource page: the search "cloudflare" shows the Cloudflared service under Services](images/coolify/new-resource-cloudflared.webp)
+
+   <sub>Image: [Coolify docs](https://coolify.io/docs/integrations/networking/cloudflare/tunnels/all-resource), Apache 2.0, cropped. Newer Coolify versions show the cards a little differently.</sub>
+
 3. If Coolify asks for a server, choose `web-01` (not `localhost`). Keep the default destination.
 4. Coolify creates the service from its template. Nothing to change in it:
    ```yaml
@@ -181,6 +186,11 @@ the Coolify dashboard...), put a **Cloudflare Access** login in front: visitors 
 | Session duration | `24 hours` |
 | Include | **Emails**: `you@example.com`, `colleague@example.com`, or **Emails ending in**: `@example.com` |
 
+![Cloudflare Access policy form: Include rule on the left, Policy Name, Action Allow and session duration on the right](images/cloudflare/access-policy-builder.png)
+
+<sub>The same form also opens inside an application (**Builder**). Under **Include**, pick **Emails** in **Selector**.
+Image: [Cloudflare docs](https://developers.cloudflare.com/changelog/post/2026-04-15-new-rule-and-application-builders/), CC BY 4.0.</sub>
+
 ### 8.3 Protect an app
 
 > [!IMPORTANT]
@@ -198,7 +208,13 @@ the Coolify dashboard...), put a **Cloudflare Access** login in front: visitors 
 | Login methods | One-time PIN (and the others you added) |
 
 Save. Test in a **private browser window**: Cloudflare's login page appears first, asks for your email,
-sends a code, and only then shows the app. From a terminal:
+sends a code, and only then shows the app.
+
+![Cloudflare Access login page: an Email field and a Send login code button](images/cloudflare/access-login-email-code.png)
+
+<sub>What visitors see, with your app's name. Image: [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/), CC BY 4.0.</sub>
+
+From a terminal:
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://influxdb.example.com    # 302: sent to the Cloudflare login
 ```
