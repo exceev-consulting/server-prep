@@ -58,6 +58,10 @@ Zero Trust.
    curl -s -o /dev/null -w '%{http_code}\n' https://influxdb.example.com    # 302: sent to the Cloudflare login
    ```
 
+Official docs: [Cloudflare, create a service token](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/#create-a-service-token),
+[add a self-hosted application](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/#1-add-your-application-to-access),
+[Service Auth policy](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/#service-auth).
+
 ## 2. Run InfluxDB 2.8 on Coolify
 
 1. In Coolify, click **+ New** in your project, search **InfluxDB** (Services), and choose the server.
@@ -94,12 +98,15 @@ Zero Trust.
 
    If you see **Get Started** instead, InfluxDB is empty: the `DOCKER_` prefix was missing, or the service had
    already started once before you added it (the setup variables only work on an empty volume, so adding
-   them later changes nothing). Access hides it
-   from the internet, but machines on the server's LAN reach Coolify's proxy directly and skip Access. Finish
-   the setup **right away**, from the server, which never goes through the network:
+   them later changes nothing). Access hides it from the internet, but machines on the server's LAN reach
+   Coolify's proxy directly and skip Access. Finish the setup **right away**, from the server, which never
+   goes through the network:
    ```bash
    sudo docker exec -it $(sudo docker ps -qf name=influxdb) influx setup
    ```
+
+Official docs: [Coolify, Docker Compose services: domains and ports](https://coolify.io/docs/services/configuration/docker-compose#domains-and-internal-ports),
+[InfluxDB, run with Docker Compose](https://docs.influxdata.com/influxdb/v2/install/use-docker-compose/).
 
 **Upgrading an existing 2.7 to 2.8:** change the image and redeploy. The data stays in the service's
 volumes. 2.8 adds optional [token hashing](https://docs.influxdata.com/influxdb/v2/reference/config-options/):
@@ -110,7 +117,7 @@ because hashed tokens can't be shown again.
 and can never be shown again, the operator token too. Going back to 2.7 afterwards erases all tokens. Before
 you move to 2.9, save every token you still need in your password manager (each server's write token,
 Grafana's read token, the operator token), and don't roll back. On a new 2.9, each token is shown only once,
-when you create it (step 3).
+when you create it (step 3). See the [InfluxDB release notes](https://docs.influxdata.com/influxdb/v2/reference/release-notes/influxdb/#token-hashing-enabled-by-default).
 
 ## 3. Buckets and tokens
 
@@ -124,6 +131,9 @@ In InfluxDB (**Load Data**):
 
 One token per server means a leaked token can only write to one bucket, and you can revoke it alone.
 Copy each token into your password manager as soon as you create it: InfluxDB may not show it again.
+
+Official docs: [InfluxDB, create a bucket](https://docs.influxdata.com/influxdb/v2/admin/buckets/create-bucket/#create-a-bucket-from-the-load-data-menu),
+[create a token](https://docs.influxdata.com/influxdb/v2/admin/tokens/create-token/#create-a-token-in-the-influxdb-ui).
 
 ## 4. Install Telegraf on each server
 
@@ -247,7 +257,8 @@ network, so Grafana can't see the InfluxDB container by default, even in the sam
    ```bash
    sudo docker network inspect coolify --format '{{range .Containers}}{{.Name}} {{end}}' | tr ' ' '\n' | grep -iE 'influx|grafana'
    ```
-See [Coolify networking](https://coolify.io/docs/services/configuration/networking).
+
+Official doc: [Coolify, service networking](https://coolify.io/docs/services/configuration/networking#choose-the-connection-target).
 
 **Data source:** **Connections → Data sources → Add → InfluxDB**:
 
@@ -260,6 +271,8 @@ See [Coolify networking](https://coolify.io/docs/services/configuration/networki
 | Token | the **read** token |
 
 Click **Save & test**: `datasource is working` (or the number of buckets found).
+
+Official doc: [Grafana, configure the InfluxDB data source](https://grafana.com/docs/grafana/latest/datasources/influxdb/configure/).
 
 **Dashboard variables** (one dashboard for all servers):
 1. `bucket`: query `buckets()`.

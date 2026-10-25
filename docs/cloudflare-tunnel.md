@@ -41,6 +41,9 @@ flowchart LR
 3. Choose **Docker** and copy the `docker run` command. Keep **only the token**, the long string that
    starts with `eyJ`. Store it in your password manager.
 
+Official docs: [Cloudflare, create a tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/#1-create-a-tunnel),
+[Coolify, create a Cloudflare Tunnel](https://coolify.io/docs/integrations/networking/cloudflare/tunnels/all-resource#1-create-a-cloudflare-tunnel).
+
 > [!CAUTION]
 > The token is a password: whoever has it can run your tunnel. Don't paste it in chats, tickets or Git.
 
@@ -49,11 +52,6 @@ flowchart LR
 1. In Coolify, open a project (for example `infrastructure`), choose the **production** environment,
    and click **+ New**.
 2. Search for **Cloudflared**. It is in the **Services** section (one-click templates). Click it.
-
-   ![Coolify New Resource page: the search "cloudflare" shows the Cloudflared service under Services](images/coolify/new-resource-cloudflared.webp)
-
-   <sub>Image: [Coolify docs](https://coolify.io/docs/integrations/networking/cloudflare/tunnels/all-resource), Apache 2.0, cropped. Newer Coolify versions show the cards a little differently.</sub>
-
 3. If Coolify asks for a server, choose `web-01` (not `localhost`). Keep the default destination.
 4. Coolify creates the service from its template. Nothing to change in it:
    ```yaml
@@ -79,6 +77,8 @@ flowchart LR
    ```
 7. In Cloudflare, the tunnel turns **HEALTHY**.
 
+Official doc: [Coolify, deploy cloudflared](https://coolify.io/docs/integrations/networking/cloudflare/tunnels/all-resource#2-deploy-cloudflared-on-coolify).
+
 ## 3. Add a route
 
 In Cloudflare: **Networking → Tunnels →** your tunnel **→ Configure → Routes → Add route →
@@ -94,9 +94,14 @@ Published application**.
 Cloudflare creates the DNS record (`demo` → `<tunnel-id>.cfargotunnel.com`, proxied) for you.
 If a record with that name already exists, it does **not** replace it: delete the old record first.
 
+Official docs: [Cloudflare, publish an application](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/#2a-publish-an-application),
+[Coolify, configure tunnel routes](https://coolify.io/docs/integrations/networking/cloudflare/tunnels/all-resource#4-configure-tunnel-routes).
+
 ## 4. Check the Coolify proxy
 
 In Coolify, go to **Servers →** `web-01`. The proxy must show **Running**.
+
+Official doc: [Coolify, start the proxy](https://coolify.io/docs/integrations/networking/cloudflare/tunnels/all-resource#3-start-coolify-proxy).
 
 ## 5. Deploy a demo app
 
@@ -117,6 +122,8 @@ visitors HTTPS. With the redirect on, the browser loops (`TOO_MANY_REDIRECTS`).
 **Apps that don't listen on port 80:** add the container port to the domain, for example
 `https://influxdb.example.com:8086`. The port only tells Coolify where to send the traffic.
 Visitors still open `https://influxdb.example.com`.
+
+Official doc: [Coolify, configure your resource domain](https://coolify.io/docs/integrations/networking/cloudflare/tunnels/all-resource#5-configure-your-resource-domain).
 
 ## 6. Test
 
@@ -173,7 +180,10 @@ the Coolify dashboard...), put a **Cloudflare Access** login in front: visitors 
 2. Choose the **Free** plan. Cloudflare may ask for a payment method even for the free plan.
 3. Add the email-code login: **Integrations → Identity providers → Add new identity provider → One-time PIN**.
    New accounts don't have it: they only offer the Cloudflare login, limited to members of your Cloudflare
-   account, so colleagues listed in the `team` policy could not log in. Users then get a code by email. You can add Google, GitHub or Microsoft logins next to it.
+   account, so colleagues listed in the `team` policy could not log in. Users then get a code by email.
+   You can add Google, GitHub or Microsoft logins next to it.
+
+Official doc: [Cloudflare, set up One-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/#set-up-otp).
 
 ### 8.2 A reusable policy for your team
 
@@ -186,10 +196,7 @@ the Coolify dashboard...), put a **Cloudflare Access** login in front: visitors 
 | Session duration | `24 hours` |
 | Include | **Emails**: `you@example.com`, `colleague@example.com`, or **Emails ending in**: `@example.com` |
 
-![Cloudflare Access policy form: Include rule on the left, Policy Name, Action Allow and session duration on the right](images/cloudflare/access-policy-builder.png)
-
-<sub>The same form also opens inside an application (**Builder**). Under **Include**, pick **Emails** in **Selector**.
-Image: [Cloudflare docs](https://developers.cloudflare.com/changelog/post/2026-04-15-new-rule-and-application-builders/), CC BY 4.0.</sub>
+Official doc: [Cloudflare, create a policy](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/policy-management/#create-a-policy).
 
 ### 8.3 Protect an app
 
@@ -208,16 +215,12 @@ Image: [Cloudflare docs](https://developers.cloudflare.com/changelog/post/2026-0
 | Login methods | One-time PIN (and the others you added) |
 
 Save. Test in a **private browser window**: Cloudflare's login page appears first, asks for your email,
-sends a code, and only then shows the app.
-
-![Cloudflare Access login page: an Email field and a Send login code button](images/cloudflare/access-login-email-code.png)
-
-<sub>What visitors see, with your app's name. Image: [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/), CC BY 4.0.</sub>
-
-From a terminal:
+sends a code, and only then shows the app. From a terminal:
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://influxdb.example.com    # 302: sent to the Cloudflare login
 ```
+
+Official doc: [Cloudflare, add a self-hosted application](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/#1-add-your-application-to-access).
 
 ### 8.4 Machines: service tokens
 
@@ -232,6 +235,9 @@ Scripts and agents (Telegraf, backups, CI) can't type an email code. Give them a
    CF-Access-Client-Secret: <client secret>
    ```
    For Telegraf, see [monitoring.md](monitoring.md#1-protect-the-influxdb-hostname-first).
+
+Official docs: [Cloudflare, create a service token](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/#create-a-service-token),
+[Service Auth policy](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/#service-auth).
 
 ### Which URLs to protect
 
