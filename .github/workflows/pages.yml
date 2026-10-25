@@ -1,0 +1,53 @@
+name: pages
+
+# Publishes site/ (the setup console) to GitHub Pages.
+# One-time setup by a maintainer: Settings -> Pages -> Source = GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - scripts/gen-data.sh
+      - server-prep.sh
+      - server-audit.sh
+      - server-preconfig.sh
+      - server-prep.conf.example
+      - README.md
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Site data up to date
+        run: scripts/gen-data.sh --check
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

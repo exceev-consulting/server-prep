@@ -27,8 +27,9 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 
 1. **Syntax and lint** (CI runs the same):
    ```bash
-   bash -n server-prep.sh server-audit.sh server-preconfig.sh
-   shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh
+   bash -n server-prep.sh server-audit.sh server-preconfig.sh scripts/*.sh
+   shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh
+   scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
    ```
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
@@ -49,7 +50,8 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 - **Works with any panel:** use `PANEL`, `PANEL_PUBKEY`, `PANEL_ACCESS`, `PANEL_IP` and `${PANEL_LABEL}` in messages.
   Code for one panel only goes behind `[[ ${PANEL,,} == <name> ]]`.
 - **A new or changed step** also updates `server-prep.conf.example`, the step table in `README.md`,
-  and adds a check to `server-audit.sh` (INFO when optional).
+  and adds a check to `server-audit.sh` (INFO when optional). Then run `scripts/gen-data.sh` so the
+  setup console (`site/`) shows it.
 - **No secrets and no real infrastructure** in the repo: tokens, keys, real IPs or hostnames.
   Use examples like `web-01` and `192.168.1.50`.
 - **Simple words** in messages and docs. Many users are not security experts.

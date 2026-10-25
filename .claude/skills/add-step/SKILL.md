@@ -27,6 +27,7 @@ Use the Telegraf step as the reference implementation: `grep -n -i telegraf serv
     - `result <id> PASS|WARN|FAIL|INFO "Name" "detail" "fix hint"`;
     - optional features are INFO only, so they never lower the score.
 11. **`CLAUDE.md`**: if you hit a non-obvious problem, add it to *Hard-won gotchas*.
+12. **Site data**: run `scripts/gen-data.sh` and commit `site/data.json` and `site/data.js`. CI runs `scripts/gen-data.sh --check`, so a new step, setting or audit check fails the build until the data is regenerated.
 
 ## Rules
 - **Third-party apt repo:**

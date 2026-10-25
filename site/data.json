@@ -1,0 +1,1260 @@
+{
+  "generated_by": "scripts/gen-data.sh",
+  "project_url": "https://github.com/exceev-consulting/server-prep",
+  "versions": {
+    "server_prep": "1.1.1",
+    "server_audit": "1.0.0"
+  },
+  "tested_targets": "Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13",
+  "defaults": {
+    "ssh_port": "822",
+    "crowdsec_lapi_port": "8091",
+    "disable_services": [
+      "avahi-daemon",
+      "cups",
+      "cups-browsed",
+      "bluetooth",
+      "ModemManager",
+      "apport"
+    ]
+  },
+  "steps": [
+    {
+      "name": "update",
+      "title": "System update & base packages",
+      "gate": null,
+      "details": "apt full-upgrade, base tools (curl, git, jq, ufw, chrony, vim...), timezone"
+    },
+    {
+      "name": "users",
+      "title": "Users & SSH keys (admin, panel)",
+      "gate": null,
+      "details": "admin user + your SSH key; the panel's key for root, restricted with `from=\"...\"` to the panel's sources"
+    },
+    {
+      "name": "docker",
+      "title": "Docker CE",
+      "gate": "INSTALL_DOCKER",
+      "details": "Docker CE from download.docker.com if missing, container log rotation"
+    },
+    {
+      "name": "firewall",
+      "title": "Firewall (UFW + Docker)",
+      "gate": null,
+      "details": "UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched)"
+    },
+    {
+      "name": "ssh",
+      "title": "SSH security",
+      "gate": null,
+      "details": "port 822, keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works"
+    },
+    {
+      "name": "ips",
+      "title": "Intrusion prevention",
+      "gate": null,
+      "details": "fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER), panel/admin IPs whitelisted, LAPI moved off 8080"
+    },
+    {
+      "name": "unattended",
+      "title": "Automatic security updates",
+      "gate": null,
+      "details": "daily security updates (+ Docker CE), optional auto-reboot"
+    },
+    {
+      "name": "sysctl",
+      "title": "Kernel & network settings",
+      "gate": null,
+      "details": "~30 kernel/network parameters, rare protocols blacklisted (Docker/Tailscale compatible)"
+    },
+    {
+      "name": "auth",
+      "title": "Sudo logging & password policy",
+      "gate": null,
+      "details": "sudo log file (`/var/log/sudo.log`), pwquality minlen 12 + complexity, password dictionary built (`cracklib-runtime`) so `passwd` works"
+    },
+    {
+      "name": "services",
+      "title": "Unneeded services",
+      "gate": null,
+      "details": "disable avahi, cups, bluetooth, ModemManager; mask Ctrl-Alt-Del; optional headless boot"
+    },
+    {
+      "name": "laptop",
+      "title": "Laptop server mode",
+      "gate": null,
+      "details": "laptop used as a server: ignore lid close, mask sleep/suspend"
+    },
+    {
+      "name": "logging",
+      "title": "Journald & swap",
+      "gate": null,
+      "details": "persistent journald (1 GB cap), swap file if none"
+    },
+    {
+      "name": "auditd",
+      "title": "auditd",
+      "gate": "INSTALL_AUDITD",
+      "details": "audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands"
+    },
+    {
+      "name": "rkhunter",
+      "title": "rkhunter",
+      "gate": "INSTALL_RKHUNTER",
+      "details": "rootkit scan + file-integrity baseline, daily"
+    },
+    {
+      "name": "aide",
+      "title": "AIDE",
+      "gate": "INSTALL_AIDE",
+      "details": "rootkit scan + file-integrity baseline, daily"
+    },
+    {
+      "name": "endlessh",
+      "title": "Endlessh tarpit",
+      "gate": "INSTALL_ENDLESSH",
+      "details": "SSH tarpit on port 22 once SSH has moved"
+    },
+    {
+      "name": "telegraf",
+      "title": "Telegraf (metrics agent)",
+      "gate": "INSTALL_TELEGRAF",
+      "details": "Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md))"
+    },
+    {
+      "name": "telegram",
+      "title": "Telegram alerts",
+      "gate": "TELEGRAM_ENABLE",
+      "details": "alert on every SSH login (except ignored users, e.g. the panel's root) + daily report at 09:00"
+    },
+    {
+      "name": "cloudflared",
+      "title": "Cloudflare Tunnel",
+      "gate": null,
+      "details": "install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md)"
+    },
+    {
+      "name": "suid",
+      "title": "SUID review",
+      "gate": null,
+      "details": "list SUID binaries outside standard paths (review only)"
+    }
+  ],
+  "preconfig_steps": [
+    {
+      "name": "packages",
+      "title": "Packages"
+    },
+    {
+      "name": "user",
+      "title": "Admin user"
+    },
+    {
+      "name": "hostname",
+      "title": "Hostname"
+    },
+    {
+      "name": "network",
+      "title": "Network (must survive reboots)"
+    },
+    {
+      "name": "power",
+      "title": "Power: never sleep"
+    },
+    {
+      "name": "tailscale",
+      "title": "Tailscale"
+    }
+  ],
+  "settings": [
+    {
+      "section": "Admin account",
+      "name": "ADMIN_USER",
+      "example": "admin",
+      "default": null,
+      "comment": "created if missing (sudo group)",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Admin account",
+      "name": "ADMIN_PUBKEY",
+      "example": "ssh-ed25519 AAAA... you@laptop",
+      "default": null,
+      "comment": "your public key (strongly recommended)",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Deployment panel (Coolify, Dokploy, Openship...)",
+      "name": "PANEL",
+      "example": "coolify",
+      "default": null,
+      "comment": "name used in messages/report; empty = none",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Deployment panel (Coolify, Dokploy, Openship...)",
+      "name": "PANEL_PUBKEY",
+      "example": "ssh-ed25519 AAAA... panel",
+      "default": null,
+      "comment": null,
+      "help": "Public part of the SSH key the panel uses for servers (Coolify: Keys & Tokens -> Private Keys -> (your key) -> Public Key)",
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Deployment panel (Coolify, Dokploy, Openship...)",
+      "name": "PANEL_ACCESS",
+      "example": "cloudflared",
+      "default": null,
+      "comment": null,
+      "help": "How the panel server reaches this server (comma list): cloudflared, tailscale, public root login is allowed ONLY from the matching sources: cloudflared -> 127.0.0.1/::1 (tunnel), tailscale -> 100.64.0.0/10, public -> PANEL_IP",
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Deployment panel (Coolify, Dokploy, Openship...)",
+      "name": "PANEL_IP",
+      "example": null,
+      "default": null,
+      "comment": "panel server public IP, required with \"public\"",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Deployment panel (Coolify, Dokploy, Openship...)",
+      "name": "CLOUDFLARED_TOKEN",
+      "example": null,
+      "default": null,
+      "comment": "tunnel token (Zero Trust -> Networks -> Tunnels)",
+      "help": null,
+      "saved": false,
+      "secret": true
+    },
+    {
+      "section": "SSH & firewall",
+      "name": "SSH_PORT",
+      "example": "822",
+      "default": "822",
+      "comment": "< 1024 and != 22 passes the audit",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "SSH & firewall",
+      "name": "ADMIN_IPS",
+      "example": null,
+      "default": null,
+      "comment": "IPs/CIDRs allowed to SSH, e.g. \"203.0.113.4 192.168.1.0/24\"",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "SSH & firewall",
+      "name": "EXPOSE_WEB",
+      "example": "no",
+      "default": null,
+      "comment": "yes = open 80/443 to the internet (no when using the tunnel)",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "SSH & firewall",
+      "name": "EXTRA_PORTS",
+      "example": null,
+      "default": null,
+      "comment": "e.g. \"8000/tcp 5432/tcp\"",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "INSTALL_FAIL2BAN",
+      "example": "yes",
+      "default": "yes",
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "INSTALL_CROWDSEC",
+      "example": "yes",
+      "default": "yes",
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "CROWDSEC_ENROLL_KEY",
+      "example": null,
+      "default": null,
+      "comment": "optional, from https://app.crowdsec.net",
+      "help": null,
+      "saved": false,
+      "secret": true
+    },
+    {
+      "section": "Protection",
+      "name": "CROWDSEC_LAPI_PORT",
+      "example": "8091",
+      "default": "8091",
+      "comment": "default 8080 conflicts with Traefik dashboards",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "INSTALL_DOCKER",
+      "example": "yes",
+      "default": "yes",
+      "comment": "install if missing + log rotation + UFW integration",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "DOCKER_AUTO_UPDATE",
+      "example": "yes",
+      "default": "yes",
+      "comment": "Docker CE in unattended-upgrades",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "AUTO_REBOOT",
+      "example": "no",
+      "default": "no",
+      "comment": "reboot automatically when updates need it",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "AUTO_REBOOT_TIME",
+      "example": "04:00",
+      "default": "04:00",
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Services",
+      "name": "DISABLE_SERVICES",
+      "example": "avahi-daemon cups cups-browsed bluetooth ModemManager apport",
+      "default": null,
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Services",
+      "name": "HEADLESS",
+      "example": "no",
+      "default": "no",
+      "comment": "desktop machines: boot without the GUI",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Services",
+      "name": "LAPTOP_MODE",
+      "example": "auto",
+      "default": "auto",
+      "comment": "auto|yes|no - ignore lid close, disable sleep",
+      "help": null,
+      "saved": false,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "INSTALL_AUDITD",
+      "example": "yes",
+      "default": "yes",
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "INSTALL_RKHUNTER",
+      "example": "yes",
+      "default": "yes",
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "INSTALL_AIDE",
+      "example": "yes",
+      "default": "yes",
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "INSTALL_ENDLESSH",
+      "example": "yes",
+      "default": "yes",
+      "comment": "tarpit on 22 once SSH has moved",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "INSTALL_TELEGRAF",
+      "example": "yes",
+      "default": "yes",
+      "comment": "InfluxDB metrics agent, installed from InfluxData repo, left stopped",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "TELEGRAM_ENABLE",
+      "example": "no",
+      "default": "no",
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "TELEGRAM_BOT_TOKEN",
+      "example": null,
+      "default": null,
+      "comment": null,
+      "help": null,
+      "saved": false,
+      "secret": true
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "TELEGRAM_CHAT_ID",
+      "example": null,
+      "default": null,
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Monitoring extras",
+      "name": "TELEGRAM_IGNORE_USERS",
+      "example": "root",
+      "default": "root",
+      "comment": "the panel logs in as root all the time",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Misc",
+      "name": "TIMEZONE",
+      "example": "Europe/Paris",
+      "default": null,
+      "comment": null,
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Misc",
+      "name": "SWAP_SIZE",
+      "example": "2G",
+      "default": "2G",
+      "comment": "created only if the server has no swap",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Misc",
+      "name": "PTRACE_SCOPE",
+      "example": "2",
+      "default": "2",
+      "comment": "3 = stricter, cannot be lowered until reboot",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Misc",
+      "name": "AUDIT_URL",
+      "example": null,
+      "default": null,
+      "comment": "raw URL of server-audit.sh for single-file installs",
+      "help": null,
+      "saved": false,
+      "secret": false
+    }
+  ],
+  "panels": [
+    {
+      "id": "coolify",
+      "label": "Coolify"
+    },
+    {
+      "id": "dokploy",
+      "label": "Dokploy"
+    },
+    {
+      "id": "openship",
+      "label": "Openship"
+    }
+  ],
+  "access": [
+    {
+      "id": "cloudflared",
+      "sources": [
+        "127.0.0.1",
+        "::1"
+      ]
+    },
+    {
+      "id": "tailscale",
+      "sources": [
+        "100.64.0.0/10",
+        "fd7a:115c:a1e0::/48"
+      ]
+    },
+    {
+      "id": "public",
+      "sources": [
+        "PANEL_IP"
+      ]
+    }
+  ],
+  "flags": [
+    {
+      "script": "server-prep.sh",
+      "flag": "--config FILE",
+      "help": "read settings from FILE (see server-prep.conf.example)"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "--yes",
+      "help": "non-interactive: use config/env values and defaults"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "--dry-run",
+      "help": "show what would change, change nothing"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "--only a,b,c",
+      "help": "run only these steps"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "--skip a,b,c",
+      "help": "skip these steps"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "--list-steps",
+      "help": "print the step names"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "-h, --help",
+      "help": "-h, --help           this help"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--out DIR",
+      "help": "directory for the text report (default: current directory)"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--txt FILE",
+      "help": "text report path (default: DIR/server-audit-<host>-<timestamp>.txt)"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--md FILE",
+      "help": "also write a Markdown report"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--json FILE",
+      "help": "also write a JSON report"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--tsv FILE",
+      "help": "also write a TSV (id, status, title) - used by server-prep.sh"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--no-txt",
+      "help": "do not write the text report"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--quiet",
+      "help": "no console output (reports only)"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--no-color",
+      "help": "disable colors"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "--no-network",
+      "help": "do not query the public IP"
+    },
+    {
+      "script": "server-audit.sh",
+      "flag": "-h, --help",
+      "help": "-h, --help       this help"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--hostname NAME",
+      "help": "new hostname (a-z, 0-9, hyphens)"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--static-ip VALUE",
+      "help": "network saved for reboots (Debian ifupdown): 192.168.1.50/24 fixed IP (CIDR); current save the IP the server has now as fixed; dhcp save DHCP; keep leave the network config as is"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--gateway IP",
+      "help": "default gateway for a fixed IP (default: the current one)"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--iface NAME",
+      "help": "network interface (default: the one with the default route)"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--user NAME",
+      "help": "admin user to put in the sudo group (default: the sudo caller / first user)"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--github-keys LOGIN",
+      "help": "add the public SSH keys of github.com/LOGIN to that user"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--no-tailscale",
+      "help": "do not install / log in Tailscale"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--check",
+      "help": "only run the checks"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--dry-run",
+      "help": "show what would change, change nothing"
+    },
+    {
+      "script": "server-preconfig.sh",
+      "flag": "--yes",
+      "help": "no questions: given options + defaults"
+    }
+  ],
+  "audit": {
+    "checks": 55,
+    "sections": [
+      {
+        "key": "system",
+        "title": "System",
+        "checks": [
+          {
+            "id": "sys.info",
+            "title": "System",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
+            "id": "sys.os",
+            "title": "Operating system",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "sys.reboot",
+            "title": "Reboot required",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "sys.time",
+            "title": "Time sync",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "updates",
+        "title": "Updates",
+        "checks": [
+          {
+            "id": "upd.security",
+            "title": "Security updates",
+            "statuses": [
+              "FAIL",
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "upd.unattended",
+            "title": "Automatic security updates",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "ssh",
+        "title": "SSH",
+        "checks": [
+          {
+            "id": "ssh.installed",
+            "title": "SSH server",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
+            "id": "ssh.root_login",
+            "title": "SSH root login",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "ssh.password_auth",
+            "title": "SSH password authentication",
+            "statuses": [
+              "PASS",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "ssh.kbd_interactive",
+            "title": "SSH keyboard-interactive",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "ssh.port",
+            "title": "SSH port",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "ssh.max_auth",
+            "title": "SSH MaxAuthTries",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "ssh.x11",
+            "title": "SSH X11 forwarding",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "ssh.allow_users",
+            "title": "SSH user allow-list",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "ssh.root_keys",
+            "title": "Root authorized_keys",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "firewall",
+        "title": "Firewall & network exposure",
+        "checks": [
+          {
+            "id": "fw.status",
+            "title": "Firewall (UFW)",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "fw.docker_bypass",
+            "title": "Docker vs firewall",
+            "statuses": [
+              "PASS",
+              "FAIL",
+              "WARN"
+            ]
+          },
+          {
+            "id": "net.exposure",
+            "title": "Exposed TCP ports",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "ips",
+        "title": "Intrusion prevention",
+        "checks": [
+          {
+            "id": "ips.fail2ban",
+            "title": "fail2ban",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "ips.crowdsec",
+            "title": "CrowdSec",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "ips.crowdsec_bouncer",
+            "title": "CrowdSec bouncer",
+            "statuses": [
+              "PASS",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "ips.any",
+            "title": "Intrusion prevention",
+            "statuses": [
+              "FAIL",
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "ips.f2b_sshd_jail",
+            "title": "fail2ban sshd jail",
+            "statuses": [
+              "WARN",
+              "PASS",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "ips.failed_logins",
+            "title": "Failed SSH logins (24h)",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "accounts",
+        "title": "Accounts & authentication",
+        "checks": [
+          {
+            "id": "acc.sudo_log",
+            "title": "Sudo logging",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "acc.password_policy",
+            "title": "Password policy",
+            "statuses": [
+              "FAIL",
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "acc.password_dict",
+            "title": "Password dictionary",
+            "statuses": [
+              "PASS",
+              "INFO",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "acc.uid0",
+            "title": "UID 0 accounts",
+            "statuses": [
+              "FAIL",
+              "PASS"
+            ]
+          },
+          {
+            "id": "acc.empty_passwords",
+            "title": "Empty passwords",
+            "statuses": [
+              "FAIL",
+              "PASS"
+            ]
+          },
+          {
+            "id": "acc.nopasswd",
+            "title": "Passwordless sudo",
+            "statuses": [
+              "INFO"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "kernel",
+        "title": "Kernel & system settings",
+        "checks": [
+          {
+            "id": "kern.sysctl",
+            "title": "Kernel parameters",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "kern.apparmor",
+            "title": "AppArmor",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "kern.world_writable",
+            "title": "World-writable files in /etc",
+            "statuses": [
+              "FAIL",
+              "PASS"
+            ]
+          },
+          {
+            "id": "kern.suid",
+            "title": "SUID files",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "monitoring",
+        "title": "Logging & monitoring",
+        "checks": [
+          {
+            "id": "mon.auditd",
+            "title": "auditd",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "mon.rkhunter",
+            "title": "rkhunter",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "mon.aide",
+            "title": "AIDE",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "mon.journal",
+            "title": "Persistent logs",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "mon.telegraf",
+            "title": "Telegraf",
+            "statuses": [
+              "INFO"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "services",
+        "title": "Services",
+        "checks": [
+          {
+            "id": "svc.count",
+            "title": "Running services",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "svc.unneeded",
+            "title": "Unneeded services",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "svc.endlessh",
+            "title": "Endlessh",
+            "statuses": [
+              "INFO"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "resources",
+        "title": "Resources",
+        "checks": [
+          {
+            "id": "res.disk",
+            "title": "Disk usage",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "res.memory",
+            "title": "Memory usage",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          },
+          {
+            "id": "res.swap",
+            "title": "Swap",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "res.load",
+            "title": "CPU load",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "FAIL"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "docker",
+        "title": "Docker",
+        "checks": [
+          {
+            "id": "dock.running",
+            "title": "Docker engine",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "dock.log_rotation",
+            "title": "Container log rotation",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "dock.privileged",
+            "title": "Privileged containers",
+            "statuses": [
+              "WARN",
+              "PASS"
+            ]
+          },
+          {
+            "id": "dock.group",
+            "title": "docker group",
+            "statuses": [
+              "INFO"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "panel",
+        "title": "Panel readiness (Coolify, Dokploy...)",
+        "checks": [
+          {
+            "id": "panel.tools",
+            "title": "Required tools",
+            "statuses": [
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "panel.docker",
+            "title": "Docker + Compose",
+            "statuses": [
+              "PASS",
+              "WARN",
+              "INFO"
+            ]
+          },
+          {
+            "id": "panel.root_key",
+            "title": "Panel SSH access",
+            "statuses": [
+              "PASS",
+              "INFO",
+              "WARN"
+            ]
+          },
+          {
+            "id": "panel.data_dir",
+            "title": "Panel data",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
+            "id": "panel.proxy",
+            "title": "Panel proxy",
+            "statuses": [
+              "INFO"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "vps_vs_dedicated": [
+    {
+      "topic": "Network",
+      "vps": "keep the provider's config (netplan / cloud-init): `server-preconfig.sh` doesn't touch it, Enter = `keep`",
+      "dedicated": "save it so it survives reboots: `server-preconfig.sh --static-ip current`, or a DHCP reservation on the router"
+    },
+    {
+      "topic": "Console if SSH breaks",
+      "vps": "the provider's web console",
+      "dedicated": "IPMI / iDRAC / iLO / KVM, the host's rescue mode, or a screen and keyboard"
+    },
+    {
+      "topic": "Power",
+      "vps": "handled by the provider",
+      "dedicated": "BIOS *Restore on AC Power Loss* = **Power On**"
+    },
+    {
+      "topic": "Reaching it",
+      "vps": "public IP: open 80/443 (`EXPOSE_WEB=yes`) or use a tunnel",
+      "dedicated": "often behind NAT: Tailscale for SSH and the panel, a Cloudflare Tunnel for the apps"
+    }
+  ],
+  "guides": [
+    {
+      "title": "server-preconfig.md",
+      "path": "server-preconfig.md",
+      "details": "first setup of a new server: SSH, hostname, network saved for reboots, Tailscale"
+    },
+    {
+      "title": "docs/cloudflare-tunnel.md",
+      "path": "docs/cloudflare-tunnel.md",
+      "details": "publish apps through a Cloudflare Tunnel from Coolify: no open port, hidden server IP, Zero Trust login for admin tools"
+    },
+    {
+      "title": "docs/monitoring.md",
+      "path": "docs/monitoring.md",
+      "details": "server and Docker metrics: Telegraf → InfluxDB 2.8 → Grafana, through Cloudflare Access"
+    }
+  ]
+}

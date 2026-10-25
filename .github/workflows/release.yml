@@ -53,7 +53,7 @@ jobs:
           echo "VERSION=$new" >> "$GITHUB_ENV"
           echo "Release: $cur -> $new"
 
-      - name: Update server-prep.sh and CHANGELOG.md
+      - name: Update server-prep.sh, CHANGELOG.md and the site data
         run: |
           grep -q '^## \[Unreleased\]' CHANGELOG.md || { echo "::error::no '## [Unreleased]' section in CHANGELOG.md"; exit 1; }
           awk '/^## \[/ { if (found) exit; found = ($0 ~ /^## \[Unreleased\]/); next } found' CHANGELOG.md > notes.md
@@ -68,22 +68,27 @@ jobs:
             }
             { print }' CHANGELOG.md > CHANGELOG.new
           mv CHANGELOG.new CHANGELOG.md
+          scripts/gen-data.sh   # the setup console shows the version
           git diff
 
       - name: Lint
         run: |
           command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
-          bash -n server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh
-          shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh
+          bash -n server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh
+          shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh
+          scripts/gen-data.sh --check
 
       - name: Merge the version bump through a pull request
         run: |
           base=$(git rev-parse HEAD)
           branch="release/v$VERSION"
           tree=$(jq -n --arg base "$(git rev-parse 'HEAD^{tree}')" \
-                   --rawfile prep server-prep.sh --rawfile log CHANGELOG.md '{base_tree: $base, tree: [
-                     {path: "server-prep.sh", mode: "100755", type: "blob", content: $prep},
-                     {path: "CHANGELOG.md",   mode: "100644", type: "blob", content: $log}]}' \
+                   --rawfile prep server-prep.sh --rawfile log CHANGELOG.md \
+                   --rawfile dj site/data.json --rawfile djs site/data.js '{base_tree: $base, tree: [
+                     {path: "server-prep.sh",  mode: "100755", type: "blob", content: $prep},
+                     {path: "CHANGELOG.md",    mode: "100644", type: "blob", content: $log},
+                     {path: "site/data.json",  mode: "100644", type: "blob", content: $dj},
+                     {path: "site/data.js",    mode: "100644", type: "blob", content: $djs}]}' \
                  | gh api "repos/$REPO/git/trees" --input - --jq .sha)
           # no author/committer fields, so GitHub signs it as github-actions[bot]
           commit=$(jq -n --arg msg "release: v$VERSION" --arg tree "$tree" --arg parent "$base" \
@@ -93,7 +98,7 @@ jobs:
           # the step above linted exactly these files: report it as the required "lint" check
           gh api "repos/$REPO/check-runs" -f name=lint -f head_sha="$commit" -f status=completed \
             -f conclusion=success -f 'output[title]=Linted by the release workflow' \
-            -f 'output[summary]=bash -n and shellcheck -S warning passed' >/dev/null
+            -f 'output[summary]=bash -n, shellcheck -S warning and gen-data --check passed' >/dev/null
           gh pr create --base main --head "$branch" --title "release: v$VERSION" --label skip-changelog \
             --body "Version bump and changelog for v$VERSION, made and merged by the release workflow."
           for i in 1 2 3 4 5 6; do
