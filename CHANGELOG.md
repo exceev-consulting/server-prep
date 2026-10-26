@@ -5,6 +5,8 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- New logo: three rack units climbing to a green PASS LED, in the README and the setup console (with an SVG favicon).
+  Files in `.github/assets/` (full, one-colour and wordmark).
 - New [setup console](https://exceev-consulting.github.io/server-prep/) (`site/`): pick a VPS or a dedicated
   server, a panel (Coolify, Dokploy, Openship) and an access route, and see the open ports, who can log in, every
   step, the commands in order and a ready config file. Its data is generated from the scripts by

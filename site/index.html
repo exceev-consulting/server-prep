@@ -10,6 +10,7 @@
 <meta property="og:title" content="server-prep Setup Console">
 <meta property="og:description" content="Pick your server, panel and access route. See the ports, who can log in, the commands to run and the config file.">
 <meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
@@ -140,8 +141,8 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--rule); }
 .topbar .wrap { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); padding-block: 10px; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
-.brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--rack); display: grid; place-items: center; box-shadow: inset 0 0 0 1px var(--rack-edge); }
-.brand-mark i { width: 12px; height: 3px; border-radius: 2px; background: var(--led-ok); box-shadow: 0 5px 0 var(--led-only), 0 -5px 0 var(--tape); }
+.logo { display: block; flex: none; }
+.brand .logo { width: 28px; height: 28px; border-radius: 8px; box-shadow: 0 0 0 1px var(--rack-edge); }
 .brand b { font: 600 16px/1 var(--f-mono); letter-spacing: -.02em; white-space: nowrap; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--f-mono); padding: 5px 8px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); background: var(--sunken); white-space: nowrap; }
 .topnav { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
@@ -476,7 +477,9 @@ table.ref tbody th { font-weight: 600; width: 22%; }
 .links a b { font-weight: 600; color: var(--accent); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .links a span { font-size: 13.5px; color: var(--ink-2); }
 footer { border-top: 1px solid var(--rule); background: var(--panel); }
-footer .wrap { padding-block: var(--s5); display: flex; justify-content: space-between; gap: var(--s3) var(--s5); flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+footer .wrap { padding-block: var(--s5); display: flex; justify-content: space-between; align-items: center; gap: var(--s3) var(--s5); flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+.foot-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font: 600 15px/1 var(--f-mono); letter-spacing: -.02em; }
+.foot-brand .logo { width: 24px; height: 24px; }
 
 @media (max-width: 1080px) {
   .hero .hero-grid { grid-template-columns: minmax(0, 1fr); gap: var(--s6); }
@@ -521,6 +524,7 @@ footer .wrap { padding-block: var(--s5); display: flex; justify-content: space-b
 <a class="skip" href="#main">Skip to content</a>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0B1117"/><rect x="40" y="8" width="16" height="12" rx="3" fill="#F3D35B"/><rect x="24" y="24" width="32" height="12" rx="3" fill="#F3D35B"/><rect x="8" y="40" width="48" height="12" rx="3" fill="#F3D35B"/><rect x="44" y="11" width="6" height="6" rx="1" fill="#3BD17F"/><rect x="28" y="27" width="6" height="6" rx="1" fill="#0B1117"/><rect x="12" y="43" width="6" height="6" rx="1" fill="#0B1117"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6m0-6 6 6"/></symbol>
@@ -536,7 +540,7 @@ footer .wrap { padding-block: var(--s5); display: flex; justify-content: space-b
 <header class="topbar">
   <div class="wrap">
     <a class="brand" href="#main" aria-label="server-prep, top of the page">
-      <span class="brand-mark" aria-hidden="true"><i></i></span>
+      <svg class="logo" aria-hidden="true"><use href="#logo"/></svg>
       <b>server-prep</b>
       <span class="chip" id="ver">v1.1.1</span>
     </a>
@@ -770,6 +774,7 @@ footer .wrap { padding-block: var(--s5); display: flex; justify-content: space-b
 
 <footer>
   <div class="wrap">
+    <span class="foot-brand"><svg class="logo" aria-hidden="true"><use href="#logo"/></svg>server-prep</span>
     <span id="foot-gen"></span>
     <span>Fonts load from Google Fonts. Nothing else leaves this page; it only remembers your theme choice in this browser.</span>
     <span>MIT · Built and maintained by <a href="https://exceev.com">Exceev Consulting</a></span>

@@ -1,4 +1,4 @@
-# server-prep
+# <img src=".github/assets/logo.svg" width="44" height="44" align="top" alt=""> server-prep
 
 [![lint](https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml/badge.svg)](https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml)
 [![release](https://img.shields.io/github/v/release/exceev-consulting/server-prep)](https://github.com/exceev-consulting/server-prep/releases/latest)
