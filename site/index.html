@@ -69,6 +69,7 @@
   --code-ln: #7A8796;
   --code-key: #C9D3DE;
   --rack-hi: #F4F7FA;
+  --rack-mid: #B9C3CE;
   --ear: #1A232D;
   --jack: #05080B;
   --screw-hi: #8B97A4;
@@ -169,8 +170,8 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .hero .hero-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--s7); padding-block: var(--s8) var(--s6); align-items: center; }
 .hero .eyebrow { color: var(--rack-dim); }
 .hero .eyebrow::before { background: var(--rack-hi); }
-.hero h1 { font-size: clamp(42px, 6.6vw, 76px); color: var(--rack-hi); margin-top: var(--s4); }
-.hero h1 em { font-style: normal; color: var(--rack); background: var(--rack-hi); padding: 0 .14em; border-radius: 10px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.hero h1 { font-size: clamp(42px, 6.6vw, 76px); line-height: 1.06; color: var(--rack-mid); margin-top: var(--s4); }
+.hero h1 em { font-style: normal; color: #FFFFFF; text-decoration: underline; text-decoration-color: #FFFFFF; text-decoration-thickness: .07em; text-underline-offset: .14em; text-decoration-skip-ink: none; }
 .hero .lead { color: var(--rack-dim); margin-top: var(--s4); }
 .cta { display: flex; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s5); }
 .btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 10px; font: 600 15px/1 var(--f-body); text-decoration: none; cursor: pointer; border: 1px solid transparent; }
