@@ -1,11 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 64" role="img" aria-label="server-prep">
-  <rect width="64" height="64" rx="14" fill="#0B1117"/>
-  <rect x="40" y="8" width="16" height="12" rx="3" fill="#F3D35B"/>
-  <rect x="24" y="24" width="32" height="12" rx="3" fill="#F3D35B"/>
-  <rect x="8" y="40" width="48" height="12" rx="3" fill="#F3D35B"/>
-  <rect x="44" y="11" width="6" height="6" rx="1" fill="#3BD17F"/>
-  <rect x="28" y="27" width="6" height="6" rx="1" fill="#0B1117"/>
-  <rect x="12" y="43" width="6" height="6" rx="1" fill="#0B1117"/>
+  <path fill="#F3D35B" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 13A9 9 0 0 1 36.2 30L38.3 37.6A2.6 2.6 0 0 1 35.8 41H28.2A2.6 2.6 0 0 1 25.7 37.6L27.8 30A9 9 0 0 1 32 13Z M22.5 45H41.5A3 3 0 0 1 41.5 51H22.5A3 3 0 0 1 22.5 45Z"/>
   <style>text { font: 600 34px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; letter-spacing: -1.2px; fill: #0B1117; } @media (prefers-color-scheme: dark) { text { fill: #E6EDF3; } }</style>
   <text x="80" y="44">server-prep</text>
 </svg>
