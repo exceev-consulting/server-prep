@@ -1,0 +1,43 @@
+name: wiki
+
+# Publishes wiki/ to the GitHub Wiki, so wiki pages change through pull requests.
+# Edit the pages in wiki/ (Page-Name.md, _Sidebar.md, _Footer.md), never in the web UI:
+# the next sync overwrites web edits.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - wiki/**
+      - .github/workflows/wiki.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Publish wiki/ to the GitHub Wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git" "$RUNNER_TEMP/wiki"
+          rsync -a --delete --exclude .git wiki/ "$RUNNER_TEMP/wiki/"
+          cd "$RUNNER_TEMP/wiki"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "wiki already up to date"; exit 0; fi
+          git commit -q -m "wiki: sync from ${GITHUB_SHA::7}"
+          git push -q

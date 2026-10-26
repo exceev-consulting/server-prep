@@ -169,7 +169,7 @@ audit_tsv() {
     ' "$AUDIT"
 }
 
-# --- README tables: VPS vs dedicated, guides ------------------------------------
+# --- README tables: VPS vs dedicated, guides ("## Documentation") ------------------------------------
 vps_tsv() {
     awk '
         /^### VPS or dedicated server/ { on = 1; next }
@@ -183,7 +183,7 @@ vps_tsv() {
 }
 guides_tsv() {
     awk '
-        /^## Guides/ { on = 1; next }
+        /^## (Guides|Documentation)$/ { on = 1; next }
         on && /^## / { on = 0 }
         on && /^\| \[/ {
             split($0, f, " \\| "); g = f[1]; sub(/^\| \[/, "", g)

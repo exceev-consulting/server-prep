@@ -1,0 +1,1 @@
+[Setup console](https://exceev-consulting.github.io/server-prep/) · [Discussions](https://github.com/exceev-consulting/server-prep/discussions) · [Issues](https://github.com/exceev-consulting/server-prep/issues) · [Roadmap](https://github.com/orgs/exceev-consulting/projects/7) · MIT licence · Edit these pages through a pull request on `wiki/`

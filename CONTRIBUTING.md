@@ -60,6 +60,24 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 [CLAUDE.md](CLAUDE.md) has the full list of conventions and the bugs already fixed (don't bring them back).
 If you use [Claude Code](https://claude.com/claude-code), the `/add-step` skill walks through the checklist.
 
+## The setup console (site/)
+
+The [setup console](https://exceev-consulting.github.io/server-prep/) is `site/index.html`, a static page published
+with GitHub Pages by `.github/workflows/pages.yml`. Its data (`site/data.json`, `site/data.js`) is generated from the
+scripts, the README tables and `server-prep.conf.example` by `scripts/gen-data.sh`. CI fails when the data is out of date,
+so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result.
+To view it locally:
+
+```bash
+python3 -m http.server --bind 127.0.0.1 -d site 8000
+```
+
+## The wiki (wiki/)
+
+The [wiki](https://github.com/exceev-consulting/server-prep/wiki) is published from the `wiki/` folder by
+`.github/workflows/wiki.yml` on every push to `main`. Edit the pages there, through a pull request: changes made in the
+wiki's web editor are overwritten by the next sync. Wiki links use the page name: `[Start here](Start-here)`.
+
 ## Commits and pull requests
 
 - One topic per pull request. Small is easier to review.

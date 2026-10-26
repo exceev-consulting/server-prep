@@ -1,0 +1,39 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome: a new step, an audit check, another panel, clearer docs. See what is already planned on the [roadmap board](https://github.com/orgs/exceev-consulting/projects/7) first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve?
+      placeholder: When I set up a server on ..., I have to ... by hand.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What server-prep should do. Commands or config examples help.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - server-prep.sh
+        - server-preconfig.sh
+        - server-audit.sh
+        - Setup console (website)
+        - Docs or wiki
+        - Working with AI agents
+        - Not sure
+  - type: dropdown
+    id: pr
+    attributes:
+      label: Would you like to work on it?
+      options:
+        - "Yes"
+        - Maybe, with some help
+        - "No"

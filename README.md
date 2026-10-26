@@ -1,27 +1,82 @@
-# <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg"><img src=".github/assets/logo.svg" width="44" height="44" align="top" alt=""></picture> server-prep
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
+    <img src=".github/assets/logo.svg" width="72" height="72" alt="server-prep logo">
+  </picture>
+</p>
 
-[![lint](https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml/badge.svg)](https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml)
-[![release](https://img.shields.io/github/v/release/exceev-consulting/server-prep)](https://github.com/exceev-consulting/server-prep/releases/latest)
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<h1 align="center">server-prep</h1>
 
-Secure a new Debian/Ubuntu server, a **VPS** or a **dedicated** machine (rented or in your office),
-and get it ready for a self-hosted PaaS panel
-([Coolify](https://coolify.io), [Dokploy](https://dokploy.com), [Openship](https://openship.io/)... any panel
-that connects to servers over SSH with a key).
-A security check runs before and after, so you see exactly what changed.
+<p align="center">
+  <b>Harden a fresh Debian or Ubuntu server for your PaaS panel, and prove it with an audit.</b><br>
+  VPS or dedicated server · Coolify, Dokploy, Openship · plain Bash, nothing left running on the server
+</p>
 
-Built and maintained by [Exceev Consulting](https://exceev.com).
+<p align="center">
+  <a href="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml/badge.svg" alt="lint"></a>
+  <a href="https://github.com/exceev-consulting/server-prep/releases/latest"><img src="https://img.shields.io/github/v/release/exceev-consulting/server-prep" alt="latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0B1117.svg" alt="MIT license"></a>
+</p>
 
-**See what it does for your setup:** the [setup console](https://exceev-consulting.github.io/server-prep/)
-shows, for a VPS or a dedicated server and for your panel, the ports it opens or closes, who can log in,
-every step, the commands to run in order and a ready config file.
+<p align="center">
+  <a href="https://exceev-consulting.github.io/server-prep/"><b>Setup console</b></a> ·
+  <a href="https://github.com/exceev-consulting/server-prep/wiki">Docs</a> ·
+  <a href="https://github.com/exceev-consulting/server-prep/discussions">Discussions</a> ·
+  <a href="https://github.com/orgs/exceev-consulting/projects/7">Roadmap</a> ·
+  <a href="https://github.com/exceev-consulting/server-prep/releases/latest">Releases</a>
+</p>
 
-| Script | What it does |
+---
+
+A fresh server is scanned within minutes. server-prep closes the usual ways in (password SSH on port 22,
+no firewall, Docker bypassing the firewall) and prepares the server for a self-hosted deployment panel.
+An audit runs before and after, so you see exactly what changed.
+
+## Highlights
+
+- **Locked-down SSH.** Keys only, on a new port, with a 10-minute auto-rollback until a new login works.
+- **A firewall that also covers Docker.** UFW denies by default, and published container ports obey it too.
+- **Intrusion blocking and updates.** fail2ban, CrowdSec and automatic security updates.
+- **Ready for your panel.** Root logs in only with the panel's key, and only from its route: Tailscale, a Cloudflare Tunnel or its IP.
+- **Proof, not promises.** A read-only audit with 55 checks, a score, and an exit code for CI or cron.
+- **Safe to run.** A dry run, a backup of every file it changes, a rollback script and a Markdown report. Every step can run twice.
+
+## Quick start
+
+On the new server:
+
+```bash
+git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
+sudo ./server-preconfig.sh        # first boot: SSH, hostname, network, Tailscale
+sudo ./server-audit.sh            # where you stand, changes nothing
+sudo ./server-prep.sh --dry-run   # preview every change
+sudo ./server-prep.sh             # apply
+```
+
+Not sure what to answer? Build your setup in the **[setup console](https://exceev-consulting.github.io/server-prep/)**:
+it shows the ports, the logins, the commands in order and a ready config file for your server and panel.
+New to servers? Follow **[Start here](https://github.com/exceev-consulting/server-prep/wiki/Start-here)**.
+
+Prefer a download? Get the scripts from the [latest release](https://github.com/exceev-consulting/server-prep/releases/latest)
+and check them with `sha256sum -c SHA256SUMS`. To prepare many servers the same way, fill a copy of
+[server-prep.conf.example](server-prep.conf.example) and run `sudo ./server-prep.sh --config web-01.conf --yes`.
+
+## Documentation
+
+| Guide | What it covers |
 |---|---|
-| `server-preconfig.sh` | **Run first** on a fresh server: SSH + sudo, hostname, network saved for reboots, never sleep, Tailscale, then a reboot-readiness check. Guide: [server-preconfig.md](server-preconfig.md) |
-| `server-prep.sh` | Secures the server and prepares it for the panel, with questions or from a config file. Idempotent, backs up every file, writes a Markdown report. |
-| `server-audit.sh` | Read-only security & panel-readiness audit. Console, text, Markdown, JSON and TSV output. |
-| `server-prep.conf.example` | All settings, for non-interactive runs on client servers. |
+| [Start here](https://github.com/exceev-consulting/server-prep/wiki/Start-here) | From a rented server to "audit 0 FAIL, panel connected", step by step |
+| [Concepts](https://github.com/exceev-consulting/server-prep/wiki/Concepts) | SSH keys, the firewall, Docker and UFW, Tailscale, tunnels, the audit score |
+| [VPS or dedicated](https://github.com/exceev-consulting/server-prep/wiki/VPS-or-dedicated) | What changes between a cloud VPS, a dedicated server and a laptop |
+| [Panels](https://github.com/exceev-consulting/server-prep/wiki/Panels) | Connect the server to Coolify, Dokploy or Openship |
+| [First boot](server-preconfig.md) | `server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale |
+| [Cloudflare Tunnel](docs/cloudflare-tunnel.md) | Publish apps with no open port, from Coolify, with a Zero Trust login |
+| [Monitoring](docs/monitoring.md) | Server and Docker metrics: Telegraf, InfluxDB and Grafana |
+| [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
+| [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
+| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and what is planned for Codex |
+
+## Supported systems
 
 Tested target: Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, on cloud VPS and on dedicated / on-premise servers.
 
@@ -36,41 +91,10 @@ Both work the same way. Only a few details change:
 | **Power** | handled by the provider | BIOS *Restore on AC Power Loss* = **Power On** |
 | **Reaching it** | public IP: open 80/443 (`EXPOSE_WEB=yes`) or use a tunnel | often behind NAT: Tailscale for SSH and the panel, a Cloudflare Tunnel for the apps |
 
-## The 5W - what you are doing when you run it
-
-| | |
-|---|---|
-| **What** | Secures the server (SSH keys only on a new port, firewall, fail2ban/CrowdSec, automatic security updates, safer kernel settings, audit logs, rootkit/integrity scans, optional alerts) and prepares it for your panel (root access reserved to the panel's key and access route, Docker ready). Produces a report of every change. |
-| **Why** | A fresh server is scanned within minutes. Password SSH on port 22, no firewall and Docker bypassing the firewall are the usual ways servers get compromised. A deployment panel also needs a predictable, reachable server. |
-| **Who** | Run by an administrator (sudo) of the server. Afterwards: the admin logs in with their own account + SSH key; the panel logs in as root with its key, only from its access route (tunnel / tailnet / its IP); nobody else can log in. |
-| **When** | Right after installing a new server, before deploying apps. Safe to re-run anytime (only missing changes are applied) - after an OS upgrade, or to change a setting. |
-| **Where** | On the server itself (not remotely). Config in `/etc`, backups in `/var/lib/server-prep/backups`, log in `/var/log/server-prep`, report in `/root/server-prep-reports` (+ copy in your home). |
-| **How** | Answer the questions (each is explained, Enter = default) → review the plan and confirm (nothing changes before) → steps run → audit runs again to show before/after. SSH changes auto-rollback after 10 minutes unless you confirm a new login works. `--dry-run` previews only. |
-
-## Quick start
-
-```bash
-git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
-
-sudo ./server-preconfig.sh             # 0. fresh server: SSH, hostname, network, Tailscale
-sudo ./server-audit.sh                 # 1. see where you stand (changes nothing)
-sudo ./server-prep.sh --dry-run        # 2. preview every change
-sudo ./server-prep.sh                  # 3. apply (interactive questions)
-```
-
-Or download the scripts (and the Telegraf template) from the [latest release](https://github.com/exceev-consulting/server-prep/releases/latest)
-and check them with `sha256sum -c SHA256SUMS`.
-
-For a client server, reuse a config file:
-
-```bash
-cp server-prep.conf.example client-a.conf   # fill it in (never commit it)
-sudo ./server-prep.sh --config client-a.conf --yes
-```
-
-Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-steps` prints the names).
-
 ## What server-prep does
+
+<details>
+<summary><b>All 20 steps</b>, in run order. Run some with <code>--only ssh,firewall</code> or skip some with <code>--skip aide,endlessh</code>.</summary>
 
 | Step | Details |
 |---|---|
@@ -94,112 +118,54 @@ Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-ste
 | `cloudflared` | install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) |
 | `suid` | list SUID binaries outside standard paths (review only) |
 
-Outputs (root only):
+Where things go (root only): the report in `/root/server-prep-reports/` (with a copy in your home), the log in
+`/var/log/server-prep/`, backups and `rollback.sh` in `/var/lib/server-prep/backups/<date>/`, and your answers
+(no secrets) in `/etc/server-prep/server-prep.conf`.
 
-- report: `/root/server-prep-reports/server-prep-report-<host>-<date>.md` (copy in the invoking user's home)
-- log: `/var/log/server-prep/run-<date>.log`
-- backups + `rollback.sh`: `/var/lib/server-prep/backups/<date>/`
-- answers (reusable, no secrets): `/etc/server-prep/server-prep.conf`
+</details>
 
-## Connecting the server to your panel
+<details>
+<summary><b>The audit</b>: what <code>server-audit.sh</code> checks and how it differs from vps-audit.</summary>
 
-Works with any panel that manages remote servers over SSH with a key, for example
-[Coolify](https://coolify.io), [Dokploy](https://dokploy.com) and [Openship](https://openship.io/).
-Set `PANEL` to its name (`coolify`, `dokploy`, `openship`...): it is used in the questions,
-notes and report.
-
-The panel connects over SSH as `root`. server-prep allows that **only** with the panel's key and
-**only** from the sources you chose:
-
-| Access | Root allowed from | In the panel |
-|---|---|---|
-| `cloudflared` | 127.0.0.1 / ::1 (the tunnel) | add server with the tunnel SSH hostname, and enable the panel's Cloudflare Tunnel option if it has one (Coolify does) |
-| `tailscale` | 100.64.0.0/10 | add server with its Tailscale IP (the panel server must be in the tailnet) |
-| `public` | `PANEL_IP` | add server with its public IP |
-
-User `root`, port `822` (or your `SSH_PORT`), private key = the one whose public key you gave.
-
-With the Cloudflare Tunnel, add these public hostnames in Zero Trust:
-`ssh-<host>.<domain>` → `ssh://localhost:822` and your app domains → `http://localhost:80` (the panel's reverse proxy).
-
-## Guides
-
-| Guide | What you set up |
-|---|---|
-| [server-preconfig.md](server-preconfig.md) | first setup of a new server: SSH, hostname, network saved for reboots, Tailscale |
-| [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) | publish apps through a Cloudflare Tunnel from Coolify: no open port, hidden server IP, Zero Trust login for admin tools |
-| [docs/monitoring.md](docs/monitoring.md) | server and Docker metrics: Telegraf → InfluxDB 2.8 → Grafana, through Cloudflare Access |
-
-## Extras
-
-| File | Use |
-|---|---|
-| `extras/telegraf/telegraf.conf.example` | complete Telegraf config: system + Docker metrics to InfluxDB v2, secrets read from `/etc/default/telegraf`, optional Cloudflare Access headers ([guide](docs/monitoring.md)) |
-| `extras/github-runners/limit-runners-memory.sh` | caps self-hosted GitHub runners to 40% of RAM (systemd slice): `sudo ./limit-runners-memory.sh [30%] [--remove]` |
-
-## Setup console (site/)
-
-`site/index.html` is a static page, published with GitHub Pages by `.github/workflows/pages.yml`.
-Its data (`site/data.json`, `site/data.js`) is generated from the scripts, this README and
-`server-prep.conf.example` by `scripts/gen-data.sh`. CI fails when the data is out of date, so after changing
-a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result.
-Open it locally with `python3 -m http.server --bind 127.0.0.1 -d site 8000` and go to http://localhost:8000.
-
-## Working with Claude Code
-
-`CLAUDE.md` holds the project context and known pitfalls. Skills in `.claude/skills/`:
-`/new-server` (guided setup), `/audit-review` (analyse an audit), `/monitoring` (Telegraf → InfluxDB → Grafana),
-`/add-step` (checklist for changing the scripts).
-
-## About the audit
-
-`server-audit.sh` is a rework of [vps-audit](https://nuverlabs.com/vps-audit) v0.2.0. Main differences:
-
-- reads sshd's **effective** config (`sshd -T`), so drop-ins and `Match` blocks are understood
-- port exposure considers the bind address **and** the firewall (localhost-only ports are not "public")
-- detects Docker bypassing UFW
-- separates security updates from regular ones
-- adds CrowdSec, fail2ban jail/port alignment, sysctl, AppArmor, auditd, rkhunter, AIDE, UID 0,
-  empty passwords, world-writable /etc files, Docker hygiene and a panel-readiness section
+`server-audit.sh` is read-only. It writes text, Markdown, JSON and TSV, and exits with `1` when any check FAILs.
 
 ```bash
 sudo ./server-audit.sh --md audit.md --json audit.json
 ```
 
-Exit code is `1` when at least one check FAILs (handy in CI/cron).
+It is a rework of [vps-audit](https://github.com/nuver-labs/vps-audit) v0.2.0. It reads sshd's effective config
+(`sshd -T`), counts a port as exposed only when the bind address and the firewall both allow it, detects Docker
+bypassing UFW, separates security updates from regular ones, and adds CrowdSec, fail2ban, sysctl, AppArmor,
+auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section.
 
-## Safety notes
+</details>
 
-- Have console access the first time you run it: the VPS provider's web console, IPMI / KVM or rescue mode on a dedicated server, or physical access.
-- Add your SSH key **before** the SSH step: password login gets disabled.
-- `--dry-run` changes nothing; every step can be re-run safely.
-- Docker restarts only after confirmation (running containers restart with it).
+## Safety
+
+- Make sure you can reach a console before you start: the provider's web console, IPMI/KVM, rescue mode or a screen.
+- Add your SSH key before the SSH step: password login is turned off.
+- `--dry-run` changes nothing, and every step can be re-run safely.
+- Found a security problem? Report it privately: see [SECURITY.md](SECURITY.md).
+
+## Community
+
+- **Questions:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a). **Ideas:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas). **Your setup or a compatibility report:** [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- **Bugs:** [Issues](https://github.com/exceev-consulting/server-prep/issues). **What is next:** the [roadmap board](https://github.com/orgs/exceev-consulting/projects/7).
+- Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Contributing
 
-Help is welcome: tests on other providers and hardware, bug reports, support for more panels, clearer docs.
-
-- Read [CONTRIBUTING.md](CONTRIBUTING.md): how to test and the rules for the scripts.
-- Questions in [Discussions](https://github.com/exceev-consulting/server-prep/discussions), bugs and ideas in [Issues](https://github.com/exceev-consulting/server-prep/issues).
-- Security problems: report them privately, see [SECURITY.md](SECURITY.md).
-- Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
-
-## About Exceev Consulting
-
-server-prep is built and maintained by [Exceev Consulting](https://exceev.com), a consulting and tech company
-(France, Morocco): AI solutions, product development, platform engineering and enterprise strategy.
-We use server-prep to set up our clients' servers.
-
-Need help securing your servers or running your own deployment platform? [Contact us](https://exceev.com/contact).
+Contributions are welcome: tests on other providers and hardware, fixes, more panels and clearer docs.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), then pick an item from the board. The *Agent-ready* view lists tasks
+that Claude Code or Codex can take on. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Credits
 
-- `server-audit.sh` is derived from [vps-audit](https://github.com/nuver-labs/vps-audit) (MIT).
-- The UFW/Docker fix uses [ufw-docker](https://github.com/chaifeng/ufw-docker) (GPL-3.0). It is downloaded at runtime and not bundled.
-- Some ideas come from [vps-secure](https://github.com/rockballslab/vps-secure).
-
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+`server-audit.sh` is derived from [vps-audit](https://github.com/nuver-labs/vps-audit) (MIT). The UFW/Docker fix
+uses [ufw-docker](https://github.com/chaifeng/ufw-docker) (GPL-3.0), downloaded at runtime and not bundled.
+Some ideas come from [vps-secure](https://github.com/rockballslab/vps-secure). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 [Exceev Consulting](https://exceev.com)
+[MIT](LICENSE) © 2026 [Exceev Consulting](https://exceev.com). Built and maintained by Exceev Consulting, who use it
+to set up their clients' servers. Need help with yours? [Get in touch](https://exceev.com/contact).

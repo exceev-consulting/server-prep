@@ -1,0 +1,41 @@
+title: "[Setup] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share a server you prepared, or a **compatibility report**: what worked and what did not on your OS, provider or hardware.
+        Reports feed the [Providers and hardware](https://github.com/exceev-consulting/server-prep/wiki/Providers-and-hardware) table. **Remove secrets and real IPs or hostnames.**
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: Debian 13
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Provider or hardware
+      placeholder: A cloud VPS (2 vCPU, 4 GB), a mini PC in the office, a rented dedicated server...
+    validations:
+      required: true
+  - type: input
+    id: panel
+    attributes:
+      label: Panel and access route
+      placeholder: Coolify over Tailscale
+  - type: input
+    id: version
+    attributes:
+      label: server-prep version
+      placeholder: v1.1.1 (first line of ./server-prep.sh --help)
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: Audit score before and after, and anything you had to do by hand.
+      placeholder: |
+        Before: 58/100, 6 FAIL. After: 0 FAIL, 42 PASS.
+        Had to install git first.
+    validations:
+      required: true

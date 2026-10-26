@@ -1242,19 +1242,54 @@
   ],
   "guides": [
     {
-      "title": "server-preconfig.md",
+      "title": "Start here",
+      "path": "https://github.com/exceev-consulting/server-prep/wiki/Start-here",
+      "details": "From a rented server to \"audit 0 FAIL, panel connected\", step by step"
+    },
+    {
+      "title": "Concepts",
+      "path": "https://github.com/exceev-consulting/server-prep/wiki/Concepts",
+      "details": "SSH keys, the firewall, Docker and UFW, Tailscale, tunnels, the audit score"
+    },
+    {
+      "title": "VPS or dedicated",
+      "path": "https://github.com/exceev-consulting/server-prep/wiki/VPS-or-dedicated",
+      "details": "What changes between a cloud VPS, a dedicated server and a laptop"
+    },
+    {
+      "title": "Panels",
+      "path": "https://github.com/exceev-consulting/server-prep/wiki/Panels",
+      "details": "Connect the server to Coolify, Dokploy or Openship"
+    },
+    {
+      "title": "First boot",
       "path": "server-preconfig.md",
-      "details": "first setup of a new server: SSH, hostname, network saved for reboots, Tailscale"
+      "details": "`server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale"
     },
     {
-      "title": "docs/cloudflare-tunnel.md",
+      "title": "Cloudflare Tunnel",
       "path": "docs/cloudflare-tunnel.md",
-      "details": "publish apps through a Cloudflare Tunnel from Coolify: no open port, hidden server IP, Zero Trust login for admin tools"
+      "details": "Publish apps with no open port, from Coolify, with a Zero Trust login"
     },
     {
-      "title": "docs/monitoring.md",
+      "title": "Monitoring",
       "path": "docs/monitoring.md",
-      "details": "server and Docker metrics: Telegraf → InfluxDB 2.8 → Grafana, through Cloudflare Access"
+      "details": "Server and Docker metrics: Telegraf, InfluxDB and Grafana"
+    },
+    {
+      "title": "Troubleshooting",
+      "path": "https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting",
+      "details": "Known problems, their cause and the fix"
+    },
+    {
+      "title": "FAQ",
+      "path": "https://github.com/exceev-consulting/server-prep/wiki/FAQ",
+      "details": "Lockouts, re-runs, undo, logs, ports and panels"
+    },
+    {
+      "title": "Working with AI agents",
+      "path": "https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents",
+      "details": "Guided setups with Claude Code skills, and what is planned for Codex"
     }
   ]
 }

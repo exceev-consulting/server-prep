@@ -1,0 +1,56 @@
+title: "[Help] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for asking. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames if you prefer (use `203.0.113.10` and `web-01`).
+        Locked out or found a security problem? Use [Report a vulnerability](https://github.com/exceev-consulting/server-prep/security/advisories/new) instead.
+        Many answers are already in the [wiki](https://github.com/exceev-consulting/server-prep/wiki), for example [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) and the [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ).
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and what happens instead?
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: Ubuntu 24.04, Debian 13...
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server type
+      options:
+        - VPS
+        - Dedicated / bare-metal (rented)
+        - Own server (office, home)
+        - Laptop or desktop used as a server
+        - VM for testing
+  - type: input
+    id: panel
+    attributes:
+      label: Panel and access route
+      placeholder: Coolify over Tailscale, Dokploy over public IP, none...
+  - type: textarea
+    id: command
+    attributes:
+      label: Command you ran and its output
+      description: The end of `/var/log/server-prep/run-<date>.log` helps a lot.
+      render: shell
+  - type: textarea
+    id: audit
+    attributes:
+      label: Audit summary (optional)
+      description: The score line and the WARN/FAIL lines of `sudo ./server-audit.sh`.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before posting
+      options:
+        - label: I removed tokens, keys and passwords
+          required: true
