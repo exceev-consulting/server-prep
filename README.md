@@ -38,7 +38,7 @@ An audit runs before and after, so you see exactly what changed.
 - **A firewall that also covers Docker.** UFW denies by default, and published container ports obey it too.
 - **Intrusion blocking and updates.** fail2ban, CrowdSec and automatic security updates.
 - **Ready for your panel.** Root logs in only with the panel's key, and only from its route: Tailscale, a Cloudflare Tunnel or its IP.
-- **Proof, not promises.** A read-only audit with 55 checks, a score, and an exit code for CI or cron.
+- **Proof, not promises.** A read-only audit with 56 checks, a score, and an exit code for CI or cron.
 - **Safe to run.** A dry run, a backup of every file it changes, a rollback script and a Markdown report. Every step can run twice.
 
 ## Quick start

@@ -693,7 +693,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 55,
+    "checks": 56,
     "sections": [
       {
         "key": "system",
@@ -1052,6 +1052,14 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "PASS",
               "WARN"
+            ]
+          },
+          {
+            "id": "mon.prep_secrets",
+            "title": "server-prep secrets",
+            "statuses": [
+              "WARN",
+              "PASS"
             ]
           },
           {
