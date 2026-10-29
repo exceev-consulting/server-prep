@@ -873,9 +873,12 @@ UFW_DOCKER_VERSION="251123"
 UFW_DOCKER_SHA256="c3e5f0bf6061a3a2e7d7ac06abc80665707d2f4c91e90d76f22e4168863fb472"
 
 crowdsec_in_docker_user() {   # false when the CrowdSec bouncer should filter DOCKER-USER but its rule is missing
+    local bc=/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
     systemctl is-active -q crowdsec-firewall-bouncer 2>/dev/null || return 0
-    grep -Eqs '^[[:space:]]*-[[:space:]]*DOCKER-USER' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml || return 0
-    iptables -S DOCKER-USER 2>/dev/null | grep -q CROWDSEC
+    grep -Eqs '^mode:[[:space:]]*iptables' "$bc" || return 0
+    grep -Eqs '^[[:space:]]*-[[:space:]]*DOCKER-USER' "$bc" || return 0
+    # CROWDSEC_CHAIN in recent bouncers, a match on the crowdsec-blacklists set in older ones
+    iptables -S DOCKER-USER 2>/dev/null | grep -qi crowdsec
 }
 
 ufw_reload() {   # reload UFW from its files, including after.rules and the ufw-docker rules
@@ -1127,8 +1130,10 @@ EOF
     fi
     if [[ $STEP_CHANGED -eq 0 ]]; then note "SSH already secured"; return 0; fi
 
+    # A timer left by an earlier run would restore that run's old config over this one.
+    run systemctl stop 'server-prep-ssh-rollback-*.timer'
     run systemd-run --on-active=600 --unit="server-prep-ssh-rollback-$TS" /bin/bash "$rb"
-    restart_ssh || { bash "$rb"; note "ssh restart failed, rolled back"; return 1; }
+    restart_ssh || { bash "$rb"; run systemctl stop "server-prep-ssh-rollback-$TS.timer"; note "ssh restart failed, rolled back"; return 1; }
     sleep 2
     if ! ss -ltn "sport = :$SSH_PORT" | grep -q LISTEN; then
         err "sshd is not listening on ${SSH_PORT} - rolling back"
@@ -1789,9 +1794,14 @@ write_rollback() {
         for f in "${CHANGED_FILES[@]}"; do echo "cp -a '$BACKUP_DIR$f' '$f'"; done
         for f in "${NEW_FILES[@]}"; do echo "rm -f '$f'"; done
         echo "systemctl daemon-reload"
+        # SSH goes back to its old port, often 22, where this run put the endlessh tarpit
+        if [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]]; then
+            echo "systemctl disable --now endlessh 2>/dev/null"
+        fi
         echo "sysctl --system >/dev/null"
         echo "if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then systemctl stop ssh.service; systemctl reset-failed ssh.socket; systemctl restart ssh.socket; systemctl start ssh.service; else systemctl restart ssh 2>/dev/null || systemctl restart sshd; fi"
         echo "ufw reload 2>/dev/null"
+        echo "systemctl try-restart crowdsec-firewall-bouncer 2>/dev/null   # a UFW reload drops its DOCKER-USER rule"
         echo "# Packages installed and services disabled are NOT reverted automatically."
     } > "$rb"
     chmod 700 "$rb"

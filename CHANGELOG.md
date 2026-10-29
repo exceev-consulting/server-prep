@@ -24,6 +24,9 @@ Highlights of each release. The full list of merged pull requests is in each
   rollback scripts do the same.
 - `server-preconfig.sh` enables `ssh.socket` instead of `ssh.service` where sshd is socket-activated, and `--check`
   accepts it. Enabling both made the later port change fail.
+- Rollbacks: when the SSH restart failed, the 10-minute rollback timer stayed armed and could undo a re-run made in
+  the meantime; it is now stopped, like any timer left by an earlier run. `rollback.sh` stops the Endlessh tarpit before
+  SSH goes back to port 22, and restarts the CrowdSec bouncer after its UFW reload.
 - Ubuntu 24.04: the Endlessh tarpit never ran. Its packaged unit hides `/run`, which systemd 255 can't set up, so it
   exited at once (226/NAMESPACE) while the step reported CHANGED, and a re-run FAILED. server-prep's override now hides
   only `/var` and makes the rest read-only, and the step checks that port 22 really listens.
