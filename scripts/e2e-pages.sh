@@ -6,7 +6,7 @@
 #   REPO=owner/name GH_TOKEN=... scripts/e2e-pages.sh --out DIR
 #
 #   DIR/main/     the latest finished run on main (push, schedule or workflow_dispatch)
-#   DIR/pr-<n>/   the latest finished run of each open pull request
+#   DIR/pr-<n>/   the latest finished run of each open pull request from this repository or a trusted author
 #   DIR/index.*   the list of these reports
 #
 # Prints "published: main pr-12 ..." and writes prs=<numbers> to $GITHUB_OUTPUT when it is set.
@@ -15,6 +15,8 @@
 # The VM artifacts are untrusted data: a fork pull request controls their content. This script keeps only
 # top-level files with safe names, within size limits, and hands them to tests/e2e/build-report.sh, which
 # validates and escapes them. The PR number and title, the commit and the run link come from the GitHub API.
+# A fork pull request whose author is not an owner, member or collaborator gets no report: its files would be
+# hosted on the project site. Its results stay in the e2e run.
 set -euo pipefail
 export LC_ALL=C
 
@@ -339,8 +341,8 @@ else
     fi
 
     pulls="$(api "repos/$REPO/pulls?state=open&per_page=100" --paginate \
-                 --jq '.[] | {number, title, created_at, branch: .head.ref, head_repo: (.head.repo.full_name // "")}
-                       | tojson')" \
+                 --jq '.[] | {number, title, created_at, branch: .head.ref, head_repo: (.head.repo.full_name // ""),
+                              author_association} | tojson')" \
         || die "can't list the open pull requests"
     # fd 3, so that nothing in the loop can read the list from standard input
     while IFS= read -r -u 3 pull; do
@@ -348,11 +350,15 @@ else
         number="$(jq -r '.number' <<< "$pull")"
         [[ "$number" =~ ^[0-9]+$ ]] || continue
         head_repo="$(jq -r '.head_repo' <<< "$pull")"
+        association="$(jq -r '.author_association // ""' <<< "$pull")"
         branch="$(jq -r '.branch' <<< "$pull")"
         title="$(jq -r '.title' <<< "$pull")"
         since="$(jq -r '.created_at // ""' <<< "$pull")"
         [[ "$since" =~ $TIME_RE ]] || since=""
         if [[ -z "$head_repo" ]]; then log "pr-$number: the head repository was deleted"; continue; fi
+        if [[ "$head_repo" != "$REPO" && ! "$association" =~ ^(OWNER|MEMBER|COLLABORATOR)$ ]]; then
+            log "pr-$number: fork pull request from an outside contributor: no report"; continue
+        fi
         if run="$(latest_run "$branch" "$head_repo" pull_request "$since")"; then
             if [[ -n "$run" ]]; then try_publish "$run" "pr-$number" pr "$number" "$title"
             else log "pr-$number: no finished run"; fi

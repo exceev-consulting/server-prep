@@ -21,9 +21,9 @@ Highlights of each release. The full list of merged pull requests is in each
 - End-to-end tests ([docs/e2e-tests.md](docs/e2e-tests.md)): every supported system boots in a KVM virtual machine
   from its official cloud image and goes through `server-preconfig.sh`, a dry run, the interactive questions, a real
   run, SSH and Docker-vs-firewall checks from outside, a second run that must change nothing, and a reboot, with the
-  audit at each stage. Pull requests and `main` get an HTML report on GitHub Pages
-  ([latest](https://exceev-consulting.github.io/server-prep/e2e/main/)). The setup console links to them (**Test reports**),
-  and `tests/e2e/preview.sh` shows the same pages from a local run.
+  audit at each stage. `main` and pull requests (from forks: only those of collaborators) get an HTML report on
+  GitHub Pages ([latest](https://exceev-consulting.github.io/server-prep/e2e/main/)). The setup console links to
+  them (**Test reports**), and `tests/e2e/preview.sh` shows the same pages from a local run.
 - Security: on Debian, where UFW is not installed by default, container ports published with `-p` bypassed UFW until
   the first reboot. The ufw-docker rules were written, but `systemctl restart ufw` did not load them. server-prep now
   loads them with `ufw reload`, and the firewall step FAILs when they are still not loaded instead of reporting

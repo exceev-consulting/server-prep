@@ -16,7 +16,9 @@ Why VMs and not containers: [docs/decisions/0001-e2e-test-platform.md](decisions
 | All reports | <https://exceev-consulting.github.io/server-prep/e2e/> |
 
 - Every pull request that changes a script or the tests runs them. A comment on the pull request gives the link
-  and the result.
+  and the result. A pull request from a fork gets a report only when its author is an owner, member or
+  collaborator of the repository: the files its VMs write would otherwise be hosted on the project site. The
+  results of the others stay in the checks of the pull request.
 - When the pull request is merged or closed, its report is deleted. A merge starts a new run on `main`, and that
   run replaces the `main` report.
 - The tests also run every Monday, which catches changes in the distributions themselves.

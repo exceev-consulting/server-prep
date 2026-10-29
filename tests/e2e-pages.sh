@@ -191,6 +191,7 @@ mkdir -p "$a"
     run 600 pull_request broken-setup "$REPO" failure 2026-10-23T08:00:00Z
     run 610 pull_request broken-setup "$REPO" cancelled 2026-10-23T09:00:00Z
     run 700 pull_request old-pr "$REPO" success 2026-10-02T09:00:00Z
+    run 800 pull_request fork-feature fork-c/server-prep success 2026-10-24T09:00:00Z
 } | jq -s . > "$a/runs.json"
 jq -n --arg repo "$REPO" '[
     {number: 25, title: "head repo deleted", created_at: "2026-10-26T09:00:00Z", head: {ref: "gone", repo: null}},
@@ -198,7 +199,9 @@ jq -n --arg repo "$REPO" '[
      head: {ref: "old-pr", repo: {full_name: $repo}}},
     {number: 20, title: "setup breaks", created_at: "2026-10-23T07:00:00Z",
      head: {ref: "broken-setup", repo: {full_name: $repo}}},
-    {number: 15, title: "docs: a typo", created_at: "2026-10-25T09:00:00Z",
+    {number: 17, title: "a fork from an outside contributor", created_at: "2026-10-24T08:00:00Z",
+     author_association: "CONTRIBUTOR", head: {ref: "fork-feature", repo: {full_name: "fork-c/server-prep"}}},
+    {number: 15, title: "docs: a typo", created_at: "2026-10-25T09:00:00Z", author_association: "COLLABORATOR",
      head: {ref: "patch-1", repo: {full_name: "fork-b/server-prep"}}},
     {number: 12, title: "e2e: add Ubuntu 26.10 </script><img src=x onerror=alert(1)>",
      created_at: "2026-10-21T11:00:00Z", head: {ref: "feat-a", repo: {full_name: $repo}}}]' > "$a/pulls.json"
@@ -270,6 +273,10 @@ arts "$a" 700 <<'EOF'
 7004 e2e-vm-ubuntu-24.04 500 true
 7005 e2e-vm-ubuntu-26.04 500 true
 EOF
+# PR 17 (run 800): a fork from an outside contributor, with results that would make a report
+jobs "$a" 800 setup=success debian-13=success report=success
+arts "$a" 800 <<< "8001 e2e-vm-debian-13 500 false"
+results_zip "$a/zip-8001.zip" debian-13
 
 out="$tmp/site-a"
 pages "$a" "$out"
@@ -347,6 +354,9 @@ expect_jq "pr-20: a run whose setup failed is a failed report with every system"
 expect_jq "pr-20: the reason says the VM jobs never ran" "$s" '[.oses[].reason] | unique | join(" | ")' \
     "the run ended before the VM jobs"
 expect "pr-15: a run from before the PR was opened is not its run" logged "pr-15: no finished run"
+expect "pr-17: a fork from an outside contributor gets no report" \
+    logged "pr-17: fork pull request from an outside contributor: no report"
+expect "pr-17: its runs are never read" no_match -E 'runs/800/|artifacts/8001/' "$a/calls.log"
 expect "pr-15: that older run is never read" no_match -E 'runs/(450|500)/' "$a/calls.log"
 expect "pr-22: expired artifacts give no report" logged "pr-22: the artifacts of run 700 expired: no report"
 expect "pr-25: a deleted head repository gives no report" logged "pr-25: the head repository was deleted"
