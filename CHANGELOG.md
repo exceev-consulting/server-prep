@@ -5,6 +5,7 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
 - **Security fix:** the audit's "Docker vs firewall" check passed when the DOCKER-USER chain only had CrowdSec or
   manual DROP rules, even though published container ports still bypassed UFW. It now passes only when the ufw-docker
   rules are loaded, with both the `ufw-user-forward` and `ufw-docker-logging-deny` jumps (or Docker's iptables

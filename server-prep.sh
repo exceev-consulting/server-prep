@@ -1640,7 +1640,7 @@ reboot=$([ -f /var/run/reboot-required ] && echo "YES" || echo "no")
 f2b=$(fail2ban-client status sshd 2>/dev/null | awk -F: '/Total banned/{gsub(/ /,"",$2);print $2}')
 cs=$(cscli decisions list -o raw 2>/dev/null | tail -n +2 | wc -l)
 failed=$(systemctl --failed --no-legend | awk '{print $2}' | tr '\n' ' ')
-rk=$(grep -c 'Warning:' /var/log/rkhunter.log 2>/dev/null || echo "-")
+rk=$([ -r /var/log/rkhunter.log ] && grep -c 'Warning:' /var/log/rkhunter.log || true)
 aide=$(journalctl -u dailyaidecheck --since "24 hours ago" 2>/dev/null | grep -oE '(added|removed|changed) entries: [0-9]+' | tr '\n' ' ')
 logins=$(journalctl --since "24 hours ago" SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sshd-session 2>/dev/null | grep -c 'Accepted publickey')
 ctr=$(docker ps -q 2>/dev/null | wc -l)
@@ -1650,7 +1650,7 @@ disk: ${disk} | mem: ${mem}
 updates pending: ${upd} | reboot needed: ${reboot}
 SSH logins (24h): ${logins}
 fail2ban total bans: ${f2b:--} | CrowdSec decisions: ${cs}
-rkhunter warnings: ${rk} | AIDE: ${aide:-no report}
+rkhunter warnings: ${rk:--} | AIDE: ${aide:-no report}
 containers running: ${ctr}
 failed units: ${failed:-none}"
 EOF
