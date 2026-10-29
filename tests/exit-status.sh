@@ -120,6 +120,7 @@ ufw() { echo "Status: active"; }                   # only "ufw status" is called
 run() { UFW_STATE="$UFW_STATE_AFTER"; }            # the ufw commands leave the rules as UFW_STATE_AFTER
 ufw_state() { printf '%s\n' "$UFW_STATE"; }
 ufw_docker_rules() { return "$UFW_DOCKER_RC"; }    # the real one runs ufw-docker, iptables and systemctl
+iptables() { printf '%s\n' "${DOCKER_USER_RULES:-}"; }   # the live DOCKER-USER chain
 
 expect_firewall() {   # expect_firewall LABEL HAS_DOCKER STATE_AFTER UFW_DOCKER_RC WANT(ok|fail) WANT_CHANGED [WANT_NOTE]
     local label="$1" want="$5" want_changed="$6" want_note="${7:-}" status=0 got=ok
@@ -138,6 +139,9 @@ expect_firewall() {   # expect_firewall LABEL HAS_DOCKER STATE_AFTER UFW_DOCKER_
 expect_firewall 're-run with nothing to change is OK (already)' 1 old 0 ok 0
 expect_firewall 'with a new rule is CHANGED' 1 new 0 ok 1
 expect_firewall 'fails when the ufw-docker rules are not loaded' 1 old 1 fail 0 'Docker ports still bypass UFW'
+DOCKER_USER_RULES='-A DOCKER-USER -j ufw-user-forward'
+expect_firewall 'fails but says when the rules of an earlier run are still loaded' 1 old 1 fail 0 'rules of an earlier run are still loaded'
+DOCKER_USER_RULES=""
 expect_firewall 'without Docker does not call ufw-docker' 0 old 1 ok 0
 if [[ ${#MANUAL_TODO[@]} -eq 0 ]]; then
     printf 'not ok: firewall without Docker gave no to-do\n'

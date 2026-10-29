@@ -969,7 +969,12 @@ step_firewall() {
     # Stop Docker from bypassing UFW. ufw-docker needs UFW active, so this runs after enable
     if [[ $HAS_DOCKER -eq 1 ]]; then
         if ! ufw_docker_rules; then
-            note "ufw-docker rules not loaded: Docker ports still bypass UFW (see the log)"
+            # a failed download or update can leave the rules of an earlier run in place
+            if iptables -S DOCKER-USER 2>/dev/null | grep -q -- '-j ufw-user-forward'; then
+                note "ufw-docker could not be updated (see the log): the rules of an earlier run are still loaded"
+            else
+                note "ufw-docker rules not loaded: Docker ports still bypass UFW (see the log)"
+            fi
             return 1
         fi
     else
