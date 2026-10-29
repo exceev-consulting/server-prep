@@ -24,6 +24,12 @@ Highlights of each release. The full list of merged pull requests is in each
   rollback scripts do the same.
 - `server-preconfig.sh` enables `ssh.socket` instead of `ssh.service` where sshd is socket-activated, and `--check`
   accepts it. Enabling both made the later port change fail.
+- Ubuntu 24.04: the Endlessh tarpit never ran. Its packaged unit hides `/run`, which systemd 255 can't set up, so it
+  exited at once (226/NAMESPACE) while the step reported CHANGED, and a re-run FAILED. server-prep's override now hides
+  only `/var` and makes the rest read-only, and the step checks that port 22 really listens.
+- Ubuntu 22.04: apport kept running after the services step "disabled" it, so `fs.suid_dumpable` could go back to 2
+  and every re-run reported the step as CHANGED. For a unit made from an init script, `systemctl disable --now` does not
+  stop it: server-prep now stops it in a second call.
 - The default admin user `admin` could not be created on Ubuntu: its cloud images already have an `admin` group, so
   `useradd` refused and the users step FAILED with no reason given. The user now joins that group, and a failure says why.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or

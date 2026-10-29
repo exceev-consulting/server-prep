@@ -313,7 +313,9 @@ svc_disable() {
         systemctl list-unit-files "$u" >/dev/null 2>&1 || continue
         systemctl cat "$u" >/dev/null 2>&1 || continue
         if systemctl is-enabled --quiet "$u" 2>/dev/null || systemctl is-active --quiet "$u" 2>/dev/null; then
-            run systemctl disable --now "$u" && changed
+            # Two calls: for a unit made from an init script (apport on Ubuntu 22.04), "disable --now"
+            # only disables it and leaves it running until the next reboot.
+            run systemctl disable "$u" && run systemctl stop "$u" && changed
         fi
     done
 }
@@ -1592,15 +1594,28 @@ MaxClients 4096
 LogLevel 1
 BindFamily 0
 EOF
+    # The packaged unit hides /run, which systemd 255 (Ubuntu 24.04) can't set up: endlessh then
+    # exits at once with 226/NAMESPACE. Keep /var hidden and make the rest read-only instead.
     write_file /etc/systemd/system/endlessh.service.d/server-prep.conf 644 <<'EOF'
 [Service]
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 PrivateUsers=false
+InaccessiblePaths=
+InaccessiblePaths=/var
+ProtectSystem=strict
+ProtectHome=yes
 EOF
     run systemctl daemon-reload
     run systemctl enable endlessh
     run systemctl restart endlessh || { note "endlessh failed to start"; return 1; }
+    # systemctl returns as soon as the process starts: check it really holds the port
+    if [[ $DRY_RUN -eq 0 ]]; then
+        local i
+        for i in 1 2 3 4 5; do ss -Hltn "sport = :22" 2>/dev/null | grep -q . && break; sleep 1; done
+        ss -Hltn "sport = :22" 2>/dev/null | grep -q . \
+            || { note "endlessh does not listen on 22 (journalctl -u endlessh)"; return 1; }
+    fi
     run ufw allow 22/tcp comment "endlessh tarpit"
     note "tarpit on port 22 (journalctl -u endlessh)"
     return 0
