@@ -195,5 +195,53 @@ if ! step_telegram >/dev/null 2>&1 ||
 fi
 printf 'ok: step_telegram keeps the installed bot token on a re-run without one\n'
 
+# step_firewall: a re-run that changes nothing is "OK (already)" and a ufw-docker
+# failure fails the step. Every call that would reach the host is replaced first.
+LOG_FILE="$tmp/run.log"
+DRY_RUN=0
+SSH_PORT=822
+CURRENT_SSH_PORTS=822
+ADMIN_IPS=192.168.1.50
+PANEL_ACCESS=""
+PANEL_IP=""
+EXPOSE_WEB=no
+EXTRA_PORTS=""
+pkg_install() { :; }
+ufw() { echo "Status: active"; }                   # only "ufw status" is called directly
+run() { UFW_STATE="$UFW_STATE_AFTER"; }            # the ufw commands leave the rules as UFW_STATE_AFTER
+ufw_state() { printf '%s\n' "$UFW_STATE"; }
+ufw_docker_rules() { return "$UFW_DOCKER_RC"; }    # the real one runs ufw-docker, iptables and systemctl
+iptables() { printf '%s\n' "${DOCKER_USER_RULES:-}"; }   # the live DOCKER-USER chain
+
+expect_firewall() {   # expect_firewall LABEL HAS_DOCKER STATE_AFTER UFW_DOCKER_RC WANT(ok|fail) WANT_CHANGED [WANT_NOTE]
+    local label="$1" want="$5" want_changed="$6" want_note="${7:-}" status=0 got=ok
+    HAS_DOCKER="$2"; UFW_STATE_AFTER="$3"; UFW_DOCKER_RC="$4"
+    STEP_CHANGED=0; STEP_NOTES=""; MANUAL_TODO=(); UFW_STATE=old
+    step_firewall >"$tmp/firewall-output" 2>&1 || status=$?
+    [[ "$status" -eq 0 ]] || got=fail
+    if [[ "$got" != "$want" || "$STEP_CHANGED" -ne "$want_changed" || "$STEP_NOTES" != *"$want_note"* ]]; then
+        printf 'not ok: firewall %s gave %s (status %s), changed=%s, notes "%s"; want %s, changed=%s, notes with "%s"\n' \
+            "$label" "$got" "$status" "$STEP_CHANGED" "$STEP_NOTES" "$want" "$want_changed" "$want_note"
+        cat "$tmp/firewall-output" >&2
+        exit 1
+    fi
+    printf 'ok: firewall %s\n' "$label"
+}
+expect_firewall 're-run with nothing to change is OK (already)' 1 old 0 ok 0
+expect_firewall 'with a new rule is CHANGED' 1 new 0 ok 1
+expect_firewall 'fails when the ufw-docker rules are not loaded' 1 old 1 fail 0 'Docker ports still bypass UFW'
+DOCKER_USER_RULES='-A DOCKER-USER -j ufw-user-forward'
+expect_firewall 'fails but says when the rules of an earlier run are still loaded' 1 old 1 fail 0 'rules of an earlier run are still loaded'
+DOCKER_USER_RULES=""
+expect_firewall 'without Docker does not call ufw-docker' 0 old 1 ok 0
+if [[ ${#MANUAL_TODO[@]} -eq 0 ]]; then
+    printf 'not ok: firewall without Docker gave no to-do\n'
+    exit 1
+fi
+printf 'ok: firewall without Docker adds a to-do\n'
+DRY_RUN=1
+expect_firewall 'dry run is WOULD CHANGE' 1 old 0 ok 1
+DRY_RUN=0
+
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1

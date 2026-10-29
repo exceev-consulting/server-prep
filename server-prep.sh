@@ -900,7 +900,9 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
             if ! sha256sum "$tmp" | grep -q "^$UFW_DOCKER_SHA256 "; then
                 rm -f "$tmp"; err "ufw-docker checksum mismatch: not installed"; return 1
             fi
-            install -m 755 "$tmp" "$bin"; rm -f "$tmp"
+            write_file "$bin" 755 < "$tmp"; rm -f "$tmp"
+            # write_file leaves an identical file as it is, so restore a lost exec bit here
+            [[ -x $bin ]] || { run chmod 755 "$bin" && changed; }
             note "ufw-docker $UFW_DOCKER_VERSION installed (checksum verified)"
         fi
     fi
@@ -926,6 +928,9 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
     fi
 }
 
+# 'ufw allow/limit/route/default' exit 0 even when the rule or policy already exists, so compare the rule files instead.
+ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/dev/null | sha256sum; }
+
 ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
     local port="$1" c="$2" ip any=1
     for ip in ${ADMIN_IPS//,/ }; do
@@ -946,6 +951,8 @@ ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
 
 step_firewall() {
     pkg_install ufw || return 1
+    local before=""
+    before="$(ufw_state)"
     run ufw default deny incoming
     run ufw default allow outgoing
     ufw_allow_ssh "$SSH_PORT" "ssh"
@@ -970,6 +977,9 @@ step_firewall() {
         run ufw route allow proto "${e#*/}" from any to any port "${e%/*}" comment "docker extra"
         note "extra port $e"
     done
+    # A rule or policy counts as a change only if the rule files differ. A dry run executes
+    # nothing, so it keeps showing what it would do.
+    if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
 
     if ! ufw status 2>/dev/null | grep -q "Status: active"; then
         run ufw --force enable && { changed; note "UFW enabled"; }
@@ -979,11 +989,18 @@ step_firewall() {
 
     # Stop Docker from bypassing UFW. ufw-docker needs UFW active, so this runs after enable
     if [[ $HAS_DOCKER -eq 1 ]]; then
-        ufw_docker_rules
+        if ! ufw_docker_rules; then
+            # a failed download or update can leave the rules of an earlier run in place
+            if iptables -S DOCKER-USER 2>/dev/null | grep -q -- '-j ufw-user-forward'; then
+                note "ufw-docker could not be updated (see the log): the rules of an earlier run are still loaded"
+            else
+                note "ufw-docker rules not loaded: Docker ports still bypass UFW (see the log)"
+            fi
+            return 1
+        fi
     else
         todo "Docker is not installed yet. If your panel installs it later, run: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes (so container ports obey UFW)"
     fi
-    changed
     return 0
 }
 

@@ -18,6 +18,11 @@ Highlights of each release. The full list of merged pull requests is in each
   `sudo cloudflared service uninstall` from a session that does not go through the tunnel, then
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only cloudflared` and type the new token at the
   hidden prompt.
+- **Security fix:** the firewall step said CHANGED even when the ufw-docker rules could not be set up (download blocked,
+  checksum mismatch, `ufw-docker install` failed, or rules not loaded), so Docker-published ports could still bypass UFW.
+  The step now shows FAILED, the report says whether Docker ports still bypass UFW, and `server-prep.sh` exits 1.
+  Scripts that run it will now see this failure. A re-run that changes nothing now shows `OK (already)` instead of
+  CHANGED.
 - **Security fix:** the audit's "Docker vs firewall" check passed when the DOCKER-USER chain only had CrowdSec or
   manual DROP rules, even though published container ports still bypassed UFW. It now passes only when the ufw-docker
   rules are loaded, with both the `ufw-user-forward` and `ufw-docker-logging-deny` jumps (or Docker's iptables
@@ -30,7 +35,12 @@ Highlights of each release. The full list of merged pull requests is in each
 - [Wiki](https://github.com/exceev-consulting/server-prep/wiki): beginner path, concepts, panels, troubleshooting, FAQ,
   glossary, architecture and roadmap. Its source lives in `wiki/` and `.github/workflows/wiki.yml` publishes it.
 - Discussions forms for Q&A, Ideas and Show and tell (setups and compatibility reports).
-- New logo: a keyhole standing on a terminal cursor, cut out of one rounded tile, black on light and white in dark mode. In the README
+- [Brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) on the setup console site: the logo, its
+  files to copy, the colours, type, interface parts and voice. Links to the repository and the site now show a preview
+  card, the site has an iPhone home-screen icon and a PNG favicon for older browsers, and its colours live in one file,
+  `site/tokens.css`. `scripts/check-tokens.sh` fails CI when a copy of them drifts. The setup console now loads
+  IBM Plex Mono SemiBold, so its name in the top bar matches the logo.
+- New logo: a keyhole cut out of one rounded tile, black on light and white in dark mode. In the README
   and the setup console (with an SVG favicon that follows the browser theme). Files in `.github/assets/`.
 - New [setup console](https://exceev-consulting.github.io/server-prep/) (`site/`): pick a VPS or a dedicated
   server, a panel (Coolify, Dokploy, Openship) and an access route, and see the open ports, who can log in, every

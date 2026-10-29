@@ -32,12 +32,24 @@ One button: **Actions → release → Run workflow**, then choose `patch`, `mino
 gh workflow run release -f bump=patch
 ```
 
-The workflow bumps `PREP_VERSION`, moves the `[Unreleased]` notes under the new version, regenerates the setup console data, merges that through its own pull request, then tags and publishes the release with the scripts, the Telegraf template and `SHA256SUMS`.
+The workflow bumps `PREP_VERSION`, moves the `[Unreleased]` notes under the new version, regenerates the setup console data and puts that commit straight on `main`, then tags and publishes the release with the scripts, the Telegraf template and `SHA256SUMS`. Everything else reaches `main` through an approved pull request: the release GitHub App, used only by this workflow, is the one exception.
+
+To rotate the release app's private key (for example when it may have leaked, or when a maintainer leaves):
+
+1. On the app's settings page (GitHub Apps → the release app → General → Private keys), generate a new private key. GitHub downloads a `.pem` file.
+2. Put it in the `release` environment, then delete the `.pem` file from your computer:
+
+   ```bash
+   gh secret set RELEASE_APP_PRIVATE_KEY -R exceev-consulting/server-prep --env release < new-key.pem
+   ```
+
+3. Back on the app's settings page, delete the old key. The next release uses the new one.
 
 ## Website and wiki
 
 - The [setup console](https://exceev-consulting.github.io/server-prep/) deploys from `site/` on every push to `main` that touches it, the scripts or the README.
 - The wiki is published from the `wiki/` folder by `.github/workflows/wiki.yml`. Edit pages through pull requests, not in the web editor.
+- The [brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) (`site/brand/`) cover the logo, colours, type and voice. When `site/social-preview.png` changes, upload it again in **Settings → General → Social preview**: GitHub has no API for the repository's preview image.
 
 ## Security reports
 
