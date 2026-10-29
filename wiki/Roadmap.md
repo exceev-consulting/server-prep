@@ -51,7 +51,7 @@ The base that everything else plugs into:
 - `scripts/check-consistency.sh`, which keeps steps, README, config example and audit in sync ([#35](https://github.com/exceev-consulting/server-prep/issues/35));
 - Claude Code hooks: lint after each edit, block pushes to `main` ([#36](https://github.com/exceev-consulting/server-prep/issues/36));
 - labels kept in `.github/labels.yml` ([#24](https://github.com/exceev-consulting/server-prep/issues/24));
-- governance files: `GOVERNANCE.md`, `SUPPORT.md`, `CODEOWNERS`, a roadmap file and an ADR template ([#30](https://github.com/exceev-consulting/server-prep/issues/30)).
+- **done:** governance files: [`GOVERNANCE.md`](https://github.com/exceev-consulting/server-prep/blob/main/GOVERNANCE.md), [`SUPPORT.md`](https://github.com/exceev-consulting/server-prep/blob/main/SUPPORT.md), [`CODEOWNERS`](https://github.com/exceev-consulting/server-prep/blob/main/.github/CODEOWNERS), [`ROADMAP.md`](https://github.com/exceev-consulting/server-prep/blob/main/ROADMAP.md) and the ADRs in [`docs/decisions/`](https://github.com/exceev-consulting/server-prep/tree/main/docs/decisions) ([#30](https://github.com/exceev-consulting/server-prep/issues/30)).
 
 ### Phase 1: Community & CI
 

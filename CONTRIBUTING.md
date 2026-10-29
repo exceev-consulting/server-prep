@@ -9,6 +9,7 @@ Thanks for helping. All kinds of help are welcome:
 
 Issues labelled [`good first issue`](https://github.com/exceev-consulting/server-prep/labels/good%20first%20issue) are a good place to start.
 For a big change, open an issue first so we can agree on the approach.
+[GOVERNANCE.md](GOVERNANCE.md#how-decisions-are-made) says which changes need one.
 
 Security problems: **don't open a public issue**. See [SECURITY.md](SECURITY.md).
 
