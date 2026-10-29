@@ -10,107 +10,26 @@
 <meta property="og:title" content="server-prep Setup Console">
 <meta property="og:description" content="Pick your server, panel and access route. See the ports, who can log in, the commands to run and the config file.">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="server-prep">
+<meta property="og:url" content="https://exceev-consulting.github.io/server-prep/">
+<meta property="og:image" content="https://exceev-consulting.github.io/server-prep/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="server-prep: harden a fresh Debian or Ubuntu server for your PaaS panel, and prove it with an audit.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121920" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
 <style>
 /* Layout: a rack console. A dark rack-front hero with the audit proof and headline numbers,
    then the setup console (control panel left, live dashboard + faceplate + terminal right),
    the steps as numbered rack units, the audit chart, and reference tables. */
-:root {
-  --bg: #EEF1F4;
-  --panel: #FFFFFF;
-  --panel-2: #F7F9FB;
-  --sunken: #F2F5F8;
-  --ink: #0F161E;
-  --ink-2: #4A5664;
-  --ink-3: #66727F;
-  --rule: #D8DEE5;
-  --rule-2: #E6EAEF;
-  --accent: #0B1117;
-  --accent-2: #111820;
-  --accent-soft: #E9EDF1;
-  --on-accent: #FFFFFF;
-  --brand: #0B1117;
-  --on-brand: #FFFFFF;
-  --ok: #186C3B;
-  --ok-soft: #E0F1E6;
-  --warn: #8A5409;
-  --warn-soft: #F7EBD5;
-  --bad: #A93224;
-  --bad-soft: #F7E0DB;
-  --off: #6F7B88;
-  /* audit severity ramp (one hue, ordinal, validated against --panel) */
-  --sev-info: #7D8794;
-  --sev-warn: #4B5563;
-  --sev-fail: #111820;
-  /* rack hardware: dark in both themes on purpose */
-  --rack: #0B1117;
-  --rack-2: #111A23;
-  --rack-edge: #223040;
-  --rack-ink: #E6EDF3;
-  --rack-dim: #9AA8B6;
-  --rack-ok: #55C78C;
-  --rack-warn: #E3A64E;
-  --rack-bad: #FF8069;
-  --plate: #141B23;
-  --plate-edge: #2A3440;
-  --plate-ink: #D8E0E9;
-  --plate-dim: #9AA6B4;
-  --led-ok: #3BD17F;
-  --led-only: #6FA4FF;
-  --led-warn: #F2B13B;
-  --led-off: #4D5967;
-  --code-bg: #0E151D;
-  --code-bar: #151F2A;
-  --code-ink: #D9E2EC;
-  --code-dim: #8B98A7;
-  --code-ln: #7A8796;
-  --code-key: #C9D3DE;
-  --rack-hi: #F4F7FA;
-  --rack-mid: #B9C3CE;
-  --ear: #1A232D;
-  --jack: #05080B;
-  --screw-hi: #8B97A4;
-  --screw-lo: #3A4552;
-  --shadow: 0 1px 2px rgba(15, 22, 30, .05), 0 10px 30px -14px rgba(15, 22, 30, .18);
-  --shadow-lift: 0 2px 4px rgba(15, 22, 30, .06), 0 22px 48px -20px rgba(15, 22, 30, .28);
-  --f-display: "Barlow Condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
-  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --f-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --r-lg: 14px;
-  --r: 10px;
-  --r-sm: 6px;
-  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 72px;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0A0F14; --panel: #121920; --panel-2: #151D25; --sunken: #0E141A; --ink: #E3E9EF; --ink-2: #A0ACB9; --ink-3: #8794A2;
-    --rule: #25303B; --rule-2: #1D2731; --accent: #F4F7FA; --accent-2: #E3E9EF; --accent-soft: #1E2731; --on-accent: #0A0F14;
-    --brand: #F4F7FA; --on-brand: #0B1117; --ok: #55C78C; --ok-soft: #11281C; --warn: #E3A64E; --warn-soft: #2D2212; --bad: #FF8069; --bad-soft: #33170F; --off: #7A8694;
-    --sev-info: #6E7987; --sev-warn: #A9B3BF; --sev-fail: #F4F7FA;
-    --rack: #070B0F; --rack-2: #0E151C; --rack-edge: #1F2B37;
-    --plate: #070B0F; --plate-edge: #222C37; --plate-dim: #8D9AA9; --led-off: #3E4955;
-    --code-bg: #070B0F; --code-bar: #0F161E;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -14px rgba(0, 0, 0, .6);
-    --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 22px 48px -20px rgba(0, 0, 0, .75);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0A0F14; --panel: #121920; --panel-2: #151D25; --sunken: #0E141A; --ink: #E3E9EF; --ink-2: #A0ACB9; --ink-3: #8794A2;
-  --rule: #25303B; --rule-2: #1D2731; --accent: #F4F7FA; --accent-2: #E3E9EF; --accent-soft: #1E2731; --on-accent: #0A0F14;
-  --brand: #F4F7FA; --on-brand: #0B1117; --ok: #55C78C; --ok-soft: #11281C; --warn: #E3A64E; --warn-soft: #2D2212; --bad: #FF8069; --bad-soft: #33170F; --off: #7A8694;
-  --sev-info: #6E7987; --sev-warn: #A9B3BF; --sev-fail: #F4F7FA;
-  --rack: #070B0F; --rack-2: #0E151C; --rack-edge: #1F2B37;
-  --plate: #070B0F; --plate-edge: #222C37; --plate-dim: #8D9AA9; --led-off: #3E4955;
-  --code-bg: #070B0F; --code-bar: #0F161E;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -14px rgba(0, 0, 0, .6);
-  --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 22px 48px -20px rgba(0, 0, 0, .75);
-  color-scheme: dark;
-}
-
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-padding-top: 72px; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.6 var(--f-body); }
@@ -778,7 +697,7 @@ footer .wrap { padding-block: var(--s5); display: flex; justify-content: space-b
     <span class="foot-brand"><svg class="logo" aria-hidden="true"><use href="#logo"/></svg>server-prep</span>
     <span id="foot-gen"></span>
     <span>Fonts load from Google Fonts. Nothing else leaves this page; it only remembers your theme choice in this browser.</span>
-    <span>MIT · Built and maintained by <a href="https://exceev.com">Exceev Consulting</a></span>
+    <span>MIT · <a href="brand/">Brand guidelines</a> · Built and maintained by <a href="https://exceev.com">Exceev Consulting</a></span>
   </div>
 </footer>
 
@@ -828,11 +747,16 @@ footer .wrap { padding-block: var(--s5); display: flex; justify-content: space-b
 
   // ---------- theme (per-viewer convenience, stored only in this browser) ----------
   var hostTheme = document.documentElement.getAttribute("data-theme");
+  var BAR = { light: "#FFFFFF", dark: "#121920" };   // theme-color: --panel, the top bar under the browser bar
   function getTheme() { try { return localStorage.getItem("sp-theme") || "system"; } catch (e) { return "system"; } }
   function applyTheme(t) {
     if (t !== "system") document.documentElement.setAttribute("data-theme", t);
     else if (hostTheme) document.documentElement.setAttribute("data-theme", hostTheme);
     else document.documentElement.removeAttribute("data-theme");
+    var shown = t !== "system" ? t : hostTheme, metas = document.querySelectorAll('meta[name="theme-color"]');
+    for (var i = 0; i < metas.length; i++) {
+      metas[i].setAttribute("content", BAR[shown || (/dark/.test(metas[i].getAttribute("media") || "") ? "dark" : "light")]);
+    }
     $("theme-label").textContent = t.charAt(0).toUpperCase() + t.slice(1);
     $("theme-btn").setAttribute("aria-label", "Theme: " + t + ". Change theme");
   }

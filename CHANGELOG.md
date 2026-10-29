@@ -25,6 +25,11 @@ Highlights of each release. The full list of merged pull requests is in each
 - [Wiki](https://github.com/exceev-consulting/server-prep/wiki): beginner path, concepts, panels, troubleshooting, FAQ,
   glossary, architecture and roadmap. Its source lives in `wiki/` and `.github/workflows/wiki.yml` publishes it.
 - Discussions forms for Q&A, Ideas and Show and tell (setups and compatibility reports).
+- [Brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) on the setup console site: the logo, its
+  files to copy, the colours, type, interface parts and voice. Links to the repository and the site now show a preview
+  card, the site has an iPhone home-screen icon and a PNG favicon for older browsers, and its colours live in one file,
+  `site/tokens.css`. `scripts/check-tokens.sh` fails CI when a copy of them drifts. The setup console now loads
+  IBM Plex Mono SemiBold, so its name in the top bar matches the logo.
 - New logo: a keyhole cut out of one rounded tile, black on light and white in dark mode. In the README
   and the setup console (with an SVG favicon that follows the browser theme). Files in `.github/assets/`.
 - New [setup console](https://exceev-consulting.github.io/server-prep/) (`site/`): pick a VPS or a dedicated

@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>server-prep Brand Guidelines</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="description" content="How to use the server-prep logo, colours, type and voice: the mark, its files, the design tokens of the setup console and the rules for writing.">
+<meta property="og:title" content="server-prep Brand Guidelines">
+<meta property="og:description" content="One keyhole, one colour, black or white. The server-prep logo, colours, type, interface parts and voice.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="server-prep">
+<meta property="og:url" content="https://exceev-consulting.github.io/server-prep/brand/">
+<meta property="og:image" content="https://exceev-consulting.github.io/server-prep/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="server-prep: harden a fresh Debian or Ubuntu server for your PaaS panel, and prove it with an audit.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121920" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../tokens.css">
+<script src="brand.js"></script>
+<style>
+/* Layout: the setup console's dark rack band as the cover, then a spec sheet. Each numbered
+   section is a two-column sheet: what the rule is on the left, the specimen on the right.
+   Colour, type, radius and spacing tokens come from ../tokens.css, like the console's. */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 76px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.6 var(--f-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--panel); }
+h1, h2, h3, p, figure, dl, dd, ul, pre { margin: 0; }
+h1, h2, h3 { text-wrap: balance; }
+h2 { font: 700 clamp(30px, 4vw, 42px)/1.02 var(--f-display); letter-spacing: .002em; }
+h3 { font: 600 18px/1.3 var(--f-body); letter-spacing: -.005em; }
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: .18em; }
+code { font: .86em var(--f-mono); background: var(--sunken); border: 1px solid var(--rule); border-radius: 5px; padding: 1px 5px; overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.hero :focus-visible, .rk :focus-visible, .rk-fig :focus-visible { outline-color: var(--rack-hi); }
+svg.i { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.on-light, .on-dark { color: var(--ink); }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 600 13px/1 var(--f-display); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+.eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: var(--accent); }
+.lead { font-size: 17px; line-height: 1.6; color: var(--ink-2); max-width: 62ch; }
+.mono { font-family: var(--f-mono); }
+
+/* top bar */
+.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--panel) 90%, transparent); -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--rule); }
+.topbar .wrap { display: flex; align-items: center; gap: 16px; padding-block: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; flex: none; }
+.brand svg { width: 28px; height: 28px; color: var(--brand); }
+.brand b { font: 600 16px/1 var(--f-mono); letter-spacing: -.02em; }
+.brand span { font: 600 12px/1 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); border-left: 1px solid var(--rule); padding-left: 10px; }
+.toc { display: flex; gap: 2px; margin-left: auto; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.toc::-webkit-scrollbar { display: none; }
+.toc a { color: var(--ink-2); text-decoration: none; font-weight: 500; font-size: 14px; padding: 6px 10px; border-radius: 8px; white-space: nowrap; }
+.toc a:hover { color: var(--ink); background: var(--sunken); }
+.tbtn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink-2); font: 500 13px/1 var(--f-body); cursor: pointer; text-decoration: none; flex: none; }
+.tbtn:hover { color: var(--ink); border-color: var(--ink-3); }
+.skip { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: -60px; z-index: 40; background: var(--accent); color: var(--on-accent); padding: 8px 12px; border-radius: 6px; font-weight: 600; text-decoration: none; }
+.skip:focus { top: 8px; }
+
+/* cover */
+.hero { position: relative; background: var(--rack); color: var(--rack-ink); overflow: hidden; isolation: isolate; }
+.hero::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: .55;
+  background: radial-gradient(900px 380px at 82% 10%, rgba(255, 255, 255, .07), transparent 70%),
+              repeating-linear-gradient(0deg, transparent 0 43px, rgba(255, 255, 255, .035) 43px 44px); }
+.hero::after { content: ""; position: absolute; top: 0; bottom: 0; left: max(4px, calc(50% - 606px)); width: 12px; z-index: -1;
+  background: radial-gradient(circle at 6px 22px, rgba(255, 255, 255, .14) 2.5px, transparent 3px) 0 0 / 12px 44px repeat-y; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 48px; align-items: center; padding-block: 72px 48px; }
+.hero .eyebrow { color: var(--rack-dim); }
+.hero .eyebrow::before { background: var(--rack-hi); }
+.hero h1 { font: 700 clamp(42px, 6.4vw, 72px)/1.06 var(--f-display); color: var(--rack-mid); margin-top: 16px; }
+.hero h1 em { font-style: normal; color: var(--rack-hi); text-decoration: underline; text-decoration-color: var(--rack-hi); text-decoration-thickness: .07em; text-underline-offset: .14em; text-decoration-skip-ink: none; }
+.hero .lead { color: var(--rack-dim); margin-top: 18px; }
+.hero .lead code { background: rgba(255, 255, 255, .05); border-color: var(--rack-edge); color: var(--rack-ink); }
+.hero-mark { display: grid; justify-items: center; gap: 14px; }
+.hero-mark svg { width: min(220px, 56vw); height: auto; aspect-ratio: 1; color: var(--rack-hi); }
+.hero-mark figcaption { font: 500 12.5px/1 var(--f-mono); color: var(--rack-dim); }
+.glance { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--rack-edge); border: 1px solid var(--rack-edge); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 56px; }
+.glance > div { background: var(--rack); padding: 16px 20px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.glance .lbl { font: 600 12px/1.2 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--rack-dim); }
+.glance .val { font: 600 18px/1.3 var(--f-body); color: var(--rack-ink); overflow-wrap: anywhere; }
+.glance .cap { font-size: 12.5px; color: var(--rack-dim); line-height: 1.4; }
+
+/* sections */
+main { padding-bottom: 80px; }
+.sec { padding-top: 80px; }
+.sec-head { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 32px; align-items: end; padding-bottom: 28px; border-bottom: 2px solid var(--ink); }
+.sec-head .num { display: block; font: 600 13px/1 var(--f-mono); color: var(--ink-2); margin-bottom: 10px; }
+.row { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 32px; padding-block: 36px; border-top: 1px solid var(--rule); }
+.sec-head + .row { border-top: 0; }
+.row-label { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.row-label .ref { font: 600 12px/1 var(--f-mono); color: var(--ink-2); }
+.row-label p { color: var(--ink-2); font-size: 14.5px; max-width: 42ch; }
+.row-body { display: grid; gap: 16px; min-width: 0; }
+.note { font-size: 13.5px; color: var(--ink-2); display: flex; gap: 8px; align-items: flex-start; max-width: 72ch; }
+.note svg.i { margin-top: 3px; color: var(--ink-3); }
+
+/* logo */
+.stage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.stage figure { display: grid; grid-template-rows: 1fr auto; min-height: 260px; padding: 18px; border-radius: var(--r-lg); border: 1px solid var(--rule); background: var(--panel); }
+.stage .mk { width: 120px; height: 120px; place-self: center; color: var(--brand); }
+.stage figcaption, .vcard figcaption { display: flex; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; font: 500 12.5px/1.4 var(--f-mono); color: var(--ink-2); }
+.bp-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: center; }
+.bp-box { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 16px; }
+.bp { display: block; width: 100%; height: auto; }
+.bp .g4 { stroke: var(--rule-2); stroke-width: .12; }
+.bp .g16 { stroke: var(--rule); stroke-width: .22; }
+.bp .fillmark { fill: var(--brand); fill-opacity: .07; }
+.bp .outline { fill: none; stroke: var(--ink); stroke-width: .38; }
+.bp .guide { fill: none; stroke: var(--ink-3); stroke-width: .2; stroke-dasharray: .9 .9; }
+.bp .dot { fill: var(--ink-3); }
+.bp .dim { fill: none; stroke: var(--ink-2); stroke-width: .22; }
+.bp .dimt { fill: var(--ink-2); font: 500 2.9px var(--f-mono); }
+.bp .leader { stroke: var(--ink); stroke-width: .25; }
+.bp .mkr circle { fill: var(--ink); }
+.bp .mkr text { fill: var(--panel); font: 700 2.9px var(--f-body); text-anchor: middle; dominant-baseline: central; }
+.spec { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.spec > div { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding-block: 11px; border-bottom: 1px solid var(--rule); font-size: 14px; }
+.spec dt { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--panel); font: 700 12px/1 var(--f-body); }
+.spec dt.plain { background: none; color: var(--ink-2); font: 600 15px/1 var(--f-mono); }
+.spec dd b { font-weight: 600; }
+.spec dd span { color: var(--ink-2); }
+.sizes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 16px; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 18px; min-width: 0; }
+.panel h4 { margin: 0 0 12px; font: 600 12px/1.2 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.cs { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto; }
+.cs .hatch { stroke: var(--rule); stroke-width: .8; }
+.cs .guide { fill: none; stroke: var(--ink-3); stroke-width: .5; stroke-dasharray: 2 2; }
+.cs .dim { fill: none; stroke: var(--ink-2); stroke-width: .5; }
+.cs .dimt { fill: var(--ink-2); font: 500 6px var(--f-mono); }
+.ramp { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 18px; }
+.ramp figure { display: grid; justify-items: center; gap: 8px; }
+.ramp svg { color: var(--brand); }
+.ramp figcaption { font: 500 12px/1.2 var(--f-mono); color: var(--ink-2); text-align: center; }
+.ramp figcaption b { display: block; font-weight: 600; color: var(--ink); }
+.lockups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.lockups figure { display: grid; gap: 18px; padding: 28px 22px 18px; border-radius: var(--r-lg); border: 1px solid var(--rule); background: var(--panel); }
+.lockups .wm { width: 100%; max-width: 300px; height: auto; color: var(--brand); justify-self: center; }
+.wm text { font: 600 34px var(--f-mono); letter-spacing: -1.2px; fill: currentColor; }
+.lockups figcaption { font: 500 12.5px/1.4 var(--f-mono); color: var(--ink-2); }
+.inline-lockup { display: flex; align-items: center; gap: 10px; }
+.inline-lockup svg { width: 28px; height: 28px; color: var(--brand); flex: none; }
+.inline-lockup b { font: 600 16px/1 var(--f-mono); letter-spacing: -.02em; }
+.versions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.vcard { display: grid; grid-template-rows: 150px auto; border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden; background: var(--panel); min-width: 0; }
+.vcard .art { display: grid; place-items: center; background: var(--panel-2); border-bottom: 1px solid var(--rule); color: var(--brand); }
+.vcard .art.on-dark, .vcard .art.on-light { background: var(--panel); }
+.vcard .art svg { width: 72px; height: 72px; }
+.vcard .art .glyph { color: var(--ink); }
+.vcard .txt { padding: 12px 14px 14px; display: grid; gap: 4px; align-content: start; }
+.vcard .txt b { font-weight: 600; font-size: 14.5px; }
+.vcard .txt code { justify-self: start; }
+.vcard .txt span { font-size: 13px; color: var(--ink-2); }
+.tabs { display: grid; gap: 8px; width: 100%; padding-inline: 16px; }
+.tab { display: flex; align-items: center; gap: 8px; background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 8px 8px 0 0; padding: 8px 12px; font-size: 12.5px; max-width: 180px; }
+.tab svg { width: 16px !important; height: 16px !important; color: var(--brand); flex: none; }
+.donts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.dont { display: grid; grid-template-rows: 128px auto; border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; background: var(--panel); min-width: 0; }
+.dont .art { display: grid; place-items: center; background: var(--panel-2); border-bottom: 1px solid var(--rule); color: var(--brand); overflow: hidden; }
+.dont .art svg { width: 64px; height: 64px; }
+.dont .art.dark-ground { background: var(--plate); }
+.dont figcaption { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px 12px; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.dont figcaption svg.i { color: var(--bad); margin-top: 2px; }
+.dont figcaption b { color: var(--ink); font-weight: 600; }
+
+/* colour */
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.big-sw { border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden; background: var(--panel); display: grid; min-width: 0; }
+.big-sw .chip-c { min-height: 168px; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; }
+.big-sw .chip-c b { font: 700 30px/1 var(--f-display); letter-spacing: .01em; }
+.big-sw .chip-c svg { width: 44px; height: 44px; }
+.big-sw .info { padding: 14px 18px 16px; display: grid; gap: 6px; font-size: 13.5px; color: var(--ink-2); }
+.big-sw .info .ln { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.ct { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/1 var(--f-mono); padding: 4px 7px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); white-space: nowrap; }
+.ct.lim { background: var(--warn-soft); color: var(--warn); }
+.hex { font: 500 12.5px/1.2 var(--f-mono); color: var(--ink); background: none; border: 0; padding: 2px 0; cursor: pointer; text-decoration: underline dotted var(--ink-3); text-underline-offset: 3px; }
+.hex:hover { text-decoration-style: solid; }
+.ramp-row { display: grid; gap: 10px; }
+.ramp-row .rl { display: flex; align-items: center; gap: 8px; font: 600 12px/1.2 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.sw-grid { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 8px; }
+.sw { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.sw i { display: block; height: 52px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(127, 137, 150, .35); }
+.sw span { font: 500 11.5px/1.25 var(--f-mono); color: var(--ink-2); overflow-wrap: anywhere; }
+.status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.st { border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden; background: var(--panel); display: grid; min-width: 0; }
+.st .duo { display: grid; grid-template-columns: 1fr 1fr; }
+.st .duo > div { display: grid; place-items: center; padding: 22px 8px; background: var(--panel); }
+.st .meta { padding: 12px 14px 14px; display: grid; gap: 4px; font: 500 11.5px/1.45 var(--f-mono); color: var(--ink-2); border-top: 1px solid var(--rule); }
+.st .meta b { font: 600 13.5px/1.3 var(--f-body); color: var(--ink); margin-bottom: 2px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font: 600 12px/1 var(--f-display); letter-spacing: .08em; text-transform: uppercase; padding: 6px 9px 5px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+.pill svg.i { width: 13px; height: 13px; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.off { background: var(--sunken); color: var(--ink-2); border-color: var(--rule); }
+.rk { background: var(--rack); color: var(--rack-ink); border-radius: var(--r-lg); padding: 20px; display: grid; gap: 18px; border: 1px solid var(--rack-edge); }
+.rk h4 { margin: 0; font: 600 12px/1.2 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--rack-dim); }
+.rk-sw { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.rk-sw .sw i { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+.rk-sw .sw span, .leds span { color: var(--rack-dim); }
+.rk .hex { color: var(--rack-ink); text-decoration-color: var(--rack-dim); }
+.leds { display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 13px; }
+.leds > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.led { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.led.ok { background: var(--led-ok); box-shadow: 0 0 8px var(--led-ok); }
+.led.only { background: var(--led-only); box-shadow: 0 0 8px var(--led-only); }
+.led.warn { background: var(--led-warn); box-shadow: 0 0 8px var(--led-warn); }
+.led.local { box-shadow: inset 0 0 0 1.5px var(--led-only); }
+.led.off { background: var(--led-off); box-shadow: inset 0 0 0 1px var(--plate-dim); }
+.leds code { background: none; border: 0; padding: 0; color: var(--rack-ink); }
+.sev { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.sev .st .duo > div { padding: 0; }
+.sev .bar { width: 100%; height: 64px; }
+
+/* type */
+.faces { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.face { border: 1px solid var(--rule); border-radius: var(--r-lg); background: var(--panel); padding: 20px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.face .spec-line { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font: 500 12px/1.3 var(--f-mono); color: var(--ink-3); }
+.face .aa { font-size: 76px; line-height: .9; color: var(--ink); }
+.face .name { font: 600 16px/1.3 var(--f-body); }
+.face p { font-size: 13.5px; color: var(--ink-2); }
+.face.d .aa { font-family: var(--f-display); font-weight: 700; }
+.face.s .aa { font-family: var(--f-body); font-weight: 600; }
+.face.m .aa { font-family: var(--f-mono); font-weight: 600; letter-spacing: -.04em; }
+.weights { display: flex; flex-wrap: wrap; gap: 6px; }
+.weights span { font-size: 13px; padding: 3px 8px; border-radius: 6px; background: var(--sunken); border: 1px solid var(--rule-2); }
+.scale { border-top: 1px solid var(--rule); }
+.scale > div { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 20px; align-items: baseline; padding-block: 16px; border-bottom: 1px solid var(--rule); }
+.scale .meta { display: grid; gap: 2px; }
+.scale .meta b { font-weight: 600; font-size: 14px; }
+.scale .meta span { font: 500 11.5px/1.45 var(--f-mono); color: var(--ink-2); }
+.scale .sample { min-width: 0; overflow-wrap: anywhere; }
+.t-xl { font: 700 clamp(36px, 5.2vw, 60px)/1.06 var(--f-display); color: var(--ink); }
+.t-h2 { font: 700 clamp(28px, 3.6vw, 40px)/1.02 var(--f-display); }
+.t-h3 { font: 600 18px/1.3 var(--f-body); }
+.t-lead { font-size: 17px; line-height: 1.6; color: var(--ink-2); }
+.t-body { font-size: 15px; line-height: 1.6; }
+.t-stat { font: 600 30px/1 var(--f-body); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.t-stat small { font-size: 15px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.t-label { font: 600 12px/1.2 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.t-code { font: 400 13px/1.5 var(--f-mono); }
+.emph { background: var(--rack); border-radius: var(--r-lg); padding: 28px 24px; border: 1px solid var(--rack-edge); }
+.emph p { font: 700 clamp(30px, 4.4vw, 48px)/1.08 var(--f-display); color: var(--rack-mid); }
+.emph em { font-style: normal; color: var(--rack-hi); text-decoration: underline; text-decoration-thickness: .07em; text-underline-offset: .14em; text-decoration-skip-ink: none; }
+
+/* interface */
+.ui-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ui-grid > figure { border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 22px 20px 16px; background: var(--panel); display: grid; gap: 16px; align-content: space-between; min-width: 0; }
+.ui-grid > figure.rk-fig { background: var(--rack); border-color: var(--rack-edge); }
+.ui-grid figcaption { font: 500 12px/1.45 var(--f-mono); color: var(--ink-3); }
+.rk-fig figcaption { color: var(--rack-dim); }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: var(--r); font: 600 15px/1 var(--f-body); text-decoration: none; cursor: pointer; border: 1px solid transparent; }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.ghost { color: var(--ink); border-color: var(--rule); background: var(--panel); }
+.rk-fig .btn.primary { background: var(--rack-hi); color: var(--rack); }
+.rk-fig .btn.ghost { color: var(--rack-ink); border-color: var(--rack-edge); background: rgba(255, 255, 255, .03); }
+.txt-link { font-weight: 500; text-decoration: underline; text-decoration-color: var(--ink-3); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--f-mono); padding: 5px 8px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); background: var(--sunken); white-space: nowrap; }
+.term { background: var(--code-bg); border: 1px solid var(--plate-edge); border-radius: var(--r-lg); overflow: hidden; }
+.term-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: var(--code-bar); border-bottom: 1px solid var(--plate-edge); color: var(--code-dim); font: 500 12.5px/1 var(--f-mono); }
+.term-bar .host { display: inline-flex; align-items: center; gap: 8px; color: var(--code-ink); }
+.term-bar .host::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--led-ok); box-shadow: 0 0 8px var(--led-ok); }
+.term pre { padding: 14px 16px 16px; overflow-x: auto; font: 400 13px/1.7 var(--f-mono); color: var(--code-ink); }
+.term .p { color: var(--code-dim); }
+.term .s-ok { color: var(--rack-ok); font-weight: 500; }
+.term .s-warn { color: var(--rack-warn); font-weight: 500; }
+.term .s-bad { color: var(--rack-bad); font-weight: 500; }
+.term .d { color: var(--code-dim); }
+.rackunit { display: grid; grid-template-columns: 22px minmax(0, 1fr) 22px; border-radius: var(--r-lg); background: var(--plate-edge); padding: 1px; box-shadow: var(--shadow); }
+.ear { background: linear-gradient(90deg, var(--ear), var(--plate)); display: grid; align-content: space-between; justify-items: center; padding-block: 18px; }
+.ear:first-child { border-radius: calc(var(--r-lg) - 1px) 0 0 calc(var(--r-lg) - 1px); }
+.ear:last-child { border-radius: 0 calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0; }
+.ear i { width: 9px; height: 9px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--screw-hi), var(--screw-lo) 70%); box-shadow: 0 0 0 2px var(--rack); }
+.plate { background: var(--plate); color: var(--plate-ink); padding: 16px 22px 18px; min-width: 0; display: grid; gap: 16px; }
+.plate-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.plate-head .eyebrow { color: var(--plate-dim); }
+.plate-head .eyebrow::before { background: var(--led-ok); }
+.plate-tag { font: 500 11.5px/1 var(--f-mono); color: var(--plate-dim); border: 1px solid var(--plate-edge); padding: 4px 7px; border-radius: 5px; white-space: nowrap; }
+.ports { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px 12px; }
+.port { display: grid; gap: 8px; justify-items: start; min-width: 0; }
+.port .tag { font: 700 13px/1 var(--f-display); letter-spacing: .06em; background: var(--rack-hi); color: var(--rack); padding: 4px 7px 3px; border-radius: 4px; transform: rotate(-.6deg); font-variant-numeric: tabular-nums; }
+.port small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--plate-dim); line-height: 1.3; }
+.shape { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 12px; }
+.radii { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.radii div { display: grid; gap: 8px; justify-items: start; font: 500 11.5px/1.35 var(--f-mono); color: var(--ink-2); }
+.radii i { width: 100%; max-width: 64px; aspect-ratio: 1; border: 2px solid var(--ink); border-right-color: transparent; border-bottom-color: transparent; }
+.space { display: grid; gap: 7px; }
+.space div { display: grid; grid-template-columns: 34px 72px minmax(0, 1fr); align-items: center; gap: 10px; font: 500 11.5px/1 var(--f-mono); color: var(--ink-2); }
+.space i { height: 10px; border-radius: 2px; background: var(--ink); }
+
+/* voice */
+.principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.principles div { border-top: 2px solid var(--ink); padding-top: 12px; display: grid; gap: 6px; align-content: start; }
+.principles b { font: 700 22px/1.1 var(--f-display); }
+.principles p { font-size: 14px; color: var(--ink-2); }
+.dd { border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden; background: var(--panel); }
+.dd > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .9fr); border-top: 1px solid var(--rule); }
+.dd > div:first-child { border-top: 0; }
+.dd > div > * { padding: 12px 16px; min-width: 0; font-size: 14px; }
+.dd .hd { font: 600 12px/1.2 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); background: var(--panel-2); padding-block: 10px; }
+.dd .do { color: var(--ink); }
+.dd .dont-t { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--bad); text-decoration-thickness: 1.5px; }
+.dd .why { color: var(--ink-2); font-size: 13px; background: var(--panel-2); }
+.dd .hd.why { font-size: 12px; }
+.rules { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.rules > div { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); gap: 16px; padding-block: 12px; border-bottom: 1px solid var(--rule); font-size: 14px; }
+.rules dt { font-weight: 600; }
+.rules dd { color: var(--ink-2); }
+
+/* assets */
+.assets { border: 1px solid var(--rule); border-radius: var(--r-lg); background: var(--panel); overflow: hidden; }
+.asset { display: grid; grid-template-columns: 56px minmax(0, 1.2fr) minmax(0, 1.4fr) auto; gap: 16px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--rule); }
+.asset:first-child { border-top: 0; }
+.asset .thumb { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--rule-2); }
+.asset .thumb svg { width: 32px; height: 32px; }
+.asset .thumb img { display: block; max-width: 40px; height: auto; border-radius: 3px; }
+.asset .thumb img.wide { max-width: 48px; }
+.og { display: grid; gap: 10px; }
+.og img { display: block; width: 100%; max-width: 100%; height: auto; border-radius: var(--r-lg); border: 1px solid var(--rule); }
+.og figcaption { font: 500 12.5px/1.4 var(--f-mono); color: var(--ink-2); }
+.asset .thumb.on-light, .asset .thumb.on-dark { background: var(--panel); }
+.asset .file { display: grid; gap: 3px; min-width: 0; }
+.asset .file b { font: 500 13px/1.35 var(--f-mono); overflow-wrap: anywhere; }
+.asset .file span { font: 500 11.5px/1.3 var(--f-mono); color: var(--ink-3); }
+.asset .use { font-size: 13.5px; color: var(--ink-2); }
+.asset .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.sbtn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); font: 500 13px/1 var(--f-body); text-decoration: none; cursor: pointer; white-space: nowrap; }
+.sbtn:hover { background: var(--sunken); }
+.asset details { grid-column: 1 / -1; }
+.asset summary { cursor: pointer; font: 500 12.5px/1 var(--f-mono); color: var(--ink-2); width: max-content; }
+.asset pre { margin-top: 10px; padding: 12px 14px; border-radius: var(--r); background: var(--code-bg); color: var(--code-ink); font: 400 12px/1.6 var(--f-mono); overflow-x: auto; white-space: pre; }
+.retired { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; padding: 16px 18px; border: 1px dashed var(--rule); border-radius: var(--r-lg); }
+.retired .pairs { display: flex; align-items: center; gap: 12px; color: var(--brand); }
+.retired .pairs svg { width: 44px; height: 44px; }
+.retired .pairs .arrow { width: 18px; height: 18px; color: var(--ink-3); }
+.retired p { font-size: 13.5px; color: var(--ink-2); max-width: 64ch; flex: 1 1 280px; }
+
+footer { border-top: 1px solid var(--rule); background: var(--panel); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding-block: 22px; font-size: 13.5px; color: var(--ink-2); }
+footer nav { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+footer a { color: var(--ink-2); }
+
+.sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 40; background: var(--accent); color: var(--on-accent); font: 500 13.5px/1.3 var(--f-body); padding: 10px 14px; border-radius: 10px; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
+
+@media (max-width: 1020px) {
+  .sw-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .versions, .donts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rk-sw { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ports { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-block: 48px 36px; }
+  .hero-mark { justify-items: start; }
+  .glance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sec-head, .row { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .bp-grid, .sizes, .shape { grid-template-columns: minmax(0, 1fr); }
+  .faces, .principles { grid-template-columns: minmax(0, 1fr); }
+  .ui-grid { grid-template-columns: minmax(0, 1fr); }
+  .scale > div { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .rules > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .asset { grid-template-columns: 56px minmax(0, 1fr); }
+  .asset .use { grid-column: 1 / -1; }
+  .asset .acts { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  .brand span { display: none; }
+  .dd > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dd .why { grid-column: 1 / -1; }
+  .dd .hd.why { display: none; }
+}
+@media (max-width: 560px) {
+  .topbar .wrap { flex-wrap: wrap; row-gap: 4px; }
+  .toc { order: 3; margin-left: -10px; width: calc(100% + 10px); }
+  .tbtn { margin-left: auto; }
+  .glance { grid-template-columns: minmax(0, 1fr); }
+  .stage, .pair, .lockups { grid-template-columns: minmax(0, 1fr); }
+  .stage figure { min-height: 210px; }
+  .sev { grid-template-columns: minmax(0, 1fr); }
+  .rk-sw { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .radii { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dd > div { grid-template-columns: minmax(0, 1fr); }
+  .dd > div:first-child { display: none; }
+  .dd > div:nth-child(2) { border-top: 0; }
+  .dd .do::before, .dd .dont-t::before { display: inline-block; margin-right: 8px; font: 600 11px/1 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .dd .do::before { content: "Write"; }
+  .dd .dont-t::before { content: "Not"; }
+}
+@media (max-width: 400px) {
+  .versions, .status-grid { grid-template-columns: minmax(0, 1fr); }
+  .ports { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="mark" viewBox="0 0 64 64"><path fill="currentColor" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/></symbol>
+  <symbol id="glyph" viewBox="0 0 64 64"><path fill="currentColor" d="M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/></symbol>
+  <!-- the retired mark, kept on purpose for 1.6 and 6.3: the only place its path may appear -->
+  <symbol id="retired" viewBox="0 0 64 64"><path fill="currentColor" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 13A9 9 0 0 1 36.2 30L38.3 37.6A2.6 2.6 0 0 1 35.8 41H28.2A2.6 2.6 0 0 1 25.7 37.6L27.8 30A9 9 0 0 1 32 13Z M22.5 45H41.5A3 3 0 0 1 41.5 51H22.5A3 3 0 0 1 22.5 45Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor"/></symbol>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="server-prep brand guidelines, back to top">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg><b>server-prep</b><span>Brand guidelines</span>
+    </a>
+    <nav class="toc" aria-label="Sections">
+      <a href="#logo">Logo</a><a href="#colour">Colour</a><a href="#type">Type</a><a href="#interface">Interface</a><a href="#voice">Voice</a><a href="#assets">Assets</a>
+    </nav>
+    <button class="tbtn" type="button" id="theme-btn" aria-label="Theme: system. Change theme"><svg class="i" aria-hidden="true"><use href="#i-theme"/></svg><span id="theme-label">System</span></button>
+  </div>
+</header>
+
+<section class="hero" id="top" aria-labelledby="hero-h">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">Brand guidelines</span>
+        <h1 id="hero-h">One keyhole, one colour, <em>black or white</em>.</h1>
+        <p class="lead">How to use the server-prep logo, colours, type and voice. Everything here comes from the repository: the logo files in <code>.github/assets</code> and the design tokens in <code>site/tokens.css</code>, which the <a href="../">setup console</a> uses too.</p>
+      </div>
+      <figure class="hero-mark">
+        <svg viewBox="0 0 64 64" role="img" aria-label="The server-prep logo: a rounded tile with a keyhole cut through it"><use href="#mark"/></svg>
+        <figcaption>logo-dark.svg · #F4F7FA</figcaption>
+      </figure>
+    </div>
+    <div class="glance">
+      <div><span class="lbl">Mark</span><span class="val">Keyhole tile</span><span class="cap">One path, the keyhole cut out</span></div>
+      <div><span class="lbl">Colour</span><span class="val mono">#0B1117 / #F4F7FA</span><span class="cap">Black on light, white on dark</span></div>
+      <div><span class="lbl">Type</span><span class="val">Barlow Condensed, IBM Plex</span><span class="cap">Headlines, text and mono</span></div>
+      <div><span class="lbl">Smallest size</span><span class="val">16 px</span><span class="cap">The favicon. Mark plus name: 20 px tall</span></div>
+    </div>
+  </div>
+</section>
+
+<main class="wrap" id="main" tabindex="-1">
+
+  <!-- 01 LOGO -->
+  <section class="sec" id="logo" aria-labelledby="logo-h">
+    <div class="sec-head">
+      <div><span class="num">01</span><h2 id="logo-h">Logo</h2></div>
+      <p class="lead">A rounded tile with a keyhole cut through it: a server, locked down. It is one shape in one colour, so it holds up at 16 px and in any medium.</p>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">1.1</span><h3>The mark</h3>
+        <p>Use it in black on light backgrounds and in white on dark ones. The keyhole is a hole, so whatever is behind the tile shows through it.</p>
+      </div>
+      <div class="row-body">
+        <div class="stage">
+          <figure class="on-light"><svg class="mk" viewBox="0 0 64 64" role="img" aria-label="Black mark on a light background"><use href="#mark"/></svg><figcaption><span>On light</span><span>#0B1117 · logo.svg</span></figcaption></figure>
+          <figure class="on-dark"><svg class="mk" viewBox="0 0 64 64" role="img" aria-label="White mark on a dark background"><use href="#mark"/></svg><figcaption><span>On dark</span><span>#F4F7FA · logo-dark.svg</span></figcaption></figure>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">1.2</span><h3>Construction</h3>
+        <p>Drawn on a 64-unit grid. Use the SVG files as they are: never redraw the mark or trace it from a screenshot.</p>
+      </div>
+      <div class="row-body">
+        <div class="bp-grid">
+          <div class="bp-box">
+            <svg class="bp" viewBox="-8 -10 86 78" role="img" aria-labelledby="bp-t">
+              <title id="bp-t">Construction drawing: a 64 by 64 tile with corner radius 18; a keyhole 28 units tall with an 18-unit head centred at 32, 27; 18 units clear above and below.</title>
+              <defs>
+                <pattern id="g4" width="4" height="4" patternUnits="userSpaceOnUse"><path class="g4" d="M4 0V4H0" fill="none"/></pattern>
+                <pattern id="g16" width="16" height="16" patternUnits="userSpaceOnUse"><path class="g16" d="M16 0V16H0" fill="none"/></pattern>
+              </defs>
+              <rect width="64" height="64" fill="url(#g4)"/>
+              <rect width="64" height="64" fill="url(#g16)"/>
+              <path class="fillmark" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/>
+              <line class="guide" x1="32" y1="-3" x2="32" y2="67"/>
+              <line class="guide" x1="-3" y1="18" x2="67" y2="18"/>
+              <line class="guide" x1="-3" y1="46" x2="67" y2="46"/>
+              <circle class="guide" cx="32" cy="27" r="9"/>
+              <path class="guide" d="M18 18L5.27 5.27"/>
+              <circle class="dot" cx="18" cy="18" r=".6"/>
+              <circle class="dot" cx="32" cy="27" r=".6"/>
+              <path class="outline" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/>
+              <path class="dim" d="M0 -5H64M0 -6.4V-3.6M64 -6.4V-3.6"/>
+              <text class="dimt" x="32" y="-6.6" text-anchor="middle">64</text>
+              <path class="dim" d="M69 0V64M67.6 0H70.4M67.6 18H70.4M67.6 46H70.4M67.6 64H70.4"/>
+              <text class="dimt" x="71.4" y="10">18</text>
+              <text class="dimt" x="71.4" y="33">28</text>
+              <text class="dimt" x="71.4" y="56">18</text>
+              <path class="dim" d="M23 14.6H41M23 13.4V15.8M41 13.4V15.8"/>
+              <text class="dimt" x="32" y="12.8" text-anchor="middle">Ø18</text>
+              <path class="dim" d="M25.7 50H38.3M25.7 48.8V51.2M38.3 48.8V51.2"/>
+              <text class="dimt" x="32" y="54.4" text-anchor="middle">12.6</text>
+              <path class="leader" d="M38.36 20.64L43.6 18.6"/>
+              <path class="leader" d="M37.6 39H43.8"/>
+              <g class="mkr"><circle cx="5.27" cy="5.27" r="2.4"/><text x="5.27" y="5.4">A</text></g>
+              <g class="mkr"><circle cx="46" cy="18" r="2.4"/><text x="46" y="18.1">B</text></g>
+              <g class="mkr"><circle cx="46.2" cy="39" r="2.4"/><text x="46.2" y="39.1">C</text></g>
+            </svg>
+          </div>
+          <dl class="spec">
+            <div><dt>A</dt><dd><b>Tile.</b> <span>64 × 64 units, corner radius 18. Solid, one colour.</span></dd></div>
+            <div><dt>B</dt><dd><b>Keyhole head.</b> <span>A circle 18 across, centred at 32, 27.</span></dd></div>
+            <div><dt>C</dt><dd><b>Keyhole stem.</b> <span>8.4 wide at the neck, 12.6 at the base, base corners rounded 2.6.</span></dd></div>
+            <div><dt class="plain">↕</dt><dd><b>Balance.</b> <span>The keyhole is 28 tall with 18 clear above and below, centred on the vertical axis.</span></dd></div>
+            <div><dt class="plain">∅</dt><dd><b>One path.</b> <span>Tile and keyhole are a single path with <code>fill-rule="evenodd"</code>. The keyhole never gets a colour of its own.</span></dd></div>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">1.3</span><h3>Clear space and size</h3>
+        <p>Keep a quarter of the tile clear on every side: 16 units when the tile is 64. The mark works down to 16 px. Below 20 px tall, use the mark without the name.</p>
+      </div>
+      <div class="row-body">
+        <div class="sizes">
+          <div class="panel">
+            <h4>Clear space</h4>
+            <svg class="cs" viewBox="-22 -24 108 108" role="img" aria-label="Clear space: 16 units around a 64-unit tile">
+              <defs><pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>
+              <path fill="url(#hatch)" fill-rule="evenodd" d="M-16 -16H80V80H-16Z M0 0H64V64H0Z"/>
+              <rect class="guide" x="-16" y="-16" width="96" height="96"/>
+              <use href="#mark" x="0" y="0" width="64" height="64" style="color:var(--brand)"/>
+              <path class="dim" d="M44 -16V0M42.5 -16H45.5M42.5 0H45.5"/>
+              <text class="dimt" x="47" y="-6">16</text>
+              <path class="dim" d="M-16 76H0M-16 74.5V77.5M0 74.5V77.5"/>
+              <text class="dimt" x="-8" y="72.5" text-anchor="middle">16</text>
+            </svg>
+          </div>
+          <div class="panel">
+            <h4>Sizes</h4>
+            <div class="ramp">
+              <figure><svg viewBox="0 0 64 64" width="72" height="72" aria-hidden="true"><use href="#mark"/></svg><figcaption><b>72</b>README</figcaption></figure>
+              <figure><svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true"><use href="#mark"/></svg><figcaption><b>64</b>avatar</figcaption></figure>
+              <figure><svg viewBox="0 0 64 64" width="32" height="32" aria-hidden="true"><use href="#mark"/></svg><figcaption><b>32</b>app</figcaption></figure>
+              <figure><svg viewBox="0 0 64 64" width="24" height="24" aria-hidden="true"><use href="#mark"/></svg><figcaption><b>24</b>footer</figcaption></figure>
+              <figure><svg viewBox="0 0 64 64" width="16" height="16" aria-hidden="true"><use href="#mark"/></svg><figcaption><b>16</b>favicon</figcaption></figure>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">1.4</span><h3>Mark and name</h3>
+        <p>The name sits to the right of the mark, a quarter of the tile away, in IBM Plex Mono SemiBold. Always lowercase, always with the hyphen.</p>
+      </div>
+      <div class="row-body">
+        <div class="lockups">
+          <figure class="on-light">
+            <svg class="wm" viewBox="0 0 296 64" role="img" aria-label="server-prep logo with name, black"><use href="#mark" width="64" height="64"/><text x="80" y="44">server-prep</text></svg>
+            <figcaption>logo-wordmark.svg · name at 34 units, tracking −1.2, baseline 44</figcaption>
+          </figure>
+          <figure class="on-dark">
+            <svg class="wm" viewBox="0 0 296 64" role="img" aria-label="server-prep logo with name, white"><use href="#mark" width="64" height="64"/><text x="80" y="44">server-prep</text></svg>
+            <figcaption>Switches to #F4F7FA with the system theme</figcaption>
+          </figure>
+        </div>
+        <div class="panel">
+          <h4>In an interface</h4>
+          <div class="inline-lockup"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg><b>server-prep</b></div>
+          <p class="note" style="margin-top:12px"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>Top bars use a 28 px mark, the name at 16 px and a 10 px gap, as in the setup console.</span></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">1.5</span><h3>Versions</h3>
+        <p>Four files cover every case. Pick by the background, not by taste.</p>
+      </div>
+      <div class="row-body">
+        <div class="versions">
+          <figure class="vcard"><div class="art on-light"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg></div><div class="txt"><b>Black tile</b><code>logo.svg</code><span>Light backgrounds: README, docs, slides.</span></div></figure>
+          <figure class="vcard"><div class="art on-dark"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg></div><div class="txt"><b>White tile</b><code>logo-dark.svg</code><span>Dark backgrounds and the rack band.</span></div></figure>
+          <figure class="vcard"><div class="art"><svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><use href="#glyph"/></svg></div><div class="txt"><b>Keyhole only</b><code>logo-mono.svg</code><span>Takes the text colour. For a shape you already have, like a round avatar.</span></div></figure>
+          <figure class="vcard"><div class="art"><div class="tabs"><div class="tab on-light"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg><span>server-prep</span></div><div class="tab on-dark"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg><span>server-prep</span></div></div></div><div class="txt"><b>Favicon</b><code>site/favicon.svg</code><span>Switches between black and white with the system theme.</span></div></figure>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">1.6</span><h3>Misuse</h3>
+        <p>The mark has one shape and one colour. Anything that adds to it makes it someone else's logo.</p>
+      </div>
+      <div class="row-body">
+        <div class="donts">
+          <figure class="dont"><div class="art"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/><path fill="#3BD17F" d="M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No second colour.</b> The keyhole stays a hole.</span></figcaption></figure>
+          <figure class="dont"><div class="art"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:#3730A3"><use href="#mark"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No hue.</b> Not indigo, yellow or blue: black or white only.</span></figcaption></figure>
+          <figure class="dont"><div class="art"><svg viewBox="0 0 64 64" aria-hidden="true" style="filter:drop-shadow(0 4px 6px rgba(55,48,163,.45))"><defs><linearGradient id="bad-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6FA4FF"/><stop offset="1" stop-color="#3730A3"/></linearGradient></defs><path fill="url(#bad-grad)" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No effects.</b> No gradients, shadows or glows.</span></figcaption></figure>
+          <figure class="dont"><div class="art"><svg viewBox="-2 -2 68 68" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No outline.</b> The tile is always solid.</span></figcaption></figure>
+          <figure class="dont"><div class="art"><svg viewBox="0 0 64 64" preserveAspectRatio="none" aria-hidden="true" style="width:100px;height:54px"><use href="#mark" width="64" height="64"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No stretching.</b> Scale it evenly or not at all.</span></figcaption></figure>
+          <figure class="dont"><div class="art"><svg viewBox="0 0 64 64" aria-hidden="true" style="transform:rotate(-14deg)"><use href="#mark"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No rotation.</b> The keyhole always points down.</span></figcaption></figure>
+          <figure class="dont"><div class="art dark-ground"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:#0B1117"><use href="#mark"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No low contrast.</b> Black on dark or white on light disappears.</span></figcaption></figure>
+          <figure class="dont"><div class="art"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#retired"/></svg></div><figcaption><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span><b>No cursor line.</b> That mark is retired. See 6.3.</span></figcaption></figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 COLOUR -->
+  <section class="sec" id="colour" aria-labelledby="colour-h">
+    <div class="sec-head">
+      <div><span class="num">02</span><h2 id="colour-h">Colour</h2></div>
+      <p class="lead">A black-and-white brand on cool greys. Colour only carries meaning: a result in the audit or an LED on the rack, never decoration. Click a value to copy it.</p>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">2.1</span><h3>Brand pair</h3>
+        <p>These two are the whole brand palette. A mark, a primary button or a headline highlight uses one of them, picked by the background.</p>
+      </div>
+      <div class="row-body">
+        <div class="pair">
+          <div class="big-sw">
+            <div class="chip-c" style="background:#0B1117;color:#F4F7FA"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:#F4F7FA"><use href="#glyph"/></svg><b>Ink</b></div>
+            <div class="info">
+              <div class="ln"><button class="hex" type="button" data-copy="#0B1117">#0B1117</button><span class="mono">--brand · --accent</span><span class="ct">16.7:1 on --bg</span></div>
+              <span>The mark, primary buttons, links and focus rings on light surfaces.</span>
+            </div>
+          </div>
+          <div class="big-sw">
+            <div class="chip-c" style="background:#F4F7FA;color:#0B1117;box-shadow:inset 0 -1px 0 #D8DEE5"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:#0B1117"><use href="#glyph"/></svg><b>Paper</b></div>
+            <div class="info">
+              <div class="ln"><button class="hex" type="button" data-copy="#F4F7FA">#F4F7FA</button><span class="mono">--brand (dark) · --rack-hi</span><span class="ct">17.9:1 on dark --bg</span></div>
+              <span>The same roles on dark surfaces and on the rack band.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">2.2</span><h3>Neutrals</h3>
+        <p>Greys with a slight blue cast, from page background to text. Each theme has its own ramp; the token names stay the same.</p>
+      </div>
+      <div class="row-body">
+        <div class="ramp-row">
+          <span class="rl">Light theme</span>
+          <div class="sw-grid">
+            <div class="sw"><i style="background:#EEF1F4"></i><span>--bg<br><button class="hex" type="button" data-copy="#EEF1F4">#EEF1F4</button></span></div>
+            <div class="sw"><i style="background:#FFFFFF"></i><span>--panel<br><button class="hex" type="button" data-copy="#FFFFFF">#FFFFFF</button></span></div>
+            <div class="sw"><i style="background:#F7F9FB"></i><span>--panel-2<br><button class="hex" type="button" data-copy="#F7F9FB">#F7F9FB</button></span></div>
+            <div class="sw"><i style="background:#F2F5F8"></i><span>--sunken<br><button class="hex" type="button" data-copy="#F2F5F8">#F2F5F8</button></span></div>
+            <div class="sw"><i style="background:#E6EAEF"></i><span>--rule-2<br><button class="hex" type="button" data-copy="#E6EAEF">#E6EAEF</button></span></div>
+            <div class="sw"><i style="background:#D8DEE5"></i><span>--rule<br><button class="hex" type="button" data-copy="#D8DEE5">#D8DEE5</button></span></div>
+            <div class="sw"><i style="background:#66727F"></i><span>--ink-3<br><button class="hex" type="button" data-copy="#66727F">#66727F</button></span></div>
+            <div class="sw"><i style="background:#4A5664"></i><span>--ink-2<br><button class="hex" type="button" data-copy="#4A5664">#4A5664</button></span></div>
+            <div class="sw"><i style="background:#0F161E"></i><span>--ink<br><button class="hex" type="button" data-copy="#0F161E">#0F161E</button></span></div>
+          </div>
+        </div>
+        <div class="ramp-row">
+          <span class="rl">Dark theme</span>
+          <div class="sw-grid">
+            <div class="sw"><i style="background:#0A0F14"></i><span>--bg<br><button class="hex" type="button" data-copy="#0A0F14">#0A0F14</button></span></div>
+            <div class="sw"><i style="background:#121920"></i><span>--panel<br><button class="hex" type="button" data-copy="#121920">#121920</button></span></div>
+            <div class="sw"><i style="background:#151D25"></i><span>--panel-2<br><button class="hex" type="button" data-copy="#151D25">#151D25</button></span></div>
+            <div class="sw"><i style="background:#0E141A"></i><span>--sunken<br><button class="hex" type="button" data-copy="#0E141A">#0E141A</button></span></div>
+            <div class="sw"><i style="background:#1D2731"></i><span>--rule-2<br><button class="hex" type="button" data-copy="#1D2731">#1D2731</button></span></div>
+            <div class="sw"><i style="background:#25303B"></i><span>--rule<br><button class="hex" type="button" data-copy="#25303B">#25303B</button></span></div>
+            <div class="sw"><i style="background:#8794A2"></i><span>--ink-3<br><button class="hex" type="button" data-copy="#8794A2">#8794A2</button></span></div>
+            <div class="sw"><i style="background:#A0ACB9"></i><span>--ink-2<br><button class="hex" type="button" data-copy="#A0ACB9">#A0ACB9</button></span></div>
+            <div class="sw"><i style="background:#E3E9EF"></i><span>--ink<br><button class="hex" type="button" data-copy="#E3E9EF">#E3E9EF</button></span></div>
+          </div>
+        </div>
+        <p class="note"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span><b>--ink-3</b> reaches 4.9:1 on a panel but only 4.3:1 on the light page background. Put small text on <code>--bg</code> in <code>--ink-2</code> (6.6:1) instead.</span></p>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">2.3</span><h3>Status</h3>
+        <p>The audit's four results. Status colour always comes with the word and an icon, so colour is never the only signal.</p>
+      </div>
+      <div class="row-body">
+        <div class="status-grid">
+          <div class="st"><div class="duo"><div class="on-light"><span class="pill ok"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Pass</span></div><div class="on-dark"><span class="pill ok"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Pass</span></div></div><div class="meta"><b>--ok</b><span>#186C3B on #E0F1E6 · 5.5:1</span><span>#55C78C on #11281C · 7.4:1</span></div></div>
+          <div class="st"><div class="duo"><div class="on-light"><span class="pill warn"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>Warn</span></div><div class="on-dark"><span class="pill warn"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>Warn</span></div></div><div class="meta"><b>--warn</b><span>#8A5409 on #F7EBD5 · 5.3:1</span><span>#E3A64E on #2D2212 · 7.3:1</span></div></div>
+          <div class="st"><div class="duo"><div class="on-light"><span class="pill bad"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Fail</span></div><div class="on-dark"><span class="pill bad"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Fail</span></div></div><div class="meta"><b>--bad</b><span>#A93224 on #F7E0DB · 5.3:1</span><span>#FF8069 on #33170F · 6.7:1</span></div></div>
+          <div class="st"><div class="duo"><div class="on-light"><span class="pill off"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg>Info</span></div><div class="on-dark"><span class="pill off"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg>Info</span></div></div><div class="meta"><b>--ink-2 on --sunken</b><span>#4A5664 on #F2F5F8 · 6.8:1</span><span>#A0ACB9 on #0E141A · 8.0:1</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">2.4</span><h3>Rack and LEDs</h3>
+        <p>The rack palette draws hardware: the cover band, faceplates and terminals. It stays dark in both themes. LEDs appear only here, as small lit dots.</p>
+      </div>
+      <div class="row-body">
+        <div class="rk">
+          <h4>Surfaces and ink</h4>
+          <div class="rk-sw">
+            <div class="sw"><i style="background:#0B1117"></i><span>--rack<br><button class="hex" type="button" data-copy="#0B1117">#0B1117</button></span></div>
+            <div class="sw"><i style="background:#111A23"></i><span>--rack-2<br><button class="hex" type="button" data-copy="#111A23">#111A23</button></span></div>
+            <div class="sw"><i style="background:#223040"></i><span>--rack-edge<br><button class="hex" type="button" data-copy="#223040">#223040</button></span></div>
+            <div class="sw"><i style="background:#9AA8B6"></i><span>--rack-dim<br><button class="hex" type="button" data-copy="#9AA8B6">#9AA8B6</button></span></div>
+            <div class="sw"><i style="background:#B9C3CE"></i><span>--rack-mid<br><button class="hex" type="button" data-copy="#B9C3CE">#B9C3CE</button></span></div>
+            <div class="sw"><i style="background:#E6EDF3"></i><span>--rack-ink<br><button class="hex" type="button" data-copy="#E6EDF3">#E6EDF3</button></span></div>
+            <div class="sw"><i style="background:#F4F7FA"></i><span>--rack-hi<br><button class="hex" type="button" data-copy="#F4F7FA">#F4F7FA</button></span></div>
+          </div>
+          <h4>LEDs: what a port accepts</h4>
+          <div class="leds">
+            <div><span class="led ok"></span><span>Open to all · <code>#3BD17F</code></span></div>
+            <div><span class="led only"></span><span>Only from listed sources · <code>#6FA4FF</code></span></div>
+            <div><span class="led warn"></span><span>Anyone, slowed down · <code>#F2B13B</code></span></div>
+            <div><span class="led local"></span><span>This machine only · ring</span></div>
+            <div><span class="led off"></span><span>Closed · <code>#4D5967</code> + ring</span></div>
+          </div>
+        </div>
+        <p class="note"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>In the dark theme the rack goes one step darker: <code>#070B0F</code>, <code>#0E151C</code>, <code>#1F2B37</code>. The closed LED is only 2.4:1 against the plate (2.2:1 in the dark theme), which is why it always has a ring.</span></p>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">2.5</span><h3>Severity in charts</h3>
+        <p>Charts that count findings rank them by lightness, not hue. Badges that state one result use the status colours above.</p>
+      </div>
+      <div class="row-body">
+        <div class="sev">
+          <div class="st"><div class="duo"><div class="on-light"><svg class="bar" viewBox="0 0 40 24" preserveAspectRatio="none" aria-hidden="true"><rect width="40" height="24" fill="var(--sev-info)"/></svg></div><div class="on-dark"><svg class="bar" viewBox="0 0 40 24" preserveAspectRatio="none" aria-hidden="true"><rect width="40" height="24" fill="var(--sev-info)"/></svg></div></div><div class="meta"><b>--sev-info</b><span>#7D8794 · dark #6E7987</span><span>3.6:1: bars and marks, never text</span></div></div>
+          <div class="st"><div class="duo"><div class="on-light"><svg class="bar" viewBox="0 0 40 24" preserveAspectRatio="none" aria-hidden="true"><rect width="40" height="24" fill="var(--sev-warn)"/></svg></div><div class="on-dark"><svg class="bar" viewBox="0 0 40 24" preserveAspectRatio="none" aria-hidden="true"><rect width="40" height="24" fill="var(--sev-warn)"/></svg></div></div><div class="meta"><b>--sev-warn</b><span>#4B5563 · dark #A9B3BF</span><span>7.6:1 light, 8.3:1 dark</span></div></div>
+          <div class="st"><div class="duo"><div class="on-light"><svg class="bar" viewBox="0 0 40 24" preserveAspectRatio="none" aria-hidden="true"><rect width="40" height="24" fill="var(--sev-fail)"/></svg></div><div class="on-dark"><svg class="bar" viewBox="0 0 40 24" preserveAspectRatio="none" aria-hidden="true"><rect width="40" height="24" fill="var(--sev-fail)"/></svg></div></div><div class="meta"><b>--sev-fail</b><span>#111820 · dark #F4F7FA</span><span>The most severe has the most contrast</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 TYPE -->
+  <section class="sec" id="type" aria-labelledby="type-h">
+    <div class="sec-head">
+      <div><span class="num">03</span><h2 id="type-h">Typography</h2></div>
+      <p class="lead">Three faces, one job each: Barlow Condensed for headlines and labels, IBM Plex Sans for reading, IBM Plex Mono for anything you type. All three are free on Google Fonts.</p>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">3.1</span><h3>Typefaces</h3>
+        <p>Keep the roles apart. A condensed face in a paragraph is hard to read, and a command set in the text face is easy to mistype.</p>
+      </div>
+      <div class="row-body">
+        <div class="faces">
+          <div class="face d"><div class="spec-line"><span>Display</span><span>500 · 600 · 700</span></div><div class="aa">Aa</div><div class="name">Barlow Condensed</div><p>Headlines in Bold, uppercase labels and pills in SemiBold. Short lines only.</p></div>
+          <div class="face s"><div class="spec-line"><span>Text</span><span>400 · 500 · 600 · 700</span></div><div class="aa">Aa</div><div class="name">IBM Plex Sans</div><p>Body copy, leads, buttons and the big numbers in stat tiles.</p></div>
+          <div class="face m"><div class="spec-line"><span>Code</span><span>400 · 500 · 600</span></div><div class="aa">Aa</div><div class="name">IBM Plex Mono</div><p>Commands, file paths, settings, chips and the name in the logo.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">3.2</span><h3>Type scale</h3>
+        <p>The sizes the setup console uses. Pick from this list before adding a new size.</p>
+      </div>
+      <div class="row-body">
+        <div class="scale">
+          <div><div class="meta"><b>Cover headline</b><span>Barlow Condensed 700 · 42–76 px / 1.06</span></div><div class="sample t-xl">From a fresh server</div></div>
+          <div><div class="meta"><b>Section heading</b><span>Barlow Condensed 700 · 30–42 px / 1.02</span></div><div class="sample t-h2">What the audit checks</div></div>
+          <div><div class="meta"><b>Subheading</b><span>Plex Sans 600 · 18 / 1.3</span></div><div class="sample t-h3">Firewall and Docker</div></div>
+          <div><div class="meta"><b>Lead</b><span>Plex Sans 400 · 17 / 1.6 · --ink-2</span></div><div class="sample t-lead">Run one script and the server comes out locked down and ready for a panel.</div></div>
+          <div><div class="meta"><b>Body</b><span>Plex Sans 400 · 15 / 1.6</span></div><div class="sample t-body">Every change is backed up first, and a dry run shows what would change without touching anything.</div></div>
+          <div><div class="meta"><b>Stat</b><span>Plex Sans 600 · 30 px · −0.02em · tabular</span></div><div class="sample t-stat">43 <small>PASS</small></div></div>
+          <div><div class="meta"><b>Eyebrow</b><span>Barlow Condensed 600 · 13 px · caps · +0.12em</span></div><div class="sample"><span class="eyebrow">What runs, in order</span></div></div>
+          <div><div class="meta"><b>Label</b><span>Barlow Condensed 600 · 12 px · caps · +0.10em</span></div><div class="sample t-label">Smallest size</div></div>
+          <div><div class="meta"><b>Code</b><span>Plex Mono 400 · 13 / 1.5 · inline 0.86em</span></div><div class="sample t-code">sudo ./server-prep.sh --dry-run</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">3.3</span><h3>Emphasis</h3>
+        <p>To stress words in a headline, brighten them and underline them in the same colour: 0.07em thick, 0.14em below. No highlighter blocks, no second hue.</p>
+      </div>
+      <div class="row-body">
+        <div class="emph"><p>From a fresh server to a <em>panel-ready</em> one, with proof.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 INTERFACE -->
+  <section class="sec" id="interface" aria-labelledby="interface-h">
+    <div class="sec-head">
+      <div><span class="num">04</span><h2 id="interface-h">Interface</h2></div>
+      <p class="lead">The parts the setup console is built from. Reuse them before you design new ones.</p>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">4.1</span><h3>Buttons and links</h3>
+        <p>One primary button per view. On the rack band the primary button turns white.</p>
+      </div>
+      <div class="row-body">
+        <div class="ui-grid">
+          <figure><div class="btns"><a class="btn primary" href="#interface">Build your setup</a><a class="btn ghost" href="#interface">Read the guide</a><a class="txt-link" href="#interface">Open the wiki</a></div><figcaption>44 px tall · radius 10 · Plex Sans 600 15 px</figcaption></figure>
+          <figure class="rk-fig"><div class="btns"><a class="btn primary" href="#interface">Build your setup</a><a class="btn ghost" href="#interface">See the audit</a></div><figcaption>On the rack: --rack-hi fill, --rack text</figcaption></figure>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">4.2</span><h3>Pills, chips and labels</h3>
+        <p>Pills state a result. Chips name a value you could type. Eyebrows introduce a block, with the short dash in the accent colour.</p>
+      </div>
+      <div class="row-body">
+        <div class="ui-grid">
+          <figure><div class="chips"><span class="pill ok"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Pass</span><span class="pill warn"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>Warn</span><span class="pill bad"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Fail</span><span class="pill off"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg>Info</span></div><figcaption>Pills: Barlow Condensed 600 12 px, caps, fully round</figcaption></figure>
+          <figure><div class="chips"><span class="chip">debian-13</span><span class="chip">ubuntu-26.04</span><span class="chip">--dry-run</span><span class="eyebrow">Audit, before and after</span></div><figcaption>Chips: Plex Mono 500 12 px on --sunken</figcaption></figure>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">4.3</span><h3>Terminal</h3>
+        <p>Commands and their output sit in a dark terminal in both themes. The bar names the host with a green LED. Results use the rack status colours.</p>
+      </div>
+      <div class="row-body">
+        <div class="term">
+          <div class="term-bar"><span class="host">root@web-01</span><span>example output</span></div>
+<pre><span class="p">$</span> sudo ./server-audit.sh
+<span class="s-ok">PASS</span>  SSH: password login disabled
+<span class="s-ok">PASS</span>  Firewall: UFW on, incoming denied by default
+<span class="s-warn">WARN</span>  Updates: 3 regular updates pending
+<span class="s-bad">FAIL</span>  Docker vs firewall: ports 80 and 443 bypass UFW
+<span class="d">43 PASS · 1 WARN · 1 FAIL</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">4.4</span><h3>Faceplate</h3>
+        <p>The signature surface: a 1U rack unit with screw ears. Use it to show what a server exposes, port by port, with the LED code from 2.4.</p>
+      </div>
+      <div class="row-body">
+        <div class="rackunit" role="img" aria-label="Example faceplate for web-01: 443 open to all, 2222 SSH only from listed sources, 22 tarpit slowed down, 8091 this machine only, 3306 closed">
+          <div class="ear"><i></i><i></i></div>
+          <div class="plate">
+            <div class="plate-head"><span class="eyebrow">Firewall after server-prep · incoming</span><span class="plate-tag">web-01</span></div>
+            <div class="ports">
+              <div class="port"><span class="tag">443</span><small><span class="led ok"></span>HTTPS</small></div>
+              <div class="port"><span class="tag">2222</span><small><span class="led only"></span>SSH</small></div>
+              <div class="port"><span class="tag">22</span><small><span class="led warn"></span>Tarpit</small></div>
+              <div class="port"><span class="tag">8091</span><small><span class="led local"></span>CrowdSec</small></div>
+              <div class="port"><span class="tag">3306</span><small><span class="led off"></span>MySQL</small></div>
+            </div>
+          </div>
+          <div class="ear"><i></i><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">4.5</span><h3>Shape and space</h3>
+        <p>Three radii and an 8-step spacing scale. The logo's corner (18 on 64) is much rounder than any interface radius, so never copy it onto UI.</p>
+      </div>
+      <div class="row-body">
+        <div class="shape">
+          <div class="panel">
+            <h4>Radius</h4>
+            <div class="radii">
+              <div><i style="border-top-left-radius:14px"></i><span>14 · --r-lg<br>cards, terminal</span></div>
+              <div><i style="border-top-left-radius:10px"></i><span>10 · --r<br>buttons, tiles</span></div>
+              <div><i style="border-top-left-radius:6px"></i><span>6 · --r-sm<br>tags</span></div>
+              <div><i style="border-top-left-radius:32px"></i><span>999<br>pills, chips</span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h4>Spacing</h4>
+            <div class="space">
+              <div><span>--s1</span><span>4 px</span><i style="width:4px"></i></div>
+              <div><span>--s2</span><span>8 px</span><i style="width:8px"></i></div>
+              <div><span>--s3</span><span>12 px</span><i style="width:12px"></i></div>
+              <div><span>--s4</span><span>16 px</span><i style="width:16px"></i></div>
+              <div><span>--s5</span><span>24 px</span><i style="width:24px"></i></div>
+              <div><span>--s6</span><span>32 px</span><i style="width:32px"></i></div>
+              <div><span>--s7</span><span>48 px</span><i style="width:48px"></i></div>
+              <div><span>--s8</span><span>72 px</span><i style="width:72px"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 VOICE -->
+  <section class="sec" id="voice" aria-labelledby="voice-h">
+    <div class="sec-head">
+      <div><span class="num">05</span><h2 id="voice-h">Voice</h2></div>
+      <p class="lead">Write for someone who has never hardened a server. Simple words, short sentences, and proof instead of promises.</p>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">5.1</span><h3>Principles</h3>
+        <p>The same rules apply to the README, the wiki, script output and issues.</p>
+      </div>
+      <div class="row-body">
+        <div class="principles">
+          <div><b>Say what happens</b><p>Name the change and its effect, in the active voice. "Disables password login", not "password login will be disabled".</p></div>
+          <div><b>Keep it short</b><p>One idea per sentence. Plain words over jargon; explain a term the first time it appears.</p></div>
+          <div><b>Show the proof</b><p>Point to the audit, the test run or the exact command. Never claim "secure" without saying what was checked.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">5.2</span><h3>Write this, not that</h3>
+        <p>Examples from the kind of text the project writes every day.</p>
+      </div>
+      <div class="row-body">
+        <div class="dd" role="table" aria-label="Writing examples">
+          <div role="row"><span class="hd" role="columnheader">Write</span><span class="hd" role="columnheader">Not</span><span class="hd why" role="columnheader">Why</span></div>
+          <div role="row"><span class="do" role="cell">Disables password login. Use an SSH key instead.</span><span class="dont-t" role="cell">Password-based authentication mechanisms will be deactivated.</span><span class="why" role="cell">Active voice, plain words, the next step.</span></div>
+          <div role="row"><span class="do" role="cell">2 checks failed. Run these commands to fix them.</span><span class="dont-t" role="cell">Oops! Something went wrong with your server!!</span><span class="why" role="cell">An error names the problem and the fix.</span></div>
+          <div role="row"><span class="do" role="cell">Tested on Ubuntu 22.04, 24.04 and 26.04, and Debian 12 and 13.</span><span class="dont-t" role="cell">Military-grade, bulletproof security.</span><span class="why" role="cell">Facts you can check beat adjectives.</span></div>
+          <div role="row"><span class="do" role="cell">server-prep sets up the firewall.</span><span class="dont-t" role="cell">Server Prep / ServerPrep / SP sets up the firewall.</span><span class="why" role="cell">The name never changes form.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">5.3</span><h3>Names and examples</h3>
+        <p>Public text is read by strangers. Examples must work for anyone and expose no one.</p>
+      </div>
+      <div class="row-body">
+        <dl class="rules">
+          <div><dt>The project</dt><dd><b>server-prep</b>: lowercase, with the hyphen, even at the start of a sentence. Scripts in mono: <code>server-prep.sh</code>, <code>server-audit.sh</code>, <code>server-preconfig.sh</code>.</dd></div>
+          <div><dt>Results</dt><dd>PASS, WARN, FAIL and INFO in capitals, as the audit prints them.</dd></div>
+          <div><dt>Panels</dt><dd>By their own names: Coolify, Dokploy, Openship.</dd></div>
+          <div><dt>Examples</dt><dd>Host <code>web-01</code>, domain <code>example.com</code>, addresses from <code>203.0.113.0/24</code>. Never a real client name, domain, address, token or key, in text or in screenshots.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 ASSETS -->
+  <section class="sec" id="assets" aria-labelledby="assets-h">
+    <div class="sec-head">
+      <div><span class="num">06</span><h2 id="assets-h">Assets</h2></div>
+      <p class="lead">The logo files, the icons and where the tokens live. Copy the SVG from here, or take the files from the repository.</p>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">6.1</span><h3>Logo files</h3>
+        <p>Five SVG files, one shape. Use them as they are. The README and the browser tab load these files; the setup console and this page draw the same path inline. When the mark changes, update those copies and the renders in 6.2 too.</p>
+      </div>
+      <div class="row-body">
+        <div class="assets">
+          <div class="asset">
+            <div class="thumb on-light"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:var(--brand)"><use href="#mark"/></svg></div>
+            <div class="file"><b>.github/assets/logo.svg</b><span>fill #0B1117</span></div>
+            <div class="use">Light backgrounds: README, docs, slides.</div>
+            <div class="acts"><button class="sbtn" type="button" data-copy-from="src-logo"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>Copy SVG</button><a class="sbtn" href="https://github.com/exceev-consulting/server-prep/blob/main/.github/assets/logo.svg"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>GitHub</a></div>
+            <details id="d-src-logo"><summary>SVG source</summary><pre id="src-logo">&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="server-prep"&gt;
+  &lt;path fill="#0B1117" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/&gt;
+&lt;/svg&gt;</pre></details>
+          </div>
+          <div class="asset">
+            <div class="thumb on-dark"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:var(--brand)"><use href="#mark"/></svg></div>
+            <div class="file"><b>.github/assets/logo-dark.svg</b><span>fill #F4F7FA</span></div>
+            <div class="use">Dark backgrounds; the README picks it in dark mode.</div>
+            <div class="acts"><button class="sbtn" type="button" data-copy-from="src-dark"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>Copy SVG</button><a class="sbtn" href="https://github.com/exceev-consulting/server-prep/blob/main/.github/assets/logo-dark.svg"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>GitHub</a></div>
+            <details id="d-src-dark"><summary>SVG source</summary><pre id="src-dark">&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="server-prep"&gt;
+  &lt;path fill="#F4F7FA" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/&gt;
+&lt;/svg&gt;</pre></details>
+          </div>
+          <div class="asset">
+            <div class="thumb"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:var(--ink)"><use href="#glyph"/></svg></div>
+            <div class="file"><b>.github/assets/logo-mono.svg</b><span>fill currentColor</span></div>
+            <div class="use">Keyhole only, in the colour of the text around it.</div>
+            <div class="acts"><button class="sbtn" type="button" data-copy-from="src-mono"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>Copy SVG</button><a class="sbtn" href="https://github.com/exceev-consulting/server-prep/blob/main/.github/assets/logo-mono.svg"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>GitHub</a></div>
+            <details id="d-src-mono"><summary>SVG source</summary><pre id="src-mono">&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="server-prep"&gt;
+  &lt;path fill="currentColor" d="M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/&gt;
+&lt;/svg&gt;</pre></details>
+          </div>
+          <div class="asset">
+            <div class="thumb"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:var(--brand)"><use href="#mark"/></svg></div>
+            <div class="file"><b>.github/assets/logo-wordmark.svg</b><span>#0B1117, #F4F7FA in dark mode</span></div>
+            <div class="use">Mark and name together; follows the system theme.</div>
+            <div class="acts"><button class="sbtn" type="button" data-copy-from="src-wm"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>Copy SVG</button><a class="sbtn" href="https://github.com/exceev-consulting/server-prep/blob/main/.github/assets/logo-wordmark.svg"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>GitHub</a></div>
+            <details id="d-src-wm"><summary>SVG source</summary><pre id="src-wm">&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 64" role="img" aria-label="server-prep"&gt;
+  &lt;style&gt;path, text { fill: #0B1117; } text { font: 600 34px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; letter-spacing: -1.2px; } @media (prefers-color-scheme: dark) { path, text { fill: #F4F7FA; } }&lt;/style&gt;
+  &lt;path fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/&gt;
+  &lt;text x="80" y="44"&gt;server-prep&lt;/text&gt;
+&lt;/svg&gt;</pre></details>
+          </div>
+          <div class="asset">
+            <div class="thumb"><svg viewBox="0 0 64 64" aria-hidden="true" style="color:var(--brand);width:16px;height:16px"><use href="#mark"/></svg></div>
+            <div class="file"><b>site/favicon.svg</b><span>#0B1117, #F4F7FA in dark mode</span></div>
+            <div class="use">Browser tab of the setup console and of this page.</div>
+            <div class="acts"><button class="sbtn" type="button" data-copy-from="src-fav"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>Copy SVG</button><a class="sbtn" href="https://github.com/exceev-consulting/server-prep/blob/main/site/favicon.svg"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>GitHub</a></div>
+            <details id="d-src-fav"><summary>SVG source</summary><pre id="src-fav">&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="server-prep"&gt;
+  &lt;style&gt;path { fill: #0B1117; } @media (prefers-color-scheme: dark) { path { fill: #F4F7FA; } }&lt;/style&gt;
+  &lt;path fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 18A9 9 0 0 1 36.2 35L38.3 42.6A2.6 2.6 0 0 1 35.8 46H28.2A2.6 2.6 0 0 1 25.7 42.6L27.8 35A9 9 0 0 1 32 18Z"/&gt;
+&lt;/svg&gt;</pre></details>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">6.2</span><h3>Icons and link previews</h3>
+        <p>PNG renders for the places that can't use SVG. Render them again from the SVG when the mark or the tagline changes, at exactly these sizes.</p>
+      </div>
+      <div class="row-body">
+        <figure class="og">
+          <img src="../social-preview.png" width="1280" height="640" alt="The social preview: the white tile and the name server-prep on the dark rack band, with the tagline: harden a fresh Debian or Ubuntu server for your PaaS panel, and prove it with an audit.">
+          <figcaption>social-preview.png · 1280 × 640 · the card shown when a link to the repository or the site is shared</figcaption>
+        </figure>
+        <div class="assets">
+          <div class="asset">
+            <div class="thumb on-dark"><img class="wide" src="../social-preview.png" width="1280" height="640" alt=""></div>
+            <div class="file"><b>site/social-preview.png</b><span>1280 × 640 · source .github/assets/social-preview.svg</span></div>
+            <div class="use">The <code>og:image</code> of the setup console and this page, and the repository's social preview. A maintainer uploads it by hand: Settings → General → Social preview.</div>
+            <div class="acts"><a class="sbtn" href="../social-preview.png"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>Open</a><a class="sbtn" href="https://github.com/exceev-consulting/server-prep/blob/main/.github/assets/social-preview.svg"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>Source</a></div>
+          </div>
+          <div class="asset">
+            <div class="thumb"><img src="../apple-touch-icon.png" width="180" height="180" alt=""></div>
+            <div class="file"><b>site/apple-touch-icon.png</b><span>180 × 180 · #F4F7FA keyhole on #0B1117</span></div>
+            <div class="use">Home-screen icon on iPhone and iPad. A full square with no rounded corners: iOS rounds them itself.</div>
+            <div class="acts"><a class="sbtn" href="../apple-touch-icon.png"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>Open</a></div>
+          </div>
+          <div class="asset">
+            <div class="thumb on-light"><img src="../favicon-32.png" width="32" height="32" alt=""></div>
+            <div class="file"><b>site/favicon-32.png</b><span>32 × 32 · logo.svg as it is</span></div>
+            <div class="use">Browser tab where an SVG favicon doesn't work. Listed before <code>favicon.svg</code> with <code>sizes="32x32"</code>, so other browsers keep the SVG.</div>
+            <div class="acts"><a class="sbtn" href="../favicon-32.png"><svg class="i" aria-hidden="true"><use href="#i-out"/></svg>Open</a></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">6.3</span><h3>Retired mark</h3>
+        <p>Replace it wherever you still see it.</p>
+      </div>
+      <div class="row-body">
+        <div class="retired">
+          <div class="pairs"><svg viewBox="0 0 64 64" role="img" aria-label="Retired mark: keyhole on a cursor line"><use href="#retired"/></svg><svg class="arrow i" aria-hidden="true"><use href="#i-arrow"/></svg><svg viewBox="0 0 64 64" role="img" aria-label="Current mark: keyhole only"><use href="#mark"/></svg></div>
+          <p>Until October 2026 the keyhole stood on a terminal cursor. The cursor line is gone and the keyhole moved down 5 units to the centre of the tile. Same tile, same colours.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label">
+        <span class="ref">6.4</span><h3>Source of truth</h3>
+        <p>If this page and the repository disagree, the repository wins.</p>
+      </div>
+      <div class="row-body">
+        <dl class="rules">
+          <div><dt>Colour and type tokens</dt><dd><a href="https://github.com/exceev-consulting/server-prep/blob/main/site/tokens.css"><code>site/tokens.css</code></a>, light and dark, loaded by the setup console and this page. A page that must work on its own, like the e2e report, keeps a copy, and <code>scripts/check-tokens.sh</code> fails CI when the copy drifts.</dd></div>
+          <div><dt>Logo files</dt><dd><a href="https://github.com/exceev-consulting/server-prep/tree/main/.github/assets"><code>.github/assets/</code></a> and <code>site/favicon.svg</code>. The setup console and this page carry the same path inline.</dd></div>
+          <div><dt>Icons and previews</dt><dd>The PNG files in <code>site/</code>, rendered from the SVG.</dd></div>
+          <div><dt>Live example</dt><dd>The <a href="../">setup console</a> on GitHub Pages uses every part of this page.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="inline-lockup"><svg viewBox="0 0 64 64" aria-hidden="true" style="width:24px;height:24px"><use href="#mark"/></svg><b style="font-size:14px">server-prep</b></span>
+    <nav aria-label="Project links">
+      <a href="../">Setup console</a>
+      <a href="https://github.com/exceev-consulting/server-prep">Repository</a>
+      <a href="https://github.com/exceev-consulting/server-prep/wiki">Wiki</a>
+      <a href="https://github.com/exceev-consulting/server-prep/discussions">Discussions</a>
+    </nav>
+    <span>MIT · Built and maintained by <a href="https://exceev.com">Exceev Consulting</a></span>
+  </div>
+</footer>
+
+<p class="sr" id="copy-status" role="status" aria-live="polite"></p>
+<div class="toast" aria-hidden="true" hidden></div>
+
+</body>
+</html>
