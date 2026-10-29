@@ -353,6 +353,18 @@ else
     result fw.status FAIL "Firewall" "No active firewall detected" "sudo apt install ufw && sudo ufw enable"
 fi
 
+# docker_user_filtered: reads `iptables -S DOCKER-USER` on stdin. Succeeds only when the chain
+# jumps to -j ufw-user-forward (the rule ufw_docker_rules in server-prep.sh checks) AND to
+# -j ufw-docker-logging-deny. ufw-docker loads both in one block: with only one of them, the
+# ports that UFW does not allow still reach the containers. CrowdSec bouncer rules or manual DROP
+# bans alone do not count. Quoted strings (rule comments) are removed first so they cannot fake a jump.
+docker_user_filtered() {
+    local rules
+    rules=$(sed -E 's/"([^"\\]|\\.)*"//g')
+    grep -qE -- '^-A DOCKER-USER( .*)? -j ufw-user-forward( |$)' <<<"$rules" &&
+        grep -qE -- '^-A DOCKER-USER( .*)? -j ufw-docker-logging-deny( |$)' <<<"$rules"
+}
+
 # Is Docker prevented from bypassing the firewall?
 DOCKER_ACTIVE=0
 DOCKER_PROTECTED=1
@@ -361,15 +373,15 @@ if have docker && systemctl is-active --quiet docker 2>/dev/null; then
     if [[ $IS_ROOT -eq 1 ]]; then
         if [[ -f /etc/docker/daemon.json ]] && grep -qE '"iptables"[[:space:]]*:[[:space:]]*false' /etc/docker/daemon.json; then
             result fw.docker_bypass PASS "Docker vs firewall" "Docker iptables management disabled (iptables=false)"
-        elif iptables -S DOCKER-USER 2>/dev/null | grep -qE 'ufw-user-forward|ufw-docker|DROP'; then
-            result fw.docker_bypass PASS "Docker vs firewall" "DOCKER-USER chain filters published container ports"
+        elif iptables -S DOCKER-USER 2>/dev/null | docker_user_filtered; then
+            result fw.docker_bypass PASS "Docker vs firewall" "DOCKER-USER sends published container ports through UFW (ufw-docker rules)"
         else
             DOCKER_PROTECTED=0
             if [[ $UFW_ACTIVE -eq 1 ]]; then
-                result fw.docker_bypass FAIL "Docker vs firewall" "Published container ports bypass UFW (no DOCKER-USER filtering)" \
+                result fw.docker_bypass FAIL "Docker vs firewall" "Published container ports bypass UFW (ufw-docker rules missing or incomplete in DOCKER-USER; CrowdSec or DROP rules alone do not count)" \
                     "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes (installs the ufw-docker rules)"
             else
-                result fw.docker_bypass WARN "Docker vs firewall" "No DOCKER-USER filtering (and no active firewall)"
+                result fw.docker_bypass WARN "Docker vs firewall" "ufw-docker rules missing or incomplete in DOCKER-USER (and no active firewall)"
             fi
         fi
     else

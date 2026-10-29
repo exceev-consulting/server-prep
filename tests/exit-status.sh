@@ -103,3 +103,6 @@ expect_main_status firewall 'OK (already)' 1   # failure before the final step
 expect_main_status suid 'OK (already)' 1       # failure in the final step
 expect_main_status none 'OK (already)' 0       # a missing return 0 must fail this
 expect_main_status none SKIPPED 0             # no selected step failed
+
+# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
+bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
