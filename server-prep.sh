@@ -1190,7 +1190,8 @@ EOF
     if [[ $need_two -eq 1 ]]; then
         write_sshd_config "$SSH_PORT"
         sshd -t 2>>"$LOG_FILE" || { bash "$rb"; note "phase B config invalid, rolled back"; return 1; }
-        restart_ssh
+        # The rollback timer is already stopped: a failed restart here would leave no sshd at all.
+        restart_ssh || { bash "$rb"; note "phase B restart failed, rolled back"; return 1; }
         local nums
         nums=$(ufw status numbered 2>/dev/null | grep 'server-prep-temp' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn)
         for p in $nums; do run ufw --force delete "$p"; done

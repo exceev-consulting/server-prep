@@ -34,7 +34,7 @@ Highlights of each release. The full list of merged pull requests is in each
 - A second `server-prep.sh` run no longer reports the firewall step as CHANGED when its rules did not change.
 - Ubuntu 22.10+ (sshd started by `ssh.socket`): the SSH step could fail with "Address already in use" and roll back,
   and the rollback could then leave no SSH at all. server-prep now stops sshd before it restarts `ssh.socket`, and both
-  rollback scripts do the same.
+  rollback scripts do the same. If the restart that closes the old SSH port fails, the step rolls back too.
 - `server-preconfig.sh` enables `ssh.socket` instead of `ssh.service` where sshd is socket-activated, and `--check`
   accepts it. Enabling both made the later port change fail.
 - Rollbacks: when the SSH restart failed, the 10-minute rollback timer stayed armed and could undo a re-run made in
