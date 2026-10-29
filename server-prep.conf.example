@@ -48,7 +48,7 @@ INSTALL_AIDE="yes"
 INSTALL_ENDLESSH="yes"                   # tarpit on 22 once SSH has moved
 INSTALL_TELEGRAF="yes"                   # InfluxDB metrics agent, installed from InfluxData repo, left stopped
 TELEGRAM_ENABLE="no"
-TELEGRAM_BOT_TOKEN=""
+TELEGRAM_BOT_TOKEN=""                    # empty on a re-run = keep the token already installed
 TELEGRAM_CHAT_ID=""
 TELEGRAM_IGNORE_USERS="root"             # the panel logs in as root all the time
 

@@ -57,6 +57,7 @@ A step never writes to the system directly. It uses a small set of helpers. This
 | Helper | What it does |
 |---|---|
 | `run CMD...` | Runs a command and sends its output to the log. In a dry run, it only prints the command. |
+| `run_secret SECRET CMD...` | Like `run`, for a command that takes a token or key: the log and the dry-run output show `SECRET` as `***`. |
 | `write_file PATH MODE` | Writes a file from stdin, **only when the content is different**. It backs up the old file first. |
 | `set_kv FILE KEY VALUE` | Sets one `key = value` line in a config file, replacing a commented or old line. It uses `write_file`. |
 | `backup_file PATH` | Copies a file into the backup folder, once per run. |
@@ -116,7 +117,7 @@ Each check calls `result <id> <status> "<title>" "<detail>" "<fix hint>"`. The s
 - **FAIL**: a real problem. The script exits with code `1` when at least one check fails.
 - **INFO**: for optional features. INFO never lowers the score.
 
-There are 55 checks in 11 sections: System, Updates, SSH, Firewall & network exposure, Intrusion prevention, Accounts & authentication, Kernel & system settings, Logging & monitoring, Services, Resources, and Panel readiness. Check ids start with their section, for example `ssh.*` or `acc.password_dict`.
+There are 56 checks in 11 sections: System, Updates, SSH, Firewall & network exposure, Intrusion prevention, Accounts & authentication, Kernel & system settings, Logging & monitoring, Services, Resources, and Panel readiness. Check ids start with their section, for example `ssh.*` or `acc.password_dict`.
 
 The audit writes a text report by default, and can also write Markdown (`--md`), JSON (`--json`) and TSV (`--tsv`). `server-prep.sh` reads the TSV for its before/after table, so those columns must stay stable.
 
@@ -141,7 +142,7 @@ After you change a step, a setting or an audit check, regenerate the data and co
 scripts/gen-data.sh
 ```
 
-It prints `wrote site/data.json and site/data.js (20 steps, ... settings, 55 audit checks)` and updates both files. It needs `jq`. In CI, `scripts/gen-data.sh --check` prints nothing and exits 0 when the data is up to date, or prints `site/data.json is out of date` with a diff.
+It prints `wrote site/data.json and site/data.js (20 steps, ... settings, 56 audit checks)` and updates both files. It needs `jq`. In CI, `scripts/gen-data.sh --check` prints nothing and exits 0 when the data is up to date, or prints `site/data.json is out of date` with a diff.
 
 To preview the page on your machine:
 
