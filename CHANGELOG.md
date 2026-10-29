@@ -5,6 +5,10 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- **Security fix:** the firewall step said CHANGED even when the ufw-docker rules could not be set up (download blocked,
+  checksum mismatch, `ufw-docker install` failed, or rules not loaded), so Docker-published ports could still bypass UFW.
+  The step now shows FAILED, the report says Docker ports still bypass UFW, and `server-prep.sh` exits 1. Scripts that
+  run it will now see this failure. A re-run that changes nothing now shows `OK (already)` instead of CHANGED.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.

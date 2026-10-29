@@ -119,6 +119,7 @@ The installed version should come from `packagecloud.io`, not from `esm`.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Audit FAIL "Docker vs firewall" right after a full run (80/443 reachable even though UFW blocks them) | before v1.1.1, the ufw-docker rules were skipped when Docker was already running | update server-prep, then re-run `--only firewall` |
+| Firewall step FAILED: "ufw-docker rules not loaded: Docker ports still bypass UFW" | ufw-docker could not be downloaded from raw.githubusercontent.com, its checksum did not match, or its rules did not load | read the log named in the report, fix the cause, then re-run `--only firewall` |
 | `docker ps` can't reach `~/.docker/desktop/docker.sock` | a Docker Desktop context is active | `docker context use default`, or remove Docker Desktop |
 
 After the firewall step, check that Docker's ports go through UFW:
@@ -127,7 +128,7 @@ After the firewall step, check that Docker's ports go through UFW:
 sudo iptables -S DOCKER-USER | head -3
 ```
 
-The output must show `-j ufw-user-forward`. Check this yourself even when the audit passes: two bugs can hide a missing rule today ([#68](https://github.com/exceev-consulting/server-prep/issues/68), [#69](https://github.com/exceev-consulting/server-prep/issues/69)).
+The output must show `-j ufw-user-forward`. Check this yourself even when the audit passes: a bug can hide a missing rule today ([#69](https://github.com/exceev-consulting/server-prep/issues/69)).
 
 ## Kernel settings and services
 
