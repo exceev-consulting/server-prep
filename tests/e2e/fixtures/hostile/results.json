@@ -11,7 +11,7 @@
   "started": "</script>",
   "duration_s": -5,
   "status": "passed",
-  "reason": "",
+  "reason": "VM stopped: rm -rf /` | <img src=x onerror=alert(1)>\n- @user see [the log](http://x)\t\r\u2028 #1 end",
   "counts": {"passed": 99, "failed": 0, "skipped": 0},
   "scenarios": [
     {"id": "boot", "title": "</script><img src=x onerror=alert(1)>", "group": " ", "status": "passed",

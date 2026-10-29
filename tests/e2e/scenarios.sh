@@ -163,6 +163,15 @@ wait_services() {   # what the audit needs settled: services up, AIDE's first da
         true' < /dev/null
 }
 
+check_tarpit() {   # where the endlessh package exists, the tarpit must really listen on 22
+    if ! as_root 'systemctl cat endlessh.service >/dev/null 2>&1'; then
+        printf 'endlessh is not installed on this release\n' >> "$OUT/$SC_ID.log"
+        return 0
+    fi
+    as_root 'systemctl is-active -q endlessh && ss -Hltn "sport = :22" | grep -q LISTEN'
+    check "the endlessh tarpit is running on port 22" $? "$(as_root 'systemctl is-active endlessh; journalctl -u endlessh -n 3 --no-pager -o cat' 2>&1 | tr '\n' ' ' | head -c 300)"
+}
+
 no_ssh_banner() {   # no_ssh_banner PORT: true when the port gives no SSH greeting (closed or tarpit)
     local line=""
     { exec 3<>"/dev/tcp/127.0.0.1/$1"; } 2>/dev/null || return 0
@@ -317,13 +326,18 @@ sc_ssh_access() {
     as_root 'rm -f /root/e2e-panel-key'
     [[ $rc -ne 0 ]]; check "root is refused from an address that is not the panel's" $?
     no_ssh_banner "$P22"; check "port 22 gives no SSH login any more" $?
+    check_tarpit
     finish
 }
 
 sc_docker_firewall() {
     begin docker-firewall
     local token="e2e-$RANDOM$RANDOM" got
-    SSH_LIMIT=300 as_root "docker run -d --name e2e-web -p $VM_DOCKER_PORT:80 public.ecr.aws/docker/library/busybox:stable \
+    # Any small image with an HTTP server will do. Shared runner IPs hit registry pull limits
+    # ("Data limit exceeded"), so try a few registries in turn.
+    SSH_LIMIT=600 as_root "for img in mirror.gcr.io/library/busybox:stable public.ecr.aws/docker/library/busybox:stable \
+            docker.io/library/busybox:stable; do docker pull -q \$img && docker tag \$img e2e-busybox && break; done
+        docker run -d --name e2e-web -p $VM_DOCKER_PORT:80 e2e-busybox \
         sh -c 'mkdir -p /w && echo $token > /w/index.html && exec httpd -f -p 80 -h /w'" < /dev/null 2>&1 | log_to > /dev/null
     sleep 3
     got="$(as_root "curl -fsS --max-time 10 http://127.0.0.1:$VM_DOCKER_PORT/" 2>/dev/null)"
@@ -336,7 +350,7 @@ sc_docker_firewall() {
     got="$(curl -sS --max-time 15 "http://127.0.0.1:$PDOCK/" 2>&1)"
     check_eq "control: with 'ufw route allow' the port answers from outside" "$got" "$token"
     as_root 'ufw route delete allow proto tcp from any to any port 80' 2>&1 | log_to > /dev/null
-    as_root 'docker rm -f e2e-web && docker image rm public.ecr.aws/docker/library/busybox:stable' 2>&1 | log_to > /dev/null
+    as_root 'docker rm -f e2e-web; docker image ls --format "{{.Repository}}:{{.Tag}}" | grep busybox | xargs -r docker image rm' 2>&1 | log_to > /dev/null
     finish
 }
 
@@ -386,6 +400,7 @@ sc_reboot() {
     [[ -z "$failed" ]]; check "no systemd unit failed at boot" $? "$failed"
     check_eq "the admin logs in on 822" "$(ssh_as admin admin "$P822" 'id -un' 2>&1)" admin
     no_ssh_banner "$P22"; check "port 22 still gives no SSH login" $?
+    check_tarpit
     finish
 }
 

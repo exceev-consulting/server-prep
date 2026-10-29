@@ -39,6 +39,7 @@ Usage:
   tests/e2e/build-report.sh --index --out DIR INDEX_JSON
 
   RESULT_DIR           a folder with one results.json from tests/e2e/run.sh and the files it lists
+                       (not DIR or a folder right in it: the report would overwrite its logs)
   --out DIR            where the report goes (created if needed)
   --meta key=value     shown in the header: repo, sha, ref, pr, pr_title, run_id, run_url, event,
                        generated (default: now), source (pr, main, dispatch or local; default: local)
@@ -258,6 +259,20 @@ error_os() {   # error_os OS LABEL REASON: a system without usable results
          scenarios: [], audit: {}, steps: [], files: [], attachments: []}' > "$F"
 }
 
+# The report writes its page in OUT/ and the logs in OUT/<os>/. A results folder there would be
+# overwritten: with --out tests/e2e/out tests/e2e/out/debian-13, each log is its own copy target,
+# and add_result removes it before it reads it. File names never hold a "/", so a deeper folder is
+# safe. -ef compares inodes, so a symlink or another spelling of the same folder is caught too.
+in_out() {   # in_out DIR: true when DIR is OUT or a folder right in it
+    local d
+    [[ -d "$OUT" ]] || return 1
+    [[ "$1" -ef "$OUT" ]] && return 0
+    for d in "$OUT"/*/; do
+        [[ "$1" -ef "$d" ]] && return 0
+    done
+    return 1
+}
+
 guess_os() {   # guess_os DIR: an OS id from the folder name (CI artifacts are e2e-vm-<os>), or ""
     local base="${1%/}"
     base="${base##*/}"
@@ -436,6 +451,9 @@ case "$MODE" in
     report)
         [[ -n "$OUT" ]] || die 2 "--out DIR is needed (see --help)"
         ((${#DIRS[@]} + ${#MISSING[@]} > 0)) || die 2 "no RESULT_DIR and no --missing: nothing to report"
+        for d in "${DIRS[@]}"; do
+            ! in_out "$d" || die 2 "$d is --out or a folder right in it: the report would overwrite its logs"
+        done
         [[ -n "${META[generated]:-}" ]] || META[generated]="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         [[ -n "${META[source]:-}" ]] || META[source]=local
         for key in "${!META[@]}"; do

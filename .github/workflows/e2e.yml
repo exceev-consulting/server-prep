@@ -215,9 +215,9 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           case $EVENT in
-            pull_request) origin=pr ;;
-            workflow_dispatch) origin=dispatch ;;
-            *) origin=main ;;
+            pull_request) origin="pr" ;;
+            workflow_dispatch) origin="dispatch" ;;
+            *) origin="main" ;;
           esac
           args=(--out report
                 --meta "repo=$REPO" --meta "sha=$SHA" --meta "ref=$REF" --meta "run_id=$RUN_ID"
@@ -225,6 +225,21 @@ jobs:
                 --meta "generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
           if [ -n "$PR" ]; then args+=(--meta "pr=$PR" --meta "pr_title=$PR_TITLE"); fi
           mapfile -t oses < <(jq -r '.[]?' <<<"${OSES:-[]}" 2>/dev/null || true)
+          # When the pattern matches a single artifact (a one-OS run, or only one VM job uploaded),
+          # download-artifact puts its files straight in results/, without the e2e-vm-<os> folder.
+          # Move them there, as build-report.sh names a broken result after its folder. With one
+          # expected OS it can only be that one, otherwise its results.json names it.
+          if [ -f results/results.json ]; then
+            if [ ${#oses[@]} -eq 1 ]; then
+              flat=${oses[0]}
+            else
+              flat=$(jq -r '.os // empty' results/results.json 2>/dev/null) || flat=
+            fi
+            if [[ $flat =~ ^[a-z0-9][a-z0-9.-]*$ ]] && [ ! -e "results/e2e-vm-$flat" ]; then
+              mkdir "results/e2e-vm-$flat"
+              find results -mindepth 1 -maxdepth 1 ! -name "e2e-vm-$flat" -exec mv -t "results/e2e-vm-$flat" {} +
+            fi
+          fi
           dirs=()
           for os in "${oses[@]}"; do
             [[ $os =~ ^[a-z0-9][a-z0-9.-]*$ ]] || continue

@@ -30,8 +30,12 @@ MAX_FILE=$((32 * 1024 * 1024))        # largest file kept from an artifact (the 
 MAX_OS_BYTES=$((96 * 1024 * 1024))    # all files kept for one OS
 MAX_FILES=60                          # files kept for one OS
 MAX_REPORT=$((100 * 1024 * 1024))     # largest report published: a Pages site is limited to 1 GB
+MAX_EXTRA_OS=5                        # systems not in main's images.tsv read from one run
 NAME_RE='^[A-Za-z0-9][A-Za-z0-9._-]*$'
 OS_RE='^[a-z0-9][a-z0-9.-]*$'
+TIME_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+# names build-report.sh refuses as an OS id (its report files)
+RESERVED=" index.html index.js index.json data.js summary.json report.css report.js list.js "
 
 OUT=""
 while (($#)); do
@@ -98,34 +102,53 @@ api() {
     return 1
 }
 
-# latest_run BRANCH HEAD_REPO EVENT... - print the newest finished run (one JSON line), or nothing.
+# latest_run BRANCH HEAD_REPO EVENT [SINCE] - print the newest finished run (one JSON line), or nothing.
+# The API filters the event: the listing stops at 1000 runs, and runs of another event (a fork's pull
+# request from a branch with the same name) must not push the right run out of it.
+# SINCE (a pull request's creation) skips older runs: they belong to an earlier pull request from a
+# branch with the same name.
 # Cancelled runs were superseded or stopped by hand: only success and failure count.
 latest_run() {
-    local branch="$1" head_repo="$2" page runs found count events
-    shift 2
-    events="$(printf '%s\n' "$@" | jq -Rnc '[inputs]')"
-    local query=(-X GET -f branch="$branch" -f status=completed -f per_page=100)
-    (($# == 1)) && query+=(-f event="$1")
+    local branch="$1" head_repo="$2" event="$3" since="${4:-}" page runs found count
+    local query=(-X GET -f branch="$branch" -f event="$event" -f status=completed -f per_page=100)
     for ((page = 1; page <= MAX_PAGES; page++)); do
         runs="$(api "repos/$REPO/actions/workflows/$WORKFLOW/runs" "${query[@]}" -f page="$page")" || return 1
-        found="$(jq -c --arg repo "$head_repo" --argjson events "$events" '
+        found="$(jq -c --arg repo "$head_repo" --arg event "$event" --arg since "$since" '
             first(.workflow_runs[]?
-                  | select(.head_repository.full_name == $repo
-                           and (.event as $e | any($events[]; . == $e))
+                  | select(.head_repository.full_name == $repo and .event == $event
+                           and (.created_at // "") >= $since
                            and (.conclusion == "success" or .conclusion == "failure"))
-                  | {id, event, head_sha, head_branch, html_url, updated_at}) // empty' <<< "$runs")" || return 1
+                  | {id, event, head_sha, head_branch, html_url, created_at, updated_at, conclusion})
+            // empty' <<< "$runs")" || return 1
         if [[ -n "$found" ]]; then printf '%s\n' "$found"; return 0; fi
         count="$(jq '.workflow_runs | length' <<< "$runs")" || return 1
         ((count == 100)) || return 0
+        # newest first: once a page ends before SINCE, the next pages are older still
+        if [[ -n "$since" ]] && jq -e --arg since "$since" '.workflow_runs[-1].created_at < $since' \
+                <<< "$runs" > /dev/null 2>&1; then
+            return 0
+        fi
     done
-    log "no finished run on $branch in the last $MAX_PAGES pages of runs"
+    log "no finished $event run on $branch in the last $MAX_PAGES pages of runs"
     return 0
+}
+
+# latest_main_run - print the newest finished push, schedule or workflow_dispatch run on main, or nothing.
+# One query per event, so that a fork's pull request runs from its own branch "main" never match.
+latest_main_run() {
+    local event run runs=""
+    for event in push schedule workflow_dispatch; do
+        run="$(latest_run "$MAIN_BRANCH" "$REPO" "$event")" || return 1
+        runs+="$run"$'\n'
+    done
+    jq -sc 'sort_by(.created_at, .id) | last // empty' <<< "$runs"
 }
 
 # fetch_results ARTIFACT_ID DIR - download one VM artifact into DIR and keep its top-level files with
 # safe names, within the size limits. Fails when the artifact can't be read or has no results.json.
 fetch_results() {
-    local aid="$1" dest="$2" zip="$2.zip" try size entry cap budget="$MAX_OS_BYTES" n=0
+    # the zip is not next to DIR, where an OS id could name a folder in its way
+    local aid="$1" dest="$2" zip="$TMP/artifact.zip" try size entry cap budget="$MAX_OS_BYTES" n=0
     mkdir -p -- "$dest" || return 1
     for try in 1 2 3; do
         # gh follows the redirect to the zip; head caps what a lying size_in_bytes could write
@@ -162,22 +185,35 @@ fetch_results() {
 # Called from a condition, where set -e is off: every failure needs its own return.
 publish() {
     local run="$1" name="$2" source="$3" pr="${4:-}" title="${5:-}"
-    local id sha event branch url date jobs arts job concl aid aname asize aexpired os size status line
+    local id sha event branch url conclusion date generated jobs arts job concl aid aname asize aexpired os
+    local size status line
     local -A expected=() got=() seen=() broken=() expired=()
-    local dirs=() missing=() meta=() entry
+    local dirs=() missing=() meta=() extra=() entry
 
-    IFS=$'\t' read -r id sha event branch url date \
-        < <(jq -r '[.id, .head_sha, .event, .head_branch, .html_url, .updated_at] | @tsv' <<< "$run") || return 1
-    if ! [[ "$id" =~ ^[0-9]+$ && "$sha" =~ ^[0-9a-f]{40}$ && "$event" =~ ^[a-z_]+$ && "$url" == https://* ]]; then
+    # the date last: tab is IFS white space, so an empty field in the middle would shift the next ones
+    IFS=$'\t' read -r id sha event branch url conclusion date \
+        < <(jq -r '[.id, .head_sha, .event, .head_branch, .html_url, .conclusion, .updated_at] | @tsv' <<< "$run") \
+        || return 1
+    if ! [[ "$id" =~ ^[0-9]+$ && "$sha" =~ ^[0-9a-f]{40}$ && "$event" =~ ^[a-z_]+$ && "$url" == https://*
+            && "$conclusion" =~ ^(success|failure)$ ]]; then
         log "$name: unexpected run data from the API"; return 1
     fi
+    # The report shows when the tests ran, not when this deploy rebuilt it.
+    if [[ "$date" =~ $TIME_RE ]]; then generated="$date"; else generated="$GENERATED"; fi
     log "$name: run $id ($event, ${sha:0:7})"
 
     # Expected OSes: the VM jobs are named after their OS id.
     jobs="$(api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --paginate \
                 --jq '.jobs[] | [.name, (.conclusion // .status // "")] | @tsv')" || return 1
     while IFS=$'\t' read -r job concl; do
-        is_os "$job" || continue
+        if ! is_os "$job"; then
+            # A VM job for a system a pull request adds to images.tsv: keep it, so a job that ends
+            # without results shows up. Capped like the artifacts, since a fork chooses these names.
+            [[ "$job" =~ $OS_RE && ${#job} -le 64 && " setup report " != *" $job "* ]] || continue
+            [[ "$RESERVED" != *" $job "* && " ${extra[*]} " != *" $job "* ]] || continue
+            ((${#extra[@]} < MAX_EXTRA_OS)) || continue
+            extra+=("$job")
+        fi
         [[ "$concl" =~ ^[a-z_]+$ ]] || concl=unknown
         expected["$job"]="$concl"
     done <<< "$jobs"
@@ -189,36 +225,62 @@ publish() {
     while IFS=$'\t' read -r -u 3 aid aname asize aexpired; do
         [[ "$aid" =~ ^[0-9]+$ && "$aname" == e2e-vm-* ]] || continue
         os="${aname#e2e-vm-}"
-        is_os "$os" || continue
+        [[ "$os" =~ $OS_RE && ${#os} -le 64 ]] || continue
         [[ -z "${seen[$os]:-}" ]] || continue
+        if ! is_os "$os" && [[ " ${extra[*]} " != *" $os "* ]]; then
+            # A system that a pull request adds to images.tsv: build-report.sh checks its results like
+            # the others. Capped, since a fork chooses these names.
+            [[ "$RESERVED" != *" $os "* ]] || continue
+            if ((${#extra[@]} >= MAX_EXTRA_OS)); then
+                warn "$name: more than $MAX_EXTRA_OS systems not in images.tsv: $os skipped"; continue
+            fi
+            extra+=("$os")
+        fi
         seen["$os"]=1
         if [[ "$aexpired" == true ]]; then expired["$os"]=1; continue; fi
         if ! [[ "$asize" =~ ^[0-9]+$ ]] || ((asize > MAX_ZIP)); then
             warn "$name: artifact for $os is over $MAX_ZIP bytes: skipped"; broken["$os"]=1; continue
         fi
-        if fetch_results "$aid" "$WORK/$os" < /dev/null; then got["$os"]=1
+        # in vm/, so that no OS id can be the report folder or the build log
+        if fetch_results "$aid" "$WORK/vm/$os" < /dev/null; then got["$os"]=1
         else log "$name: no usable results for $os"; broken["$os"]=1
         fi
     done 3< <(sort -t $'\t' -k1,1nr <<< "$arts")
 
-    for os in "${KNOWN_OS[@]}"; do
-        if [[ -n "${got[$os]:-}" ]]; then
-            dirs+=("$WORK/$os")
-        elif [[ -n "${broken[$os]:-}" ]]; then
-            missing+=(--missing "$os=results could not be read from the artifact")
-        elif [[ -n "${expired[$os]:-}" ]]; then
-            missing+=(--missing "$os=the results of this run expired")
-        elif [[ -n "${expected[$os]:-}" ]]; then
-            missing+=(--missing "$os=VM job ended without results (${expected[$os]})")
+    if ((${#expected[@]} == 0 && ${#seen[@]} == 0)); then
+        # No VM job ran: the setup job failed. A failed run still replaces the previous report, so
+        # the site and the PR comment show the failure instead of an older result or nothing.
+        if [[ "$conclusion" != failure || ${#KNOWN_OS[@]} -eq 0 ]]; then
+            log "$name: run $id has no VM results: no report"; return 3
         fi
-    done
-    if ((${#dirs[@]} == 0)); then
-        if ((${#expired[@]} > 0)); then log "$name: the artifacts of run $id expired: no report"; return 3; fi
-        if ((${#missing[@]} == 0)); then log "$name: run $id has no VM results: no report"; return 3; fi
+        log "$name: run $id ended before the VM jobs"
+        for os in "${KNOWN_OS[@]}"; do
+            missing+=(--missing "$os=the run ended before the VM jobs")
+        done
+    else
+        for os in "${KNOWN_OS[@]}" "${extra[@]}"; do
+            if [[ -n "${got[$os]:-}" ]]; then
+                dirs+=("$WORK/vm/$os")
+            elif [[ -n "${broken[$os]:-}" ]]; then
+                missing+=(--missing "$os=results could not be read from the artifact")
+            elif [[ -n "${expired[$os]:-}" ]]; then
+                missing+=(--missing "$os=the results of this run expired")
+            elif [[ -n "${expected[$os]:-}" ]]; then
+                missing+=(--missing "$os=VM job ended without results (${expected[$os]})")
+            elif [[ "$source" == main ]]; then
+                # A run of some systems only (workflow_dispatch with one OS): the main report lists
+                # every system, so it never says "passed" for systems this run did not test.
+                missing+=(--missing "$os=not tested in this run")
+            fi
+        done
+        if ((${#dirs[@]} == 0)); then
+            if ((${#expired[@]} > 0)); then log "$name: the artifacts of run $id expired: no report"; return 3; fi
+            if ((${#missing[@]} == 0)); then log "$name: run $id has no VM results: no report"; return 3; fi
+        fi
     fi
 
     meta=(--meta "repo=$REPO" --meta "sha=$sha" --meta "ref=$branch" --meta "run_id=$id" --meta "run_url=$url"
-          --meta "event=$event" --meta "generated=$GENERATED" --meta "source=$source")
+          --meta "event=$event" --meta "generated=$generated" --meta "source=$source")
     [[ -z "$pr" ]] || meta+=(--meta "pr=$pr" --meta "pr_title=$title")
     mkdir -p -- "$WORK/report" || return 1
     if ! bash "$BUILD_REPORT" --out "$WORK/report" "${meta[@]}" "${missing[@]}" "${dirs[@]}" \
@@ -269,7 +331,7 @@ if ((rc == 4)); then
 elif ((rc != 0)); then
     die "can't read the $WORKFLOW workflow of $REPO"
 else
-    if run="$(latest_run "$MAIN_BRANCH" "$REPO" push schedule workflow_dispatch)"; then
+    if run="$(latest_main_run)"; then
         if [[ -n "$run" ]]; then try_publish "$run" main main "" "$MAIN_BRANCH"
         else log "main: no finished run"; fi
     else
@@ -277,7 +339,8 @@ else
     fi
 
     pulls="$(api "repos/$REPO/pulls?state=open&per_page=100" --paginate \
-                 --jq '.[] | {number, title, branch: .head.ref, head_repo: (.head.repo.full_name // "")} | tojson')" \
+                 --jq '.[] | {number, title, created_at, branch: .head.ref, head_repo: (.head.repo.full_name // "")}
+                       | tojson')" \
         || die "can't list the open pull requests"
     # fd 3, so that nothing in the loop can read the list from standard input
     while IFS= read -r -u 3 pull; do
@@ -287,8 +350,10 @@ else
         head_repo="$(jq -r '.head_repo' <<< "$pull")"
         branch="$(jq -r '.branch' <<< "$pull")"
         title="$(jq -r '.title' <<< "$pull")"
+        since="$(jq -r '.created_at // ""' <<< "$pull")"
+        [[ "$since" =~ $TIME_RE ]] || since=""
         if [[ -z "$head_repo" ]]; then log "pr-$number: the head repository was deleted"; continue; fi
-        if run="$(latest_run "$branch" "$head_repo" pull_request)"; then
+        if run="$(latest_run "$branch" "$head_repo" pull_request "$since")"; then
             if [[ -n "$run" ]]; then try_publish "$run" "pr-$number" pr "$number" "$title"
             else log "pr-$number: no finished run"; fi
         else

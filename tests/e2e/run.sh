@@ -96,7 +96,16 @@ export E2E_ADMIN_PASSWORD="e2e-$RANDOM-$RANDOM-$RANDOM"
 
 exec > >(tee -a "$OUT/harness.log") 2>&1
 
+collect_logs() {   # the server's own logs, so a failure in CI can be read without the VM
+    vm_running || return 0
+    SSH_LIMIT=60 as_root 'journalctl -b --no-pager -o short-precise | tail -n 20000' > "$OUT/journal.log" 2>/dev/null \
+        || rm -f "$OUT/journal.log"
+    SSH_LIMIT=60 as_root 'cat $(ls -tr /var/log/server-prep/run-*.log 2>/dev/null) /dev/null' > "$OUT/server-prep-runs.log" 2>/dev/null
+    [[ -s "$OUT/server-prep-runs.log" ]] || rm -f "$OUT/server-prep-runs.log"
+}
+
 on_exit() {
+    collect_logs
     [[ $KEEP -eq 1 ]] || vm_kill
     jq -n --slurpfile a <(cat "$WORK/steps-first.json" 2>/dev/null || echo '[]') \
           --slurpfile b <(cat "$WORK/steps-second.json" 2>/dev/null || echo '[]') \

@@ -75,6 +75,8 @@ make_keys() {   # throwaway keys for the operator (cloud-init user), the admin a
     done
 }
 
+# The seed is a virtio disk labelled cidata, not a CD-ROM: Debian 12's cloud kernel has no driver
+# for the q35 CD-ROM controller, so cloud-init never found it there.
 make_seed() {   # NoCloud seed: one sudo user "ops" with a key, like a provider's default account
     local d="$WORK/seed"
     mkdir -p "$d"
@@ -116,7 +118,7 @@ vm_start() {   # boot a copy-on-write overlay of the cloud image
     qemu-system-x86_64 -name "e2e-$OS_ID" -machine "q35,accel=$ACCEL" -cpu "$cpu" \
         -smp "$CPUS" -m "$MEMORY_MB" \
         -drive "file=$WORK/disk.qcow2,if=virtio,format=qcow2,discard=unmap" \
-        -drive "file=$WORK/seed.iso,media=cdrom,readonly=on" \
+        -drive "file=$WORK/seed.iso,if=virtio,format=raw,readonly=on" \
         -netdev "user,id=n0,net=$VM_NET,host=$VM_HOST_IP,dhcpstart=$VM_GUEST_IP,$fwd" \
         -device virtio-net-pci,netdev=n0 -device virtio-rng-pci \
         -display none -serial "file:$OUT/serial.log" \

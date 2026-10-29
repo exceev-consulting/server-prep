@@ -53,6 +53,22 @@ expect_exit 2 "--summary-md with other options" --summary-md "$tmp/x" --out "$tm
 [[ ! -e "$tmp/x" ]] || not_ok "a usage error wrote nothing" "$(ls -la "$tmp/x")"
 ok "a usage error writes nothing"
 
+# run.sh writes tests/e2e/out/<os>/, so --out tests/e2e/out tests/e2e/out/<os> is an easy mistake:
+# each log would be its own copy target and end up empty.
+same="$tmp/same"
+mkdir -p "$same" "$tmp/deep/runs"
+cp -R "$FIX/passed" "$same/debian-12"
+cp -R "$FIX/passed" "$tmp/deep/runs/debian-12"
+ln -s "$same" "$tmp/same-link"
+expect_exit 2 "a results folder right in --out" --out "$same" "$same/debian-12"
+expect_exit 2 "a results folder that is --out" --out "$same/debian-12" "$same/debian-12"
+expect_exit 2 "a results folder in --out through a symlink" --out "$tmp/same-link" "$same/debian-12"
+expect "a refused --out leaves the results as they were" diff -rq "$FIX/passed" "$same/debian-12"
+expect "a refused --out writes no report" test -z "$(find "$same" -name data.js -o -name index.html)"
+expect_exit 0 "a results folder deeper in --out" --out "$tmp/deep" "$tmp/deep/runs/debian-12"
+expect "it keeps its logs and the report gets a copy" diff -rq "$FIX/passed" "$tmp/deep/runs/debian-12"
+expect "the copy is in --out/<os>" cmp -s "$FIX/passed/boot.log" "$tmp/deep/debian-12/boot.log"
+
 # ---------- hostile inputs, made here so git never holds a symlink or a big file ----------
 in="$tmp/in"
 mkdir -p "$in" "$tmp/etc"
@@ -177,7 +193,18 @@ expect "a passed system" grep -qF '| Debian 12 (bookworm) `debian-12` | passed |
 expect "a system without results" grep -qF '| Ubuntu 26.04 LTS `ubuntu-26.04` | **no results** | - | - | - |' "$md"
 expect "the failed scenarios" grep -qF -- '- `ubuntu-24.04`: failed `prep-rerun`' "$md"
 expect "the reason for a missing system, in a code span" grep -qF -- '- `ubuntu-26.04`: no results, `VM job ended without results (failure)`' "$md"
-expect 'no HTML or link from the results ("<", "](")' no_match -e '<' -e '](' "$md"
+# The OS-level reason is the only free text from the results in the Markdown. The hostile fixture's
+# has a backtick, a pipe, control characters, HTML, a link, a mention and an issue ref.
+expect "a hostile reason is one code span, without its backticks, pipes or control characters" grep -qxF -- \
+    '- `ubuntu-22.04`: run stopped, `VM stopped: rm -rf /    <img src=x onerror=alert(1)>- @user see [the log](http://x) #1 end`' "$md"
+expect "every line is a table row, the blank line or a detail line with one code span of free text" no_match -vxE \
+    -e '' -e '\|( [^|]+ \|)+' \
+    -e '- `[a-z0-9.-]+`: (failed `[a-z0-9-]+`(, `[a-z0-9-]+`)*( and [0-9]+ more)?|(run stopped|no results), `[^`|]*`)' "$md"
+expect "the detail lines are printable ASCII" no_match '[^ -~]' <(grep '^- ' "$md")
+# GitHub shows HTML, links, mentions and issue refs in a code span as plain text, so none may be outside one.
+sed 's/`[^`]*`//g' "$md" > "$tmp/md-plain"
+expect 'no HTML, link, mention, issue ref or stray backtick outside code spans' \
+    no_match -e '<' -e '](' -e '@' -e '#' -e '`' "$tmp/md-plain"
 expect_exit 1 "--summary-md on a folder without summary.json" --summary-md "$tmp/in"
 
 # A passed run: status passed and a table with no detail lines.

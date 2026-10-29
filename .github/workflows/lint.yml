@@ -40,3 +40,7 @@ jobs:
 
       - name: E2E report builder
         run: bash tests/e2e-report.sh
+
+      # pages.yml runs e2e-pages.sh only on main, so this is its only run before a merge
+      - name: E2E pages builder
+        run: bash tests/e2e-pages.sh

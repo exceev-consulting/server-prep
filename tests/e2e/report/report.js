@@ -227,7 +227,10 @@
     else if (srcLabel) item("Source", [srcLabel]);
     if (str(meta.generated)) item("Generated", [when(meta.generated)]);
 
-    if (source === "pr" || source === "main") $("nav-all").hidden = false;
+    // The list of reports is one folder up only on the site (e2e/main/, e2e/pr-<n>/). The e2e-report
+    // artifact is built with the same source, and opened from disk its ../ is just the download folder.
+    var onSite = location.protocol !== "file:" && /\/e2e\/(main|pr-[1-9][0-9]{0,6})\/(index\.html)?$/.test(location.pathname);
+    if ((source === "pr" || source === "main") && onSite) $("nav-all").hidden = false;
     if (repo) $("nav-repo").href = "https://github.com/" + repo;
     $("foot-gen").textContent = str(meta.generated) ? "Report generated " + when(meta.generated) : "";
   }
@@ -261,12 +264,18 @@
       if (!a) { missing++; return; }
       if (!worst || a.fail > worst.a.fail || (a.fail === worst.a.fail && (a.warn > worst.a.warn || (a.warn === worst.a.warn && a.score < worst.a.score)))) worst = { o: o, a: a };
     });
-    if (worst) {
-      var cap = "Worst: " + (worst.o.id || worst.o.label) + ", " + worst.a.pass + " pass, " + worst.a.warn + " warn, score " + worst.a.score;
-      if (missing) cap += ". " + (missing === 1 ? "1 system did" : missing + " systems did") + " not get there";
-      kpi("Audit after reboot", String(worst.a.fail), "FAIL", cap, worst.a.fail ? "bad" : "ok");
+    var worstName = worst ? (worst.o.id || worst.o.label) : "";
+    if (!nOs) {
+      kpi("Audit after reboot", "-", "", "No results", "");
+    } else if (!missing) {
+      kpi("Audit after reboot", String(worst.a.fail), "FAIL", "Worst: " + worstName + ", " + worst.a.pass + " pass, " + worst.a.warn + " warn, score " + worst.a.score, worst.a.fail ? "bad" : "ok");
     } else {
-      kpi("Audit after reboot", "-", "", "No system reached the audit after the reboot", nOs ? "bad" : "");
+      // A system that never got to this audit is worse than any score, so the tile is never green then:
+      // it says how many got there, and the caption gives the worst of those.
+      var capA = worst
+        ? (missing === 1 ? "1 system did" : missing + " systems did") + " not get there. Worst of the others: " + worstName + ", " + worst.a.fail + " FAIL, " + worst.a.warn + " warn, score " + worst.a.score
+        : "No system reached the audit after the reboot";
+      kpi("Audit after reboot", String(nOs - missing), "/ " + nOs + " reached", capA, "bad");
     }
   }
 
@@ -280,6 +289,9 @@
   }
 
   function scenHref(o, s) { return "#os=" + encodeURIComponent(o.id) + (s ? "&s=" + encodeURIComponent(s.id) : ""); }
+  // The matrix and the system details filter on this same text, so a search never hides a row
+  // whose scenario still shows below.
+  function scenHay(s) { return (s.title + " " + s.id + " " + s.group + " " + s.reason).toLowerCase(); }
 
   // ---------- failures first ----------
   function renderFailures() {
@@ -368,18 +380,19 @@
           a.href = scenHref(o, s);
           add(a, dot(s.status), dur(s.duration), srText(" " + LABEL[s.status] + " on " + o.id));
           a.title = LABEL[s.status] + " on " + o.id + (s.reason ? ": " + s.reason.slice(0, 200) : "");
-          r.links.push({ a: a, status: s.status });
+          r.links.push({ a: a, status: s.status, hay: scenHay(s) });
           td.appendChild(a);
         } else {
           var none = el("span", "cell none", "-");
           none.title = o.status === "error" ? "No results for this system" : "Not run on this system";
           add(none, srText(none.title));
           td.appendChild(none);
+          // A system without a valid id still lists this scenario in its details: filter the row on it too.
+          if (s) r.links.push({ a: null, status: s.status, hay: scenHay(s) });
         }
         tr.appendChild(td);
       });
       r.tr = tr;
-      r.hay = (r.title + " " + r.id + " " + r.group).toLowerCase();
       tbody.appendChild(tr);
     });
     if (!rows.length) {
@@ -408,10 +421,11 @@
 
   // ---------- systems ----------
   var osById = new Map();
+  function isFail(v) { return v.toUpperCase().indexOf("FAIL") === 0; }
   function stepClass(v, second) {
     var u = v.toUpperCase();
     if (!u) return "none";
-    if (u.indexOf("FAIL") === 0) return "bad";
+    if (isFail(u)) return "bad";
     if (u.indexOf("OK") === 0) return "ok";
     if (u.indexOf("SKIP") === 0) return "off";
     // CHANGED is expected on the first run; on the second run it means the step is not idempotent.
@@ -468,6 +482,19 @@
     add(s, el("span", null, name), el("span", "sz", why));
     s.title = why === "missing" ? "The run listed this file but did not save it." : "Not copied: only plain files with a safe name and a text type (.log, .txt, .json, .md, .tsv, .csv) are published.";
     return s;
+  }
+  // Only the real run (prep-run) fills the step table, from the report it writes. The dry runs
+  // before it also run server-prep, so say why that table is empty, not that nothing ran.
+  function noSteps(o) {
+    var run = o.scenarios.filter(function (s) { return s.id === "prep-run"; })[0];
+    if (!run) {
+      return o.reason
+        ? "No step results: the run stopped before the real server-prep run (prep-run) finished."
+        : "No step results: the real server-prep run (prep-run) was not part of this run.";
+    }
+    if (run.status === "skipped") return "No step results: the real server-prep run (prep-run) was skipped.";
+    if (run.status === "failed") return "No step results: the real server-prep run (prep-run) did not finish or wrote no report.";
+    return "No step results: the report of the real server-prep run lists no step.";
   }
   function renderOs(o) {
     var sec = el("section", "card os");
@@ -552,10 +579,13 @@
     var sp = el("div");
     var sph = el("div", "ph");
     sph.appendChild(el("h4", null, "server-prep steps"));
-    var changed2 = o.steps.filter(function (s) { return stepClass(s.second, true) === "bad"; }).length;
-    if (o.steps.length) {
-      var hasSecond = o.steps.some(function (s) { return s.second; });
-      if (hasSecond) sph.appendChild(el("p", changed2 ? "bad" : "ok", changed2 ? "Second run: " + plural(changed2, "step") + " not idempotent" : "Second run changed nothing"));
+    // A step that failed on the second run did not change anything: count it apart from the
+    // steps that changed something again (not idempotent).
+    var failed2 = o.steps.filter(function (s) { return isFail(s.second); }).length;
+    var changed2 = o.steps.filter(function (s) { return !isFail(s.second) && stepClass(s.second, true) === "bad"; }).length;
+    if (o.steps.some(function (s) { return s.second; })) {
+      var bad2 = [failed2 ? plural(failed2, "step") + " failed" : "", changed2 ? plural(changed2, "step") + " not idempotent" : ""].filter(Boolean);
+      sph.appendChild(el("p", bad2.length ? "bad" : "ok", bad2.length ? "Second run: " + bad2.join(", ") : "Second run changed nothing"));
     }
     sp.appendChild(sph);
     if (o.steps.length) {
@@ -581,7 +611,7 @@
       ts.appendChild(tbl);
       sp.appendChild(ts);
     } else {
-      sp.appendChild(el("p", "none-note", "No step results: server-prep did not run on this system."));
+      sp.appendChild(el("p", "none-note", noSteps(o)));
     }
     add(grid, ap, sp);
     body.appendChild(grid);
@@ -639,7 +669,7 @@
       d.appendChild(b);
       list.appendChild(d);
       entry.details.set(s.id, d);
-      entry.items.push({ s: s, d: d, hay: (s.title + " " + s.id + " " + s.group + " " + s.reason).toLowerCase() });
+      entry.items.push({ s: s, d: d, hay: scenHay(s) });
     });
     var none = el("p", "none-note", o.scenarios.length ? "No scenario matches these filters." : "No scenario ran on this system.");
     none.hidden = o.scenarios.length > 0;
@@ -684,13 +714,13 @@
     if (state.failedFirst) order.sort(function (a, b) { return (b.failed - a.failed) || (a.order - b.order); });
     var shown = 0;
     order.forEach(function (r) {
-      var any = state.f === "all";
+      // Same test as the details below, cell by cell: a row shows when one of its cells matches.
+      var vis = false;
       r.links.forEach(function (l) {
-        var m = matchStatus(l.status);
-        if (m) any = true;
-        l.a.classList.toggle("dim", !m);
+        var m = matchStatus(l.status) && (!q || l.hay.indexOf(q) >= 0);
+        if (m) vis = true;
+        if (l.a) l.a.classList.toggle("dim", !m);
       });
-      var vis = any && (!q || r.hay.indexOf(q) >= 0);
       r.tr.hidden = !vis;
       if (vis) shown++;
       tbody.appendChild(r.tr);

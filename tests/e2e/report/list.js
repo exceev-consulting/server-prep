@@ -46,6 +46,7 @@
     a.rel = "noopener noreferrer";
     return a;
   }
+  function plural(n, one) { return n + " " + one + (n === 1 ? "" : "s"); }
   function when(v) {
     var m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(str(v));
     return m ? m[1] + " " + m[2] + " UTC" : str(v);
@@ -124,10 +125,20 @@
   // The headline is the state of main: what a visitor wants to know first.
   var mainRep = reps.filter(function (r) { return r.main; })[0];
   if (mainRep && mainRep.oses.length) {
+    // A system the run did not test, or whose job ended without results, is in the report as an
+    // "error" card (e2e-pages.sh adds one per missing system): it counts as not passing.
+    var nMain = mainRep.oses.length;
     var good = mainRep.oses.filter(function (o) { return o.status === "passed"; }).length;
-    $("verdict").textContent = good === mainRep.oses.length
-      ? "On main, every system passes: " + good + " of " + good + ", from a fresh cloud image to 0 FAIL after a reboot."
-      : "On main, " + good + " of " + mainRep.oses.length + " systems pass. Open the report to see the first failed check.";
+    var noRes = mainRep.oses.filter(function (o) { return o.status === "error"; }).length;
+    var clean = mainRep.oses.every(function (o) { return o.audit_fail === 0; });
+    var v;
+    if (good === nMain && mainRep.status === "passed") {
+      v = "On main, every system passes: " + good + " of " + nMain + (clean ? ", from a fresh cloud image to 0 FAIL after a reboot." : ".");
+    } else {
+      v = "On main, " + good + " of " + plural(nMain, "system") + " pass" + (noRes ? ", " + noRes + " without results" : "") + ". " +
+        (good + noRes < nMain ? "Open the report to see the first failed check." : "Open the report to see why.");
+    }
+    $("verdict").textContent = v;
   }
   if (str(X.generated)) item("Updated", when(X.generated));
   $("foot-gen").textContent = str(X.generated) ? "List updated " + when(X.generated) : "";
@@ -183,8 +194,9 @@
       var fails = r.oses.map(function (o) { return o.audit_fail; }).filter(function (v) { return typeof v === "number"; });
       var bits = [];
       if (total) bits.push(n(c.passed) + " of " + total + " scenarios passed" + (n(c.skipped) ? ", " + n(c.skipped) + " skipped" : ""));
-      if (fails.length) bits.push("audit after reboot: " + Math.max.apply(null, fails) + " FAIL at worst" +
-        (fails.length < r.oses.length ? " (" + fails.length + " of " + r.oses.length + " systems got there)" : ""));
+      // A system that never got to that audit is worse than any score: say how many got there first.
+      if (fails.length === r.oses.length) bits.push("audit after reboot: " + Math.max.apply(null, fails) + " FAIL at worst");
+      else if (fails.length) bits.push("audit after reboot: " + fails.length + " of " + r.oses.length + " systems got there, worst " + Math.max.apply(null, fails) + " FAIL");
       if (bits.length) main.appendChild(el("div", "rep-stats", bits.join(" · ")));
     }
 

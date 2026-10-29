@@ -32,52 +32,58 @@ on:
   workflow_run:
     workflows: [e2e]
     types: [completed]
-  # a closed pull request: remove its report. Only PRs into main, so checkout and the deploy
-  # run on main (the github-pages environment only deploys from main).
+  # a closed pull request: remove its report. Any base branch, since e2e tests pull requests
+  # into any base and the site lists every open one. pull_request_target always runs main's
+  # workflow on main, so checkout and the deploy use main whatever the base.
   pull_request_target:
     types: [closed]
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Deploys run one at a time. A waiting deploy is replaced by a newer one, which is fine for
-# the site: each build reads the latest runs of everything. The replaced run's PR comment is
-# skipped; the report is still on the site and the next run of that PR comments again.
-concurrency:
-  group: pages
-  cancel-in-progress: false
+# Concurrency is set on the build, deploy and comment jobs, not on the workflow: a run that
+# publishes nothing (a cancelled e2e run, a closed pull request without a report) skips them,
+# so it never enters a group and can't replace a waiting deploy. In each group a waiting job
+# is replaced by a newer one, which is fine: a newer build reads the latest runs of everything
+# and a newer deploy carries a newer build. The replaced run's PR comment is skipped; the
+# report is on the site anyway and the next run of that PR comments again.
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  # A closed pull request needs a deploy only when the site has a report for it.
-  # When the check can't tell (site down, no index yet), it deploys.
+  # A closed pull request needs a deploy only when it may have a report: a finished e2e run of
+  # its own. When the check can't tell (API error), it deploys.
   gate:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      pages: read
+      actions: read
     outputs:
       deploy: ${{ steps.check.outputs.deploy }}
     steps:
-      - name: Report on the site?
+      # From the PR's own e2e runs, not from the live site: a build that is still running may be
+      # about to publish this PR's report, and the site would not show it yet.
+      - name: Did this PR ever get a report?
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          SINCE: ${{ github.event.pull_request.created_at }}
         run: |
           deploy=true
-          url=$(gh api "repos/$REPO/pages" --jq .html_url 2>/dev/null) || url=
-          # the query string skips the CDN cache: a report published minutes ago counts
-          if [ -n "$url" ] && index=$(curl -fsSL --max-time 30 "${url%/}/e2e/index.json?t=$(date +%s)"); then
-            has=$(jq -r --arg n "$PR" 'any(.reports[]?; .kind == "pr" and ((.pr | tostring) == $n))' <<<"$index" 2>/dev/null) || has=
-            if [ "$has" = false ]; then deploy=false; fi
+          if runs=$(gh api -X GET "repos/$REPO/actions/workflows/e2e.yml/runs" -f event=pull_request \
+                      -f branch="$HEAD_REF" -f status=completed -f per_page=100 2>/dev/null); then
+            n=$(jq --arg r "$HEAD_REPO" --arg since "$SINCE" '[.workflow_runs[]?
+                  | select(.head_repository.full_name == $r and .created_at >= $since
+                           and (.conclusion == "success" or .conclusion == "failure"))] | length' <<<"$runs" 2>/dev/null) || n=
+            if [ "$n" = 0 ]; then deploy=false; fi
           fi
           echo "PR #$PR closed: deploy=$deploy"
           echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
@@ -94,6 +100,9 @@ jobs:
           || github.event.workflow_run.conclusion == 'failure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    concurrency:
+      group: pages-build
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read
@@ -101,8 +110,10 @@ jobs:
     outputs:
       comment_prs: ${{ steps.comments.outputs.prs }}
     steps:
+      # main for every event, so a later build never publishes an older site/
       - uses: actions/checkout@v7
         with:
+          ref: main
           persist-credentials: false
 
       - name: Site data up to date
@@ -179,6 +190,9 @@ jobs:
     # build runs after a skipped gate, which would skip this job without the condition
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
@@ -192,7 +206,8 @@ jobs:
         uses: actions/deploy-pages@v5
 
   # One sticky comment per pull request, edited in place, after its report is live.
-  # Unchanged comments are not edited.
+  # Unchanged comments are not edited. One at a time, so an older table never overwrites a
+  # newer one and two runs never both create the first comment of a pull request.
   comment:
     needs: [build, deploy]
     if: >-
@@ -200,6 +215,9 @@ jobs:
       && needs.deploy.result == 'success' && needs.build.outputs.comment_prs != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: pages-comment
+      cancel-in-progress: false
     permissions:
       pull-requests: write
     steps:

@@ -85,6 +85,8 @@ write_results() {   # write_results [reason]: $OUT/results.json from everything 
           started: $started, duration_s: $dur, status: $status, reason: $reason,
           counts: {passed: $p, failed: $f, skipped: $s}, scenarios: $sc, audit: $audit[0],
           steps: $steps[0],
-          files: [{name: "serial.log", title: "Serial console"}, {name: "harness.log", title: "Harness output"}]}' \
+          files: [{name: "serial.log", title: "Serial console"}, {name: "harness.log", title: "Harness output"},
+                  {name: "journal.log", title: "Server journal (last boot)"},
+                  {name: "server-prep-runs.log", title: "server-prep run logs"}]}' \
         > "$OUT/results.json"
 }
