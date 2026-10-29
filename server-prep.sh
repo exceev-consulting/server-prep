@@ -770,7 +770,12 @@ add_key() {   # add_key USER FILE KEY [OPTIONS]
 step_users() {
     if ! id "$ADMIN_USER" >/dev/null 2>&1; then
         info "creating user ${ADMIN_USER}"
-        run useradd --create-home --shell /bin/bash --groups sudo "$ADMIN_USER" || return 1
+        # Ubuntu cloud images already have an "admin" group: useradd then refuses to create the
+        # user's own group, so use the existing one.
+        local gid=()
+        getent group "$ADMIN_USER" >/dev/null 2>&1 && gid=(--gid "$ADMIN_USER")
+        run useradd --create-home --shell /bin/bash "${gid[@]}" --groups sudo "$ADMIN_USER" \
+            || { note "useradd ${ADMIN_USER} failed (see $LOG_FILE)"; return 1; }
         changed; note "user ${ADMIN_USER} created"
         if [[ $DRY_RUN -eq 0 ]]; then
             if [[ $INTERACTIVE -eq 1 ]]; then
@@ -865,6 +870,20 @@ EOF
 UFW_DOCKER_VERSION="251123"
 UFW_DOCKER_SHA256="c3e5f0bf6061a3a2e7d7ac06abc80665707d2f4c91e90d76f22e4168863fb472"
 
+crowdsec_in_docker_user() {   # false when the CrowdSec bouncer should filter DOCKER-USER but its rule is missing
+    systemctl is-active -q crowdsec-firewall-bouncer 2>/dev/null || return 0
+    grep -Eqs '^[[:space:]]*-[[:space:]]*DOCKER-USER' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml || return 0
+    iptables -S DOCKER-USER 2>/dev/null | grep -q CROWDSEC
+}
+
+ufw_reload() {   # reload UFW from its files, including after.rules and the ufw-docker rules
+    run ufw reload || return 1
+    # The reload empties DOCKER-USER and refills it from after.rules, which drops the CrowdSec
+    # bouncer's rule. The bouncer adds it only when it starts.
+    crowdsec_in_docker_user || run systemctl restart crowdsec-firewall-bouncer
+    return 0
+}
+
 ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER chain), Docker networking intact
     local bin=/usr/local/bin/ufw-docker tmp
     if [[ ! -x $bin ]] || ! sha256sum "$bin" 2>/dev/null | grep -q "^$UFW_DOCKER_SHA256 "; then
@@ -883,7 +902,7 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
             note "ufw-docker $UFW_DOCKER_VERSION installed (checksum verified)"
         fi
     fi
-    if [[ $DRY_RUN -eq 1 ]]; then info "[dry-run] ufw-docker install && systemctl restart ufw"; return 0; fi
+    if [[ $DRY_RUN -eq 1 ]]; then info "[dry-run] ufw-docker install && ufw reload"; return 0; fi
     # Don't use 'ufw-docker check': it exits 0 even when the rules are missing. 'install' only
     # rewrites the files when they differ, so compare them before and after, and check the live chain.
     local before after
@@ -894,13 +913,15 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
     if [[ $before == "$after" ]] && iptables -S DOCKER-USER 2>/dev/null | grep -q -- '-j ufw-user-forward'; then
         return 0                                        # rules written and loaded
     fi
-    run systemctl restart ufw
+    # Not 'systemctl restart ufw': when 'ufw enable' turned UFW on (Debian installs it off), the
+    # unit was never started, so a restart only starts it and ufw-init skips a running firewall.
+    ufw_reload
     if iptables -S DOCKER-USER 2>/dev/null | grep -q -- '-j ufw-user-forward'; then
         changed
         note "DOCKER-USER rules installed by ufw-docker: published container ports now obey UFW"
     else
         warn "ufw-docker rules written but not loaded"
-        todo "Docker ports still bypass UFW: run 'sudo systemctl restart ufw', then 'sudo iptables -S DOCKER-USER' must show ufw-user-forward"
+        todo "Docker ports still bypass UFW: run 'sudo ufw reload', then 'sudo iptables -S DOCKER-USER' must show ufw-user-forward"
         return 1
     fi
 }
@@ -923,10 +944,19 @@ ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
     fi
 }
 
+ufw_state() {   # hash of the UFW status and rules, to tell whether this run changed them
+    { ufw status verbose; cat /etc/ufw/user.rules /etc/ufw/user6.rules; } 2>/dev/null | sha256sum
+}
+
 step_firewall() {
     pkg_install ufw || return 1
-    run ufw default deny incoming
-    run ufw default allow outgoing
+    local before; before="$(ufw_state)"
+    # 'ufw default' reloads the whole firewall even when the policy does not change, and a reload
+    # drops CrowdSec from DOCKER-USER: set the policies only when they differ.
+    if [[ "$(ufw status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
+        run ufw default deny incoming
+        run ufw default allow outgoing
+    fi
     ufw_allow_ssh "$SSH_PORT" "ssh"
     # keep the current SSH port(s) reachable until the new port is confirmed
     local p
@@ -952,25 +982,36 @@ step_firewall() {
 
     if ! ufw status 2>/dev/null | grep -q "Status: active"; then
         run ufw --force enable && { changed; note "UFW enabled"; }
-    else
-        run ufw reload
+    elif [[ "$(ufw_state)" != "$before" ]]; then
+        ufw_reload
     fi
 
     # Stop Docker from bypassing UFW. ufw-docker needs UFW active, so this runs after enable
     if [[ $HAS_DOCKER -eq 1 ]]; then
-        ufw_docker_rules
+        ufw_docker_rules || { note "Docker-published ports still bypass UFW"; return 1; }
     else
         todo "Docker is not installed yet. If your panel installs it later, run: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes (so container ports obey UFW)"
     fi
-    changed
+    if [[ $DRY_RUN -eq 0 ]] && ! crowdsec_in_docker_user; then
+        run systemctl restart crowdsec-firewall-bouncer \
+            && { changed; note "CrowdSec bouncer restarted: its DOCKER-USER rule was missing"; }
+    fi
+    # ufw skips rules it already has, so only a different state means a change. A dry run only
+    # printed the commands, so it can't measure that: it reports the step as WOULD CHANGE.
+    if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
     return 0
 }
 
 restart_ssh() {
     if [[ $SSH_SOCKET -eq 1 ]]; then
         run systemctl daemon-reload
+        # Stop sshd first, so the socket can take the ports back. Restarting the socket while an
+        # sshd still holds one fails with "Address already in use" and leaves no SSH at all.
+        # Open sessions stay up (KillMode=process).
+        run systemctl stop ssh.service
+        run systemctl reset-failed ssh.socket
         run systemctl restart ssh.socket || return 1
-        run systemctl restart ssh.service 2>/dev/null || true
+        run systemctl start ssh.service || return 1
     else
         run systemctl restart ssh 2>/dev/null || run systemctl restart sshd || return 1
     fi
@@ -1062,7 +1103,11 @@ else
     rm -f /etc/ssh/sshd_config.d/00-server-prep.conf
 fi
 systemctl daemon-reload
-systemctl restart ssh.socket 2>/dev/null; systemctl restart ssh 2>/dev/null || systemctl restart sshd
+if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+    systemctl stop ssh.service; systemctl reset-failed ssh.socket; systemctl restart ssh.socket; systemctl start ssh.service
+else
+    systemctl restart ssh 2>/dev/null || systemctl restart sshd
+fi
 logger -t server-prep "SSH configuration rolled back"
 EOF
         chmod 700 "$rb"
@@ -1730,7 +1775,7 @@ write_rollback() {
         for f in "${NEW_FILES[@]}"; do echo "rm -f '$f'"; done
         echo "systemctl daemon-reload"
         echo "sysctl --system >/dev/null"
-        echo "systemctl restart ssh.socket 2>/dev/null; systemctl restart ssh 2>/dev/null"
+        echo "if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then systemctl stop ssh.service; systemctl reset-failed ssh.socket; systemctl restart ssh.socket; systemctl start ssh.service; else systemctl restart ssh 2>/dev/null || systemctl restart sshd; fi"
         echo "ufw reload 2>/dev/null"
         echo "# Packages installed and services disabled are NOT reverted automatically."
     } > "$rb"
