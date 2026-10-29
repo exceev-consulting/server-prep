@@ -6,6 +6,18 @@ Highlights of each release. The full list of merged pull requests is in each
 ## [Unreleased]
 
 - The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
+- **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
+  token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only
+  (folder 700, logs 600), and the next run also fixes the folder and the old logs of servers set up before. The CrowdSec
+  enroll key is typed hidden. `server-prep-notify` gives the Telegram bot token to curl on standard input instead of on
+  its command line, where `ps` showed it. To update that script, run its step again; it keeps the bot token already
+  installed: `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram --yes`. New audit check
+  `mon.prep_secrets` warns while the log folder or the Telegram script is still in its old state.
+  Logs from 1.1.1 and older could be read by every local user and can hold the tunnel token. If one of them left the
+  server (pasted, copied, backed up), rotate the token: refresh it on your tunnel in Cloudflare Zero Trust, run
+  `sudo cloudflared service uninstall` from a session that does not go through the tunnel, then
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only cloudflared` and type the new token at the
+  hidden prompt.
 - **Security fix:** the audit's "Docker vs firewall" check passed when the DOCKER-USER chain only had CrowdSec or
   manual DROP rules, even though published container ports still bypassed UFW. It now passes only when the ufw-docker
   rules are loaded, with both the `ufw-user-forward` and `ufw-docker-logging-deny` jumps (or Docker's iptables

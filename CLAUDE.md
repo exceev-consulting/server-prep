@@ -26,6 +26,7 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
 
 - **No side effects on import:**
   - Every change goes through `run` (dry-run aware), `write_file`, `set_kv` or `backup_file`.
+  - A command that takes a token or key goes through `run_secret SECRET CMD...`, never `run`: it shows the secret as `***` in the log and the dry-run output.
   - Packages are installed with `pkg_install`, which installs only what is missing.
   - Services are disabled with `svc_disable`.
 - **Steps:**
