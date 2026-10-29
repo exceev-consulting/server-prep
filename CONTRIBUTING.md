@@ -43,7 +43,8 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 
 ## Rules for the scripts
 
-- **Everything that changes the system goes through the helpers:** `run` (respects `--dry-run`), `write_file`,
+- **Everything that changes the system goes through the helpers:** `run` (respects `--dry-run`),
+  `run_secret SECRET CMD...` (like `run`, but shows a token or key as `***` in the log and on screen), `write_file`,
   `set_kv`, `backup_file`, `pkg_install` (installs only what is missing), `svc_disable`.
 - **A step can run twice safely.** Check the current state first and only change what is missing.
 - **apt:** always pass `"${APT_OPTS[@]}"`. A fresh server often runs apt in the background at boot.

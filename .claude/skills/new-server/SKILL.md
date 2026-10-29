@@ -78,7 +78,9 @@ sudo ./server-prep.sh --dry-run
 Re-run only that step:
 `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step> --yes`.
 
-Check the known fixes in `CLAUDE.md` → *Hard-won gotchas*. The log is in `/var/log/server-prep/`.
+Check the known fixes in `CLAUDE.md` → *Hard-won gotchas*. The log is in `/var/log/server-prep/` and only root can read it, so ask the user to paste the errors of the last run:
+`sudo sh -c 'grep -n -i -E "error|fail|warn" "$(ls -t /var/log/server-prep/run-*.log | head -1)"'`.
+Logs from 1.1.1 and older can hold the tunnel token: ask them to check the lines before pasting.
 
 ## 6. Connect to the panel
 In the panel, add a server (Coolify: Servers → Add).

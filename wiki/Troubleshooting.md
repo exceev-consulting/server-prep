@@ -35,13 +35,13 @@ sudo ls -t /var/log/server-prep/
 Show only the errors and warnings of the last run:
 
 ```bash
-sudo grep -n -i -E 'error|fail|warn' "$(sudo ls -t /var/log/server-prep/*.log | head -1)"
+sudo sh -c 'grep -n -i -E "error|fail|warn" "$(ls -t /var/log/server-prep/run-*.log | head -1)"'
 ```
 
 The report has a **Still to do by hand** section. Read it first: it lists what server-prep could not do for you.
 
 > [!WARNING]
-> Today the log can contain secrets you typed, such as a tunnel or CrowdSec token ([#64](https://github.com/exceev-consulting/server-prep/issues/64)). Never paste the whole log in an issue or a discussion. Copy only the lines you need, and check them for tokens, keys, IPs and host names.
+> Logs written by version 1.1.1 and older can contain the Cloudflare tunnel token ([#64](https://github.com/exceev-consulting/server-prep/issues/64)). Never paste the whole log in an issue or a discussion. Copy only the lines you need, and check them for tokens, keys, IPs and host names.
 
 ## Roll back
 
