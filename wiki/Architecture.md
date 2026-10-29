@@ -57,6 +57,7 @@ A step never writes to the system directly. It uses a small set of helpers. This
 | Helper | What it does |
 |---|---|
 | `run CMD...` | Runs a command and sends its output to the log. In a dry run, it only prints the command. |
+| `run_secret SECRET CMD...` | Like `run`, for a command that takes a token or key: the log and the dry-run output show `SECRET` as `***`. |
 | `write_file PATH MODE` | Writes a file from stdin, **only when the content is different**. It backs up the old file first. |
 | `set_kv FILE KEY VALUE` | Sets one `key = value` line in a config file, replacing a commented or old line. It uses `write_file`. |
 | `backup_file PATH` | Copies a file into the backup folder, once per run. |
@@ -116,7 +117,7 @@ Each check calls `result <id> <status> "<title>" "<detail>" "<fix hint>"`. The s
 - **FAIL**: a real problem. The script exits with code `1` when at least one check fails.
 - **INFO**: for optional features. INFO never lowers the score.
 
-There are 55 checks in 11 sections: System, Updates, SSH, Firewall & network exposure, Intrusion prevention, Accounts & authentication, Kernel & system settings, Logging & monitoring, Services, Resources, and Panel readiness. Check ids start with their section, for example `ssh.*` or `acc.password_dict`.
+There are 56 checks in 11 sections: System, Updates, SSH, Firewall & network exposure, Intrusion prevention, Accounts & authentication, Kernel & system settings, Logging & monitoring, Services, Resources, and Panel readiness. Check ids start with their section, for example `ssh.*` or `acc.password_dict`.
 
 The audit writes a text report by default, and can also write Markdown (`--md`), JSON (`--json`) and TSV (`--tsv`). `server-prep.sh` reads the TSV for its before/after table, so those columns must stay stable.
 
@@ -132,7 +133,7 @@ The [setup console](https://exceev-consulting.github.io/server-prep/) shows what
 
 1. [`scripts/gen-data.sh`](https://github.com/exceev-consulting/server-prep/blob/main/scripts/gen-data.sh) reads `server-prep.sh`, `server-audit.sh`, `server-preconfig.sh`, the README tables and `server-prep.conf.example`.
 2. It writes `site/data.json` and `site/data.js` (the same data, loaded by the page so it also works offline). The output has no timestamps, so CI can compare it.
-3. `site/index.html` is one static page that reads that data. No build step, no CDN, no tracking.
+3. `site/index.html` is one static page that reads that data. Its colours and type come from `site/tokens.css`, which the brand guidelines page (`site/brand/`) shares. No build step, no CDN, no tracking.
 4. The `pages` workflow publishes `site/` to GitHub Pages.
 
 After you change a step, a setting or an audit check, regenerate the data and commit it.
@@ -141,7 +142,7 @@ After you change a step, a setting or an audit check, regenerate the data and co
 scripts/gen-data.sh
 ```
 
-It prints `wrote site/data.json and site/data.js (20 steps, ... settings, 55 audit checks)` and updates both files. It needs `jq`. In CI, `scripts/gen-data.sh --check` prints nothing and exits 0 when the data is up to date, or prints `site/data.json is out of date` with a diff.
+It prints `wrote site/data.json and site/data.js (20 steps, ... settings, 56 audit checks)` and updates both files. It needs `jq`. In CI, `scripts/gen-data.sh --check` prints nothing and exits 0 when the data is up to date, or prints `site/data.json is out of date` with a diff.
 
 To preview the page on your machine:
 
@@ -159,7 +160,7 @@ Three workflows live in [`.github/workflows/`](https://github.com/exceev-consult
 |---|---|---|
 | `lint` | Every push to `main` and every PR | `bash -n` on every script, ShellCheck at `-S warning`, each script's `--help`, and `scripts/gen-data.sh --check` (fails when the site data is out of date) |
 | `pages` | Push to `main` that touches the site, the scripts, the README or the config example; or by hand | Checks the site data again, then deploys `site/` to GitHub Pages |
-| `release` | By hand only (the release button) | Bumps the version, updates the changelog and the site data through a self-merged PR, tags, and publishes the release with `SHA256SUMS`. See [Maintainer handbook](Maintainer-handbook). |
+| `release` | By hand only (the release button) | Bumps the version, updates the changelog and the site data in one commit put on `main` by the release app (the one exception to `main`'s required approval), tags, and publishes the release with `SHA256SUMS`. See [Maintainer handbook](Maintainer-handbook). |
 
 More checks are planned: a consistency check that keeps steps, README, config example and audit in sync ([#35](https://github.com/exceev-consulting/server-prep/issues/35)), one local script that runs everything CI runs ([#34](https://github.com/exceev-consulting/server-prep/issues/34)), unit tests ([#37](https://github.com/exceev-consulting/server-prep/issues/37)), an Ubuntu and Debian integration matrix with an idempotency check ([#38](https://github.com/exceev-consulting/server-prep/issues/38)), and secret scanning ([#40](https://github.com/exceev-consulting/server-prep/issues/40)).
 

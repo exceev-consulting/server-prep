@@ -453,7 +453,7 @@ window.SERVER_PREP_DATA = {
       "name": "TELEGRAM_BOT_TOKEN",
       "example": null,
       "default": null,
-      "comment": null,
+      "comment": "empty on a re-run = keep the token already installed",
       "help": null,
       "saved": false,
       "secret": true
@@ -693,7 +693,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 55,
+    "checks": 56,
     "sections": [
       {
         "key": "system",
@@ -1052,6 +1052,14 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "PASS",
               "WARN"
+            ]
+          },
+          {
+            "id": "mon.prep_secrets",
+            "title": "server-prep secrets",
+            "statuses": [
+              "WARN",
+              "PASS"
             ]
           },
           {

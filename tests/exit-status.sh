@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# Tests server-prep.sh's final status and argument validation without changing the host.
+# Tests server-prep.sh's final status, argument validation and secret masking without changing the host.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -103,3 +103,142 @@ expect_main_status firewall 'OK (already)' 1   # failure before the final step
 expect_main_status suid 'OK (already)' 1       # failure in the final step
 expect_main_status none 'OK (already)' 0       # a missing return 0 must fail this
 expect_main_status none SKIPPED 0             # no selected step failed
+
+# run_secret shows a token as *** in the log and in dry-run output, but runs the
+# command with the real value. Glob characters in the token must match literally.
+LOG_FILE="$tmp/run.log"
+: > "$LOG_FILE"
+secret='123:tok*[x]'
+fake_install() { printf 'installed with %s\n' "$*"; }
+DRY_RUN=1
+dry_out="$(run_secret "$secret" fake_install service install "$secret")"
+DRY_RUN=0
+run_secret "$secret" fake_install service install "$secret"
+if [[ "$dry_out" != *"[dry-run] fake_install service install ***"* || "$dry_out" == *"$secret"* ]]; then
+    printf 'not ok: run_secret dry-run output does not mask the secret: %s\n' "$dry_out"
+    exit 1
+fi
+if [[ "$(grep -cxF '+ fake_install service install ***' "$LOG_FILE")" -ne 2 ]] ||
+   grep '^+ ' "$LOG_FILE" | grep -qF -- "$secret"; then
+    printf 'not ok: run_secret writes the secret in the log\n'
+    cat "$LOG_FILE" >&2
+    exit 1
+fi
+if ! grep -qxF "installed with service install $secret" "$LOG_FILE"; then
+    printf 'not ok: run_secret did not pass the real secret to the command\n'
+    cat "$LOG_FILE" >&2
+    exit 1
+fi
+printf 'ok: run_secret masks the secret in the log and dry-run output, and runs with the real value\n'
+
+# server-prep-notify gives the Telegram bot URL (with the token) to curl on stdin,
+# never on its command line. Capture the scripts step_telegram would write.
+write_file() { cat > "$tmp/written-${1##*/}"; }
+run() { :; }
+DRY_RUN=1
+TELEGRAM_ENABLE=yes
+TELEGRAM_BOT_TOKEN='123456:test-token'
+TELEGRAM_CHAT_ID=42
+step_telegram >/dev/null 2>&1
+if [[ ! -s "$tmp/written-server-prep-notify" || ! -s "$tmp/written-telegram.env" ]]; then
+    printf 'not ok: step_telegram did not write server-prep-notify and telegram.env\n'
+    exit 1
+fi
+sed "s|/etc/server-prep/telegram.env|$tmp/telegram.env|" "$tmp/written-server-prep-notify" > "$tmp/notify"
+cp "$tmp/written-telegram.env" "$tmp/telegram.env"
+mkdir -p "$tmp/bin"
+cat > "$tmp/bin/curl" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$@" > "$CURL_ARGS"
+cat > "$CURL_STDIN"
+EOF
+chmod +x "$tmp/bin/curl"
+CURL_ARGS="$tmp/curl-args" CURL_STDIN="$tmp/curl-stdin" PATH="$tmp/bin:$PATH" bash "$tmp/notify" hello </dev/null
+if [[ ! -f "$tmp/curl-args" ]] || grep -qF -- "$TELEGRAM_BOT_TOKEN" "$tmp/curl-args"; then
+    printf 'not ok: server-prep-notify puts the bot token on the curl command line\n'
+    cat "$tmp/curl-args" >&2
+    exit 1
+fi
+if ! grep -qxF 'chat_id=42' "$tmp/curl-args" || ! grep -qxF 'text=hello' "$tmp/curl-args"; then
+    printf 'not ok: server-prep-notify does not send the chat id and the text\n'
+    cat "$tmp/curl-args" >&2
+    exit 1
+fi
+if [[ "$(cat "$tmp/curl-stdin")" != 'url = "https://api.telegram.org/bot123456:test-token/sendMessage"' ]]; then
+    printf 'not ok: server-prep-notify does not give curl the bot URL on stdin\n'
+    cat "$tmp/curl-stdin" >&2
+    exit 1
+fi
+printf 'ok: server-prep-notify gives the bot token to curl on stdin, not on its command line\n'
+
+# A bot token that does not look like 123456:ABC-... (a stray space or quote from a bad
+# paste) stops step_telegram before it writes anything.
+rm -f "$tmp"/written-*
+TELEGRAM_BOT_TOKEN='123456:bad "token'
+if step_telegram >/dev/null 2>&1 || compgen -G "$tmp/written-*" >/dev/null; then
+    printf 'not ok: step_telegram accepts a malformed bot token\n'
+    exit 1
+fi
+printf 'ok: step_telegram refuses a malformed bot token\n'
+
+# The answers file never holds the bot token: a re-run with --yes and no token keeps
+# the one already installed in telegram.env.
+CONF_DIR="$tmp/conf"
+mkdir -p "$CONF_DIR"
+printf 'TELEGRAM_BOT_TOKEN=123456:installed-token\nTELEGRAM_CHAT_ID=42\n' > "$CONF_DIR/telegram.env"
+rm -f "$tmp"/written-*
+TELEGRAM_BOT_TOKEN=''
+if ! step_telegram >/dev/null 2>&1 ||
+   ! grep -qxF 'TELEGRAM_BOT_TOKEN=123456:installed-token' "$tmp/written-telegram.env" 2>/dev/null; then
+    printf 'not ok: step_telegram does not keep the installed bot token on a re-run without one\n'
+    exit 1
+fi
+printf 'ok: step_telegram keeps the installed bot token on a re-run without one\n'
+
+# step_firewall: a re-run that changes nothing is "OK (already)" and a ufw-docker
+# failure fails the step. Every call that would reach the host is replaced first.
+LOG_FILE="$tmp/run.log"
+DRY_RUN=0
+SSH_PORT=822
+CURRENT_SSH_PORTS=822
+ADMIN_IPS=192.168.1.50
+PANEL_ACCESS=""
+PANEL_IP=""
+EXPOSE_WEB=no
+EXTRA_PORTS=""
+pkg_install() { :; }
+ufw() { echo "Status: active"; }                   # only "ufw status" is called directly
+run() { UFW_STATE="$UFW_STATE_AFTER"; }            # the ufw commands leave the rules as UFW_STATE_AFTER
+ufw_state() { printf '%s\n' "$UFW_STATE"; }
+ufw_docker_rules() { return "$UFW_DOCKER_RC"; }    # the real one runs ufw-docker, iptables and systemctl
+iptables() { printf '%s\n' "${DOCKER_USER_RULES:-}"; }   # the live DOCKER-USER chain
+
+expect_firewall() {   # expect_firewall LABEL HAS_DOCKER STATE_AFTER UFW_DOCKER_RC WANT(ok|fail) WANT_CHANGED [WANT_NOTE]
+    local label="$1" want="$5" want_changed="$6" want_note="${7:-}" status=0 got=ok
+    HAS_DOCKER="$2"; UFW_STATE_AFTER="$3"; UFW_DOCKER_RC="$4"
+    STEP_CHANGED=0; STEP_NOTES=""; MANUAL_TODO=(); UFW_STATE=old
+    step_firewall >"$tmp/firewall-output" 2>&1 || status=$?
+    [[ "$status" -eq 0 ]] || got=fail
+    if [[ "$got" != "$want" || "$STEP_CHANGED" -ne "$want_changed" || "$STEP_NOTES" != *"$want_note"* ]]; then
+        printf 'not ok: firewall %s gave %s (status %s), changed=%s, notes "%s"; want %s, changed=%s, notes with "%s"\n' \
+            "$label" "$got" "$status" "$STEP_CHANGED" "$STEP_NOTES" "$want" "$want_changed" "$want_note"
+        cat "$tmp/firewall-output" >&2
+        exit 1
+    fi
+    printf 'ok: firewall %s\n' "$label"
+}
+expect_firewall 're-run with nothing to change is OK (already)' 1 old 0 ok 0
+expect_firewall 'with a new rule is CHANGED' 1 new 0 ok 1
+expect_firewall 'fails when the ufw-docker rules are not loaded' 1 old 1 fail 0 'Docker ports still bypass UFW'
+DOCKER_USER_RULES='-A DOCKER-USER -j ufw-user-forward'
+expect_firewall 'fails but says when the rules of an earlier run are still loaded' 1 old 1 fail 0 'rules of an earlier run are still loaded'
+DOCKER_USER_RULES=""
+expect_firewall 'without Docker does not call ufw-docker' 0 old 1 ok 0
+if [[ ${#MANUAL_TODO[@]} -eq 0 ]]; then
+    printf 'not ok: firewall without Docker gave no to-do\n'
+    exit 1
+fi
+printf 'ok: firewall without Docker adds a to-do\n'
+DRY_RUN=1
+expect_firewall 'dry run is WOULD CHANGE' 1 old 0 ok 1
+DRY_RUN=0

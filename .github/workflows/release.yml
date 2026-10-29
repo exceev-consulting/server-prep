@@ -3,10 +3,12 @@ name: release
 # One button: Actions → release → Run workflow → patch / minor / major
 # (or: gh workflow run release -f bump=patch).
 #  1. bumps PREP_VERSION in server-prep.sh and moves the CHANGELOG.md [Unreleased] notes under
-#     the new version, through a pull request that it merges itself (main is protected);
-#  2. tags the merge commit and publishes the release: the CHANGELOG notes, the merged pull
+#     the new version, in one commit put straight on main. main only takes approved pull requests:
+#     the release GitHub App is its one exception (bypass list), and the app's key lives in the
+#     "release" environment (RELEASE_APP_CLIENT_ID, RELEASE_APP_PRIVATE_KEY), which only main can use;
+#  2. tags that commit and publishes the release: the CHANGELOG notes, the merged pull
 #     requests grouped by label (.github/release.yml), the scripts, the Telegraf template and SHA256SUMS.
-# The commit, the merge and the tag go through the GitHub API, so GitHub signs them (Verified).
+# The commit and the tag go through the GitHub API, so GitHub signs them (Verified).
 
 on:
   workflow_dispatch:
@@ -19,7 +21,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
   checks: write
 
 concurrency:
@@ -29,6 +30,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: release
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
@@ -78,10 +80,20 @@ jobs:
           shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh
           scripts/gen-data.sh --check
 
-      - name: Merge the version bump through a pull request
+      - name: Token of the release app
+        id: release-app
+        # Pinned to a commit, not a tag: this step handles the app's private key. Dependabot updates it.
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write   # only to move main; this repository only
+
+      - name: Put the version bump on main
+        env:
+          RELEASE_TOKEN: ${{ steps.release-app.outputs.token }}
         run: |
           base=$(git rev-parse HEAD)
-          branch="release/v$VERSION"
           tree=$(jq -n --arg base "$(git rev-parse 'HEAD^{tree}')" \
                    --rawfile prep server-prep.sh --rawfile log CHANGELOG.md \
                    --rawfile dj site/data.json --rawfile djs site/data.js '{base_tree: $base, tree: [
@@ -94,31 +106,29 @@ jobs:
           commit=$(jq -n --arg msg "release: v$VERSION" --arg tree "$tree" --arg parent "$base" \
                      '{message: $msg, tree: $tree, parents: [$parent]}' \
                    | gh api "repos/$REPO/git/commits" --input - --jq .sha)
-          gh api "repos/$REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$commit" >/dev/null
           # the step above linted exactly these files: report it as the required "lint" check
           gh api "repos/$REPO/check-runs" -f name=lint -f head_sha="$commit" -f status=completed \
             -f conclusion=success -f 'output[title]=Linted by the release workflow' \
             -f 'output[summary]=bash -n, shellcheck -S warning and gen-data --check passed' >/dev/null
-          gh pr create --base main --head "$branch" --title "release: v$VERSION" --label skip-changelog \
-            --body "Version bump and changelog for v$VERSION, made and merged by the release workflow."
-          for i in 1 2 3 4 5 6; do
-            gh pr merge "$branch" --squash && break
-            echo "not mergeable yet, retrying in 10s"; sleep 10
-          done
-          merged=$(gh pr view "$branch" --json state,mergeCommit --jq 'select(.state == "MERGED") | .mergeCommit.oid')
-          [ -n "$merged" ] || { echo "::error::the release pull request could not be merged"; exit 1; }
-          echo "MERGED=$merged" >> "$GITHUB_ENV"
+          # main only takes approved pull requests; the release app is its one exception. A plain
+          # fast-forward: if main moved during the run, this fails and nothing changes.
+          if ! GH_TOKEN="$RELEASE_TOKEN" gh api -X PATCH "repos/$REPO/git/refs/heads/main" \
+                 -f sha="$commit" -F force=false >/dev/null; then
+            echo "::error::main did not take the release commit: main changed during the run (run the workflow again), or the release app is not on main's bypass list"
+            exit 1
+          fi
+          echo "RELEASE_COMMIT=$commit" >> "$GITHUB_ENV"
 
       - name: Tag and publish the release
         run: |
-          git fetch -q origin main && git reset -q --hard "$MERGED"
+          git fetch -q origin main && git reset -q --hard "$RELEASE_COMMIT"
           mkdir dist
           cp server-prep.sh server-preconfig.sh server-audit.sh server-prep.conf.example \
              extras/telegraf/telegraf.conf.example dist/
           (cd dist && sha256sum -- * > SHA256SUMS)
           # annotated tag made through the API: signed by GitHub
           tag=$(gh api "repos/$REPO/git/tags" -f tag="v$VERSION" -f message="server-prep $VERSION" \
-                  -f object="$MERGED" -f type=commit --jq .sha)
+                  -f object="$RELEASE_COMMIT" -f type=commit --jq .sha)
           gh api "repos/$REPO/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$tag" >/dev/null
           args=(--verify-tag --title "server-prep v$VERSION" --generate-notes)
           if grep -q '[^[:space:]]' notes.md; then args+=(--notes-file notes.md); fi

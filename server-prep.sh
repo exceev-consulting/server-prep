@@ -195,6 +195,20 @@ run() {
     "$@" >> "$LOG_FILE" 2>&1
 }
 
+# run_secret SECRET CMD... : like run, but SECRET (a token or key) shows as *** in the log and on screen
+run_secret() {
+    local secret="$1" shown
+    shift
+    shown="$*"
+    [[ -n "$secret" ]] && shown="${shown//"$secret"/***}"
+    log "+ $shown"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        printf '%s\n' "${C_D}  [dry-run] ${shown}${C_0}"
+        return 0
+    fi
+    "$@" >> "$LOG_FILE" 2>&1
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 yes_() { [[ "${1,,}" =~ ^(y|yes|true|1)$ ]]; }
 
@@ -363,8 +377,12 @@ preflight() {
         fi
     fi
     mkdir -p "$LOG_DIR" "$REPORT_DIR" 2>/dev/null
+    chmod 700 "$LOG_DIR"   # root only, also when an older version created it as 755
+    # logs from 1.1.1 and older are 644 and can hold the tunnel token: make every file root only
+    find "$LOG_DIR" -maxdepth 1 -type f -perm /077 -exec chmod 600 {} + 2>/dev/null
     [[ $DRY_RUN -eq 1 ]] || { mkdir -p "$BACKUP_DIR" "$STATE_DIR" "$CONF_DIR"; chmod 700 "$STATE_DIR" "$REPORT_DIR" "$CONF_DIR"; }
-    : >> "$LOG_FILE"
+    (umask 077; : >> "$LOG_FILE")
+    chmod 600 "$LOG_FILE"
 
     # shellcheck disable=SC1091
     . /etc/os-release
@@ -567,8 +585,8 @@ questions() {
     if yes_ "$INSTALL_CROWDSEC"; then
         explain "Optional: link this server to the free CrowdSec web console to see alerts and bans." \
                 "app.crowdsec.net -> Security Engines -> Add -> copy the enroll key. Empty = skip (can do later" \
-                "with: sudo cscli console enroll <key>)."
-        ask CROWDSEC_ENROLL_KEY "CrowdSec enroll key" "$CROWDSEC_ENROLL_KEY"
+                "with: sudo cscli console enroll <key>). The key is not saved in the answers file."
+        ask_secret CROWDSEC_ENROLL_KEY "CrowdSec enroll key (input hidden)"
     fi
     explain "Self-hosted panels run every app in Docker. If Docker is missing it is installed from Docker's" \
             "official repository. In all cases: container logs are capped (10 MB x 3 per container)" \
@@ -634,7 +652,8 @@ questions() {
     if yes_ "$TELEGRAM_ENABLE"; then
         explain "1) In Telegram, talk to @BotFather -> /newbot -> copy the token (123456:ABC...)." \
                 "2) Send any message to your new bot." \
-                "3) Open https://api.telegram.org/bot<TOKEN>/getUpdates and copy \"chat\":{\"id\": <number>}."
+                "3) Open https://api.telegram.org/bot<TOKEN>/getUpdates and copy \"chat\":{\"id\": <number>}." \
+                "On a re-run, leave the token empty to keep the one already installed."
         ask_secret TELEGRAM_BOT_TOKEN "Telegram bot token (input hidden)"
         ask TELEGRAM_CHAT_ID "Telegram chat id" "$TELEGRAM_CHAT_ID"
         explain "${PANEL_LABEL^} logs in as root every few minutes; alerting on those would spam you." \
@@ -700,14 +719,16 @@ run_audit() {   # run_audit before|after
     if [[ -z "$AUDIT_SCRIPT" && -n "$AUDIT_URL" ]] && have curl; then
         AUDIT_SCRIPT="$STATE_DIR/server-audit.sh"
         [[ $DRY_RUN -eq 1 ]] && AUDIT_SCRIPT="$LOG_DIR/server-audit.sh"
-        curl -fsSL "$AUDIT_URL" -o "$AUDIT_SCRIPT" || AUDIT_SCRIPT=""
+        (umask 077; curl -fsSL "$AUDIT_URL" -o "$AUDIT_SCRIPT") || AUDIT_SCRIPT=""
     fi
     if [[ -z "$AUDIT_SCRIPT" ]]; then
         warn "server-audit.sh not found - skipping the ${which} audit"
         return 0
     fi
     info "running audit (${which})..."
-    bash "$AUDIT_SCRIPT" --quiet --no-color --no-network --no-txt --tsv "$out.tsv" --md "$out.md" >/dev/null 2>&1 || true
+    # umask 077: in a dry-run these files land in $LOG_DIR, which preflight made root only (600 files),
+    # and the audit check mon.prep_secrets counts any file there that others can read
+    (umask 077; bash "$AUDIT_SCRIPT" --quiet --no-color --no-network --no-txt --tsv "$out.tsv" --md "$out.md") >/dev/null 2>&1 || true
     [[ -s "$out.tsv" ]] || { warn "audit produced no output"; return 0; }
     if [[ "$which" == before ]]; then AUDIT_BEFORE="$out.tsv"; else AUDIT_AFTER="$out.tsv"; fi
     local p w f
@@ -879,7 +900,9 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
             if ! sha256sum "$tmp" | grep -q "^$UFW_DOCKER_SHA256 "; then
                 rm -f "$tmp"; err "ufw-docker checksum mismatch: not installed"; return 1
             fi
-            install -m 755 "$tmp" "$bin"; rm -f "$tmp"
+            write_file "$bin" 755 < "$tmp"; rm -f "$tmp"
+            # write_file leaves an identical file as it is, so restore a lost exec bit here
+            [[ -x $bin ]] || { run chmod 755 "$bin" && changed; }
             note "ufw-docker $UFW_DOCKER_VERSION installed (checksum verified)"
         fi
     fi
@@ -905,6 +928,9 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
     fi
 }
 
+# 'ufw allow/limit/route/default' exit 0 even when the rule or policy already exists, so compare the rule files instead.
+ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/dev/null | sha256sum; }
+
 ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
     local port="$1" c="$2" ip any=1
     for ip in ${ADMIN_IPS//,/ }; do
@@ -925,6 +951,8 @@ ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
 
 step_firewall() {
     pkg_install ufw || return 1
+    local before=""
+    before="$(ufw_state)"
     run ufw default deny incoming
     run ufw default allow outgoing
     ufw_allow_ssh "$SSH_PORT" "ssh"
@@ -949,6 +977,9 @@ step_firewall() {
         run ufw route allow proto "${e#*/}" from any to any port "${e%/*}" comment "docker extra"
         note "extra port $e"
     done
+    # A rule or policy counts as a change only if the rule files differ. A dry run executes
+    # nothing, so it keeps showing what it would do.
+    if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
 
     if ! ufw status 2>/dev/null | grep -q "Status: active"; then
         run ufw --force enable && { changed; note "UFW enabled"; }
@@ -958,11 +989,18 @@ step_firewall() {
 
     # Stop Docker from bypassing UFW. ufw-docker needs UFW active, so this runs after enable
     if [[ $HAS_DOCKER -eq 1 ]]; then
-        ufw_docker_rules
+        if ! ufw_docker_rules; then
+            # a failed download or update can leave the rules of an earlier run in place
+            if iptables -S DOCKER-USER 2>/dev/null | grep -q -- '-j ufw-user-forward'; then
+                note "ufw-docker could not be updated (see the log): the rules of an earlier run are still loaded"
+            else
+                note "ufw-docker rules not loaded: Docker ports still bypass UFW (see the log)"
+            fi
+            return 1
+        fi
     else
         todo "Docker is not installed yet. If your panel installs it later, run: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes (so container ports obey UFW)"
     fi
-    changed
     return 0
 }
 
@@ -1522,7 +1560,9 @@ step_aide() {
 EOF
     if [[ ! -e /var/lib/aide/aide.db && $DRY_RUN -eq 0 ]]; then
         info "building the AIDE baseline in the background (takes a few minutes)"
-        nohup aideinit -y -f > "$LOG_DIR/aideinit.log" 2>&1 &
+        (umask 077; : > "$LOG_DIR/aideinit.log")   # 600 like the other logs (aideinit keeps its own umask)
+        chmod 600 "$LOG_DIR/aideinit.log"
+        nohup aideinit -y -f >> "$LOG_DIR/aideinit.log" 2>&1 &
         note "AIDE baseline started in background ($LOG_DIR/aideinit.log)"
         changed
     fi
@@ -1603,7 +1643,13 @@ EOF
 
 step_telegram() {
     yes_ "$TELEGRAM_ENABLE" || return $SKIP_RC
+    # the answers file never holds the token: a re-run without one keeps the token already installed
+    if [[ -z "$TELEGRAM_BOT_TOKEN" && -f "$CONF_DIR/telegram.env" ]]; then
+        TELEGRAM_BOT_TOKEN="$(sed -n 's/^TELEGRAM_BOT_TOKEN=//p' "$CONF_DIR/telegram.env" 2>/dev/null | tail -n 1)"
+    fi
     [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]] || { note "token/chat id missing"; return 1; }
+    # the token goes into a curl config line (url = "..."), whose errors are silenced: catch a bad paste here
+    [[ $TELEGRAM_BOT_TOKEN =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || { note "the bot token does not look like 123456:ABC-..."; return 1; }
     write_file "$CONF_DIR/telegram.env" 600 <<EOF
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
@@ -1612,9 +1658,10 @@ EOF
     write_file /usr/local/sbin/server-prep-notify 755 <<'EOF'
 #!/bin/bash
 # Send a Telegram message: server-prep-notify "text"
+# The bot URL holds the token: curl reads it on stdin (-K -), so it never shows in ps.
 . /etc/server-prep/telegram.env || exit 0
-curl -fsS -m 10 --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=$1" \
-    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" >/dev/null 2>&1
+printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" |
+    curl -fsS -m 10 -K - --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=$1" >/dev/null 2>&1
 EOF
     write_file /usr/local/sbin/server-prep-ssh-alert 755 <<'EOF'
 #!/bin/bash
@@ -1640,7 +1687,7 @@ reboot=$([ -f /var/run/reboot-required ] && echo "YES" || echo "no")
 f2b=$(fail2ban-client status sshd 2>/dev/null | awk -F: '/Total banned/{gsub(/ /,"",$2);print $2}')
 cs=$(cscli decisions list -o raw 2>/dev/null | tail -n +2 | wc -l)
 failed=$(systemctl --failed --no-legend | awk '{print $2}' | tr '\n' ' ')
-rk=$(grep -c 'Warning:' /var/log/rkhunter.log 2>/dev/null || echo "-")
+rk=$([ -r /var/log/rkhunter.log ] && grep -c 'Warning:' /var/log/rkhunter.log || true)
 aide=$(journalctl -u dailyaidecheck --since "24 hours ago" 2>/dev/null | grep -oE '(added|removed|changed) entries: [0-9]+' | tr '\n' ' ')
 logins=$(journalctl --since "24 hours ago" SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sshd-session 2>/dev/null | grep -c 'Accepted publickey')
 ctr=$(docker ps -q 2>/dev/null | wc -l)
@@ -1650,7 +1697,7 @@ disk: ${disk} | mem: ${mem}
 updates pending: ${upd} | reboot needed: ${reboot}
 SSH logins (24h): ${logins}
 fail2ban total bans: ${f2b:--} | CrowdSec decisions: ${cs}
-rkhunter warnings: ${rk} | AIDE: ${aide:-no report}
+rkhunter warnings: ${rk:--} | AIDE: ${aide:-no report}
 containers running: ${ctr}
 failed units: ${failed:-none}"
 EOF
@@ -1672,8 +1719,11 @@ WantedBy=timers.target
 EOF
     run systemctl daemon-reload
     run systemctl enable --now server-prep-daily-report.timer
-    [[ $DRY_RUN -eq 0 ]] && /usr/local/sbin/server-prep-notify "✅ server-prep: Telegram alerts enabled on $(hostname)"
-    note "SSH login alerts (ignored users: ${TELEGRAM_IGNORE_USERS}) + daily report 09:00 - test message sent"
+    local sent="test message sent"
+    if [[ $DRY_RUN -eq 0 ]] && ! /usr/local/sbin/server-prep-notify "✅ server-prep: Telegram alerts enabled on $(hostname)"; then
+        sent="test message failed: check the bot token and the chat id"
+    fi
+    note "SSH login alerts (ignored users: ${TELEGRAM_IGNORE_USERS}) + daily report 09:00 - ${sent}"
     return 0
 }
 
@@ -1695,7 +1745,7 @@ EOF
             run apt-get -o DPkg::Lock::Timeout=600 update -q
             pkg_install cloudflared || return 1
         fi
-        run cloudflared service install "$CLOUDFLARED_TOKEN" || { note "cloudflared service install failed"; return 1; }
+        run_secret "$CLOUDFLARED_TOKEN" cloudflared service install "$CLOUDFLARED_TOKEN" || { note "cloudflared service install failed"; return 1; }
         changed; note "cloudflared tunnel service installed"
     fi
     todo "Cloudflare Zero Trust -> your tunnel -> Public hostnames: ssh-${HOST_SHORT}.<domain> -> ssh://localhost:${SSH_PORT}; app hostnames -> http://localhost:80"

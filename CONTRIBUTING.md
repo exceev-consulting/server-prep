@@ -44,7 +44,8 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 
 ## Rules for the scripts
 
-- **Everything that changes the system goes through the helpers:** `run` (respects `--dry-run`), `write_file`,
+- **Everything that changes the system goes through the helpers:** `run` (respects `--dry-run`),
+  `run_secret SECRET CMD...` (like `run`, but shows a token or key as `***` in the log and on screen), `write_file`,
   `set_kv`, `backup_file`, `pkg_install` (installs only what is missing), `svc_disable`.
 - **A step can run twice safely.** Check the current state first and only change what is missing.
 - **apt:** always pass `"${APT_OPTS[@]}"`. A fresh server often runs apt in the background at boot.
@@ -70,7 +71,15 @@ The [setup console](https://exceev-consulting.github.io/server-prep/) is `site/i
 with GitHub Pages by `.github/workflows/pages.yml`. Its data (`site/data.json`, `site/data.js`) is generated from the
 scripts, the README tables and `server-prep.conf.example` by `scripts/gen-data.sh`. CI fails when the data is out of date,
 so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result.
-To view it locally:
+
+Colours, type, radii and spacing are the tokens in `site/tokens.css`, shared with the
+[brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) (`site/brand/`). Use a token instead of a new
+colour. A page that must also work offline, like the e2e report, keeps its own copy of the tokens, and
+`scripts/check-tokens.sh` fails CI when a copy, or a colour ramp on the brand page (sections 2.2 and 2.4), differs
+from `site/tokens.css`. The PNG files in `site/` (link preview, home-screen icon, favicon) are
+renders of the logo: section 6.2 of the brand guidelines gives their sizes.
+
+To view the console and the brand page locally:
 
 ```bash
 python3 -m http.server --bind 127.0.0.1 -d site 8000
@@ -103,11 +112,16 @@ or `major` (breaking changes). From a terminal: `gh workflow run release -f bump
 
 The workflow:
 1. bumps `PREP_VERSION` in `server-prep.sh` and moves the `[Unreleased]` notes under the new version
-   in `CHANGELOG.md`, through a `release: vX.Y.Z` pull request that it lints and merges itself;
-2. tags the merge commit and publishes the GitHub release: the changelog notes, the merged pull requests,
+   in `CHANGELOG.md`, lints them, and puts that `release: vX.Y.Z` commit straight on `main`;
+2. tags that commit and publishes the GitHub release: the changelog notes, the merged pull requests,
    the scripts, the Telegraf template (`telegraf.conf.example`) and a `SHA256SUMS` file.
 
-GitHub signs the commit, the merge and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
+`main` only takes approved pull requests. The one exception is the release GitHub App, which only this
+workflow uses: it is on `main`'s bypass list, and its client ID (`RELEASE_APP_CLIENT_ID`) and private key
+(`RELEASE_APP_PRIVATE_KEY`) live in the `release` environment, which only `main` can use. The app has
+**Contents: read and write** on this repository and nothing else.
+
+GitHub signs the commit and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
 in a normal pull request, when the audit changes a lot.
 
 ## License
