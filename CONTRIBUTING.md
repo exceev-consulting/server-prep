@@ -61,7 +61,7 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 - **Simple words** in messages and docs. Many users are not security experts.
 - Style: 4 spaces, `[[ ]]`, quote variables. `.editorconfig` has the basics.
 
-[CLAUDE.md](CLAUDE.md) has the full list of conventions and the bugs already fixed (don't bring them back).
+[AGENTS.md](AGENTS.md) has the full list of conventions and the bugs already fixed (don't bring them back).
 If you use [Claude Code](https://claude.com/claude-code), the `/add-step` skill walks through the checklist.
 
 ## The setup console (site/)

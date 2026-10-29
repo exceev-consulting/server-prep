@@ -5,7 +5,7 @@ description: Guide the user through preparing a new Debian/Ubuntu server (VPS or
 
 # Prepare a new server
 
-The user runs every command and pastes the output. You give short, concise, precise guidance at each step: the command or answer, plus one line on why. Read `CLAUDE.md` and `CLAUDE.local.md` (infrastructure, usual answers) first.
+The user runs every command and pastes the output. You give short, concise, precise guidance at each step: the command or answer, plus one line on why. Read `AGENTS.md` and `CLAUDE.local.md` (infrastructure, usual answers) first.
 
 ## 0. Before starting, ask only what is unknown
 - Which OS, and is it a VPS, a bare-metal machine or a laptop?
@@ -76,9 +76,10 @@ sudo ./server-prep.sh --dry-run
 
 ## 5. If a step fails
 Re-run only that step:
-`sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step> --yes`.
+`sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>`.
+The saved answers are the defaults, so the user mostly presses Enter. `--yes` skips the questions, but never use it for the `ssh` step: it skips the second-terminal login test and stops the 10-minute rollback (#65).
 
-Check the known fixes in `CLAUDE.md` → *Hard-won gotchas*. The log is in `/var/log/server-prep/` and only root can read it, so ask the user to paste the errors of the last run:
+Check the known fixes in `AGENTS.md` → *Hard-won gotchas*. The log is in `/var/log/server-prep/` and only root can read it, so ask the user to paste the errors of the last run:
 `sudo sh -c 'grep -n -i -E "error|fail|warn" "$(ls -t /var/log/server-prep/run-*.log | head -1)"'`.
 Logs from 1.1.1 and older can hold the tunnel token: ask them to check the lines before pasting.
 
