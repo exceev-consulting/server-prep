@@ -32,7 +32,7 @@ One button: **Actions → release → Run workflow**, then choose `patch`, `mino
 gh workflow run release -f bump=patch
 ```
 
-The workflow bumps `PREP_VERSION`, moves the `[Unreleased]` notes under the new version, regenerates the setup console data, merges that through its own pull request, then tags and publishes the release with the scripts, the Telegraf template and `SHA256SUMS`.
+The workflow bumps `PREP_VERSION`, moves the `[Unreleased]` notes under the new version, regenerates the setup console data and puts that commit straight on `main`, then tags and publishes the release with the scripts, the Telegraf template and `SHA256SUMS`. Everything else reaches `main` through an approved pull request: the release GitHub App, used only by this workflow, is the one exception.
 
 ## Website and wiki
 

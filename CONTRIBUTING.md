@@ -102,11 +102,16 @@ or `major` (breaking changes). From a terminal: `gh workflow run release -f bump
 
 The workflow:
 1. bumps `PREP_VERSION` in `server-prep.sh` and moves the `[Unreleased]` notes under the new version
-   in `CHANGELOG.md`, through a `release: vX.Y.Z` pull request that it lints and merges itself;
-2. tags the merge commit and publishes the GitHub release: the changelog notes, the merged pull requests,
+   in `CHANGELOG.md`, lints them, and puts that `release: vX.Y.Z` commit straight on `main`;
+2. tags that commit and publishes the GitHub release: the changelog notes, the merged pull requests,
    the scripts, the Telegraf template (`telegraf.conf.example`) and a `SHA256SUMS` file.
 
-GitHub signs the commit, the merge and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
+`main` only takes approved pull requests. The one exception is the release GitHub App, which only this
+workflow uses: it is on `main`'s bypass list, and its client ID (`RELEASE_APP_CLIENT_ID`) and private key
+(`RELEASE_APP_PRIVATE_KEY`) live in the `release` environment, which only `main` can use. The app has
+**Contents: read and write** on this repository and nothing else.
+
+GitHub signs the commit and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
 in a normal pull request, when the audit changes a lot.
 
 ## License
