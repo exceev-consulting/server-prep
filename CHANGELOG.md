@@ -5,6 +5,27 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- End-to-end tests ([docs/e2e-tests.md](docs/e2e-tests.md)): every supported system boots in a KVM virtual machine
+  from its official cloud image and goes through `server-preconfig.sh`, a dry run, the interactive questions, a real
+  run, SSH and Docker-vs-firewall checks from outside, a second run that must change nothing, and a reboot, with the
+  audit at each stage. Pull requests and `main` get an HTML report on GitHub Pages
+  ([latest](https://exceev-consulting.github.io/server-prep/e2e/main/)). The setup console links to them (**Test reports**),
+  and `tests/e2e/preview.sh` shows the same pages from a local run.
+- Security: on Debian, where UFW is not installed by default, container ports published with `-p` bypassed UFW until
+  the first reboot. The ufw-docker rules were written, but `systemctl restart ufw` did not load them. server-prep now
+  loads them with `ufw reload`, and the firewall step FAILs when they are still not loaded instead of reporting
+  CHANGED ([#68](https://github.com/exceev-consulting/server-prep/issues/68)). Found by the new end-to-end tests.
+- After a UFW reload, CrowdSec's bans covered the server again but not container ports: the reload removes the bouncer's
+  rule from the DOCKER-USER chain. server-prep restarts the bouncer after reloading UFW, and `server-audit.sh` WARNs
+  (`ips.crowdsec_bouncer`) when the rule is missing.
+- A second `server-prep.sh` run no longer reports the firewall step as CHANGED when its rules did not change.
+- Ubuntu 22.10+ (sshd started by `ssh.socket`): the SSH step could fail with "Address already in use" and roll back,
+  and the rollback could then leave no SSH at all. server-prep now stops sshd before it restarts `ssh.socket`, and both
+  rollback scripts do the same.
+- `server-preconfig.sh` enables `ssh.socket` instead of `ssh.service` where sshd is socket-activated, and `--check`
+  accepts it. Enabling both made the later port change fail.
+- The default admin user `admin` could not be created on Ubuntu: its cloud images already have an `admin` group, so
+  `useradd` refused and the users step FAILED with no reason given. The user now joins that group, and a failure says why.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.

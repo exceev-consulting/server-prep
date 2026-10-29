@@ -1,0 +1,273 @@
+name: e2e
+
+# End-to-end tests: one KVM virtual machine per OS boots the official cloud image, and
+# tests/e2e/run.sh drives the scripts over SSH like an operator would (see tests/e2e/).
+# The report job builds one HTML report for the run and a table in the job summary.
+# pages.yml publishes the report of main and of each open pull request on GitHub Pages.
+# By hand: gh workflow run e2e -f os=debian-13 (or os=all).
+#
+# Security: this workflow runs pull request code, so it has a read-only token and no secret,
+# and it runs only on GitHub-hosted runners. pages.yml reads its artifacts as untrusted data.
+
+on:
+  pull_request:
+    paths:
+      - server-prep.sh
+      - server-audit.sh
+      - server-preconfig.sh
+      - server-prep.conf.example
+      - tests/e2e/**
+      - .github/workflows/e2e.yml
+  push:
+    branches: [main]
+    paths:
+      - server-prep.sh
+      - server-audit.sh
+      - server-preconfig.sh
+      - server-prep.conf.example
+      - tests/e2e/**
+      - .github/workflows/e2e.yml
+  schedule:
+    # weekly, so the main report follows new cloud images and package updates
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      os:
+        description: "OS to test (the ids in tests/e2e/images.tsv)"
+        type: choice
+        options: [all, debian-12, debian-13, ubuntu-22.04, ubuntu-24.04, ubuntu-26.04]
+        default: all
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run. A run on main is never stopped
+# halfway, so the main report never comes from a half-done run.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      oses: ${{ steps.list.outputs.oses }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: OS list
+        id: list
+        env:
+          WANT: ${{ inputs.os }}
+        run: |
+          all=$(tests/e2e/run.sh --list-os)
+          if [ -n "$WANT" ] && [ "$WANT" != all ]; then
+            grep -qxF -- "$WANT" <<<"$all" || { echo "::error::unknown OS: $WANT (see tests/e2e/images.tsv)"; exit 1; }
+            all=$WANT
+          fi
+          oses=$(jq -Rnc '[inputs | select(test("^[a-z0-9][a-z0-9.-]*$"))]' <<<"$all")
+          [ "$oses" != "[]" ] || { echo "::error::no OS to test"; exit 1; }
+          echo "oses=$oses" >> "$GITHUB_OUTPUT"
+          echo "OSes: $oses"
+
+  vm:
+    name: ${{ matrix.os }}
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.setup.outputs.oses) }}
+    env:
+      OS: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Hosted runners have /dev/kvm, but only root can open it. Without it the harness
+      # falls back to TCG emulation: much slower, but the run still gives results.
+      - name: Enable KVM
+        continue-on-error: true
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null || true
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
+          sudo udevadm settle --timeout=10 || true
+          if [ -c /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "KVM: /dev/kvm is usable ($(ls -l /dev/kvm))"
+          else
+            echo "::warning::/dev/kvm is not usable: the VM runs with TCG emulation (slow)"
+          fi
+
+      # The harness drives the terminal itself: QEMU and xorriso (for the cloud-init seed) are
+      # all it needs on top of the runner image (ssh, curl, jq and git are already there).
+      - name: Install QEMU
+        run: |
+          sudo apt-get -o DPkg::Lock::Timeout=600 update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y -q \
+            --no-install-recommends qemu-system-x86 qemu-utils xorriso
+          # run.sh and the image cache must agree on where the images live
+          echo "E2E_CACHE=$HOME/.cache/server-prep-e2e" >> "$GITHUB_ENV"
+
+      # The key changes when the image checksum changes, so a new cloud image is downloaded once.
+      # Without a key (checksum server down) the run goes on without the cache.
+      - name: Image cache key
+        id: image
+        run: |
+          if key=$(tests/e2e/run.sh --image-key --os "$OS") && [[ $key =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "key=$key" >> "$GITHUB_OUTPUT"
+            echo "Image cache key: $key"
+          else
+            echo "::warning::no image cache key for $OS: the image is downloaded without the cache"
+          fi
+
+      # Restore and save are separate steps: actions/cache saves only when the job succeeds,
+      # and a failing scenario would then download the image again on every run.
+      - name: Image cache
+        id: cache
+        if: steps.image.outputs.key != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/server-prep-e2e/images
+          key: e2e-image-${{ steps.image.outputs.key }}
+
+      # The job timeout (45 minutes) kills everything and leaves no results.json, so the step
+      # stops on its own first. run.sh starts no new scenario after E2E_DEADLINE_MIN, and timeout
+      # stops a scenario still running at 38 minutes. timeout signals the whole process group, so
+      # the ssh command in progress ends too and run.sh's trap writes results.json. With exec, a
+      # cancelled run reaches timeout as well, which passes the signal on in the same way.
+      # The steps before take about 2 minutes, the upload and the cache save about 1.
+      - name: Scenarios
+        env:
+          E2E_DEADLINE_MIN: "33"
+        run: exec timeout --kill-after=1m 38m tests/e2e/run.sh --os "$OS" --out e2e-out
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-vm-${{ matrix.os }}
+          path: e2e-out/${{ matrix.os }}
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Only a complete image: run.sh deletes one that fails its checksum, and a cancelled
+      # download leaves a .part file.
+      - name: Image to cache
+        id: keep
+        if: ${{ !cancelled() && steps.image.outputs.key != '' && steps.cache.outputs.cache-hit != 'true' }}
+        run: |
+          rm -f "$E2E_CACHE"/images/*.part
+          if [ -f "$E2E_CACHE/images/$OS.img" ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No image for $OS to cache"
+          fi
+
+      - name: Save the image cache
+        if: ${{ !cancelled() && steps.keep.outputs.save == 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/server-prep-e2e/images
+          key: e2e-image-${{ steps.image.outputs.key }}
+
+  # Runs even when VM jobs failed, timed out or were cancelled: a missing OS shows as an error card.
+  report:
+    needs: [setup, vm]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        if: always()
+        with:
+          persist-credentials: false
+
+      - name: Download the results
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-vm-*
+          path: results
+
+      - name: Build the report
+        if: always()
+        env:
+          OSES: ${{ needs.setup.outputs.oses }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REF: ${{ github.head_ref || github.ref_name }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          case $EVENT in
+            pull_request) origin=pr ;;
+            workflow_dispatch) origin=dispatch ;;
+            *) origin=main ;;
+          esac
+          args=(--out report
+                --meta "repo=$REPO" --meta "sha=$SHA" --meta "ref=$REF" --meta "run_id=$RUN_ID"
+                --meta "run_url=$RUN_URL" --meta "event=$EVENT" --meta "source=$origin"
+                --meta "generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+          if [ -n "$PR" ]; then args+=(--meta "pr=$PR" --meta "pr_title=$PR_TITLE"); fi
+          mapfile -t oses < <(jq -r '.[]?' <<<"${OSES:-[]}" 2>/dev/null || true)
+          dirs=()
+          for os in "${oses[@]}"; do
+            [[ $os =~ ^[a-z0-9][a-z0-9.-]*$ ]] || continue
+            if [ -f "results/e2e-vm-$os/results.json" ]; then
+              dirs+=("results/e2e-vm-$os")
+            else
+              args+=(--missing "$os=VM job ended without results")
+            fi
+          done
+          if [ ${#oses[@]} -eq 0 ]; then echo "::error::no VM job ran: see the setup job"; exit 1; fi
+          bash tests/e2e/build-report.sh "${args[@]}" "${dirs[@]}"
+
+      - name: Job summary
+        if: always()
+        env:
+          VM_RESULT: ${{ needs.vm.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            if [ -f report/summary.json ]; then
+              bash tests/e2e/build-report.sh --summary-md report
+              echo
+              echo "HTML report: the \`e2e-report\` artifact of [this run]($RUN_URL#artifacts) (open \`index.html\`)."
+              echo "For main and open pull requests, pages.yml also publishes it under \`e2e/\` on the project site."
+            else
+              echo "### E2E tests: no report"
+              echo
+              echo "The report could not be built (VM jobs: $VM_RESULT). See the logs of [this run]($RUN_URL)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: report
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Result
+        if: always()
+        run: |
+          status=$(jq -r '.status // empty' report/summary.json 2>/dev/null || true)
+          echo "E2E result: ${status:-no report}"
+          [ "$status" = passed ]

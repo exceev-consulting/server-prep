@@ -1,0 +1,8 @@
+# Official cloud images the end-to-end tests boot, one per supported system.
+# Each image is checked against the checksum file published next to it before use.
+# Columns (tab separated): id, label, image URL, checksum file URL, algorithm
+debian-12	Debian 12 (bookworm)	https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2	https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS	sha512
+debian-13	Debian 13 (trixie)	https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2	https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS	sha512
+ubuntu-22.04	Ubuntu 22.04 LTS	https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img	https://cloud-images.ubuntu.com/releases/jammy/release/SHA256SUMS	sha256
+ubuntu-24.04	Ubuntu 24.04 LTS	https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img	https://cloud-images.ubuntu.com/releases/noble/release/SHA256SUMS	sha256
+ubuntu-26.04	Ubuntu 26.04 LTS	https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img	https://cloud-images.ubuntu.com/releases/resolute/release/SHA256SUMS	sha256

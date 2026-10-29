@@ -1,7 +1,17 @@
 name: pages
 
-# Publishes site/ (the setup console) to GitHub Pages.
+# Publishes site/ (the setup console) and the E2E reports under e2e/ to GitHub Pages.
 # One-time setup by a maintainer: Settings -> Pages -> Source = GitHub Actions.
+#
+# Each deploy replaces the whole site, so the build rebuilds e2e/ from data every time:
+# the latest e2e run of main and of each open pull request (scripts/e2e-pages.sh).
+# Nothing is stored in git, so a closed pull request's report is gone after the next deploy.
+#
+# Security: workflow_run and pull_request_target run with this repository's token even for
+# fork pull requests. This workflow never checks out or runs pull request code: checkout takes
+# main, and the e2e artifacts are untrusted data that tests/e2e/build-report.sh from main
+# validates and escapes. PR numbers, titles and commits come from the GitHub API, and event
+# values reach the scripts through env, never inside the script text.
 
 on:
   push:
@@ -9,24 +19,87 @@ on:
     paths:
       - site/**
       - scripts/gen-data.sh
+      - scripts/e2e-pages.sh
       - server-prep.sh
       - server-audit.sh
       - server-preconfig.sh
       - server-prep.conf.example
       - README.md
+      - tests/e2e/build-report.sh
+      - tests/e2e/report/**
       - .github/workflows/pages.yml
+  # a finished e2e run: publish its report
+  workflow_run:
+    workflows: [e2e]
+    types: [completed]
+  # a closed pull request: remove its report. Only PRs into main, so checkout and the deploy
+  # run on main (the github-pages environment only deploys from main).
+  pull_request_target:
+    types: [closed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Deploys run one at a time. A waiting deploy is replaced by a newer one, which is fine for
+# the site: each build reads the latest runs of everything. The replaced run's PR comment is
+# skipped; the report is still on the site and the next run of that PR comments again.
 concurrency:
   group: pages
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  build:
+  # A closed pull request needs a deploy only when the site has a report for it.
+  # When the check can't tell (site down, no index yet), it deploys.
+  gate:
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: read
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - name: Report on the site?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          deploy=true
+          url=$(gh api "repos/$REPO/pages" --jq .html_url 2>/dev/null) || url=
+          # the query string skips the CDN cache: a report published minutes ago counts
+          if [ -n "$url" ] && index=$(curl -fsSL --max-time 30 "${url%/}/e2e/index.json?t=$(date +%s)"); then
+            has=$(jq -r --arg n "$PR" 'any(.reports[]?; .kind == "pr" and ((.pr | tostring) == $n))' <<<"$index" 2>/dev/null) || has=
+            if [ "$has" = false ]; then deploy=false; fi
+          fi
+          echo "PR #$PR closed: deploy=$deploy"
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: gate
+    # gate is skipped for the other events. Only a finished e2e run (success or failure) can
+    # be published: a cancelled, skipped or never started run changes nothing on the site.
+    if: >-
+      ${{ !cancelled()
+      && (github.event_name != 'pull_request_target' || needs.gate.outputs.deploy != 'false')
+      && (github.event_name != 'workflow_run'
+          || github.event.workflow_run.conclusion == 'success'
+          || github.event.workflow_run.conclusion == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      comment_prs: ${{ steps.comments.outputs.prs }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -35,12 +108,76 @@ jobs:
       - name: Site data up to date
         run: scripts/gen-data.sh --check
 
+      - name: E2E reports
+        id: e2e
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          cp -r site _site
+          scripts/e2e-pages.sh --out _site/e2e
+
+      # The comment job has a write token, no checkout and runs no repository code: the
+      # pull requests to comment on and their tables are picked here. Only the pull request
+      # of the e2e run that started this deploy, and only when its report was published.
+      # A failure here never stops the deploy: the comment is skipped.
+      - name: PR comment tables
+        id: comments
+        continue-on-error: true
+        if: >-
+          github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request'
+          && steps.e2e.outputs.prs != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PRS: ${{ steps.e2e.outputs.prs }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          dir=$RUNNER_TEMP/e2e-comments
+          mkdir -p "$dir"
+          cp _site/e2e/index.json "$dir/index.json"
+          # The event lists no pull request for a fork: match the head branch and repository.
+          if ! open=$(gh api --paginate -X GET "repos/$REPO/pulls" -f state=open -f per_page=100 \
+                        -f head="${HEAD_REPO%%/*}:$HEAD_BRANCH" \
+                      | jq -r --arg b "$HEAD_BRANCH" --arg r "$HEAD_REPO" \
+                          '.[] | select(.head.ref == $b and .head.repo.full_name == $r) | .number'); then
+            echo "::warning::can't list the pull requests of this e2e run: no comment"
+            exit 0
+          fi
+          picked=()
+          for n in $open; do
+            [[ $n =~ ^[0-9]+$ ]] || continue
+            [[ " $PRS " == *" $n "* ]] || { echo "PR #$n: no published report, no comment"; continue; }
+            # build-report.sh messages may quote untrusted results: "##[" could start a workflow command
+            if ! bash tests/e2e/build-report.sh --summary-md "_site/e2e/pr-$n" > "$dir/pr-$n.md" 2> "$dir/err"; then
+              sed 's/##\[/# #[/g; s/^/build-report: /' "$dir/err"
+              echo "::warning::PR #$n: no summary table, no comment"
+              rm -f "$dir/pr-$n.md"
+              continue
+            fi
+            picked+=("$n")
+          done
+          rm -f "$dir/err"
+          echo "Comment on: ${picked[*]:-none}"
+          echo "prs=${picked[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the PR comment tables
+        if: steps.comments.outputs.prs != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-comments
+          path: ${{ runner.temp }}/e2e-comments
+          retention-days: 1
+
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: site
+          path: _site
 
   deploy:
     needs: build
+    # build runs after a skipped gate, which would skip this job without the condition
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -48,6 +185,84 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  # One sticky comment per pull request, edited in place, after its report is live.
+  # Unchanged comments are not edited.
+  comment:
+    needs: [build, deploy]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'workflow_run'
+      && needs.deploy.result == 'success' && needs.build.outputs.comment_prs != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: e2e-comments
+          path: comments
+
+      - name: Create or update the PR comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PRS: ${{ needs.build.outputs.comment_prs }}
+          SITE_URL: ${{ needs.deploy.outputs.page_url }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          marker='<!-- e2e-report -->'
+          failed=0
+          read -ra prs <<<"$PRS"
+          for n in "${prs[@]}"; do
+            [[ $n =~ ^[0-9]+$ ]] || continue
+            [ -f "comments/pr-$n.md" ] || { echo "PR #$n: no summary table, no comment"; continue; }
+            entry=$(jq -c --arg n "$n" 'first(.reports[]? | select(.kind == "pr" and ((.pr | tostring) == $n))) // empty' comments/index.json)
+            [ -n "$entry" ] || { echo "PR #$n: not in the published index, no comment"; continue; }
+            state=$(gh api "repos/$REPO/pulls/$n" --jq .state) || { echo "::warning::PR #$n: can't read it"; failed=1; continue; }
+            [ "$state" = open ] || { echo "PR #$n is $state: no comment"; continue; }
+
+            # The table comes from untrusted results: a word joiner after "@" and before a number
+            # after "#" keeps it from mentioning people or linking issues.
+            jq -jn --arg marker "$marker" --rawfile table "comments/pr-$n.md" --argjson e "$entry" \
+                  --arg link "${SITE_URL%/}/e2e/pr-$n/" --arg server "$SERVER_URL/" '
+              (if $e.status == "passed" then "passed" else "failed" end) as $status
+              | (($e.sha // "") | if test("^[0-9a-f]{40}$") then .[0:7] else "unknown" end) as $sha
+              | (($e.run_url // "") | if startswith($server) then . else "" end) as $run
+              | [$marker,
+                 "**E2E tests \($status)** on commit `\($sha)`.",
+                 "",
+                 ($table | gsub("@"; "@⁠") | gsub("#(?<d>[0-9])"; "#⁠\(.d)")
+                         | rtrimstr("\n") | .[0:60000]),
+                 "",
+                 "[HTML report](\($link))" + (if $run == "" then "" else " · [workflow run](\($run))" end)]
+              | join("\n")' > body.md
+
+            found=$(gh api --paginate "repos/$REPO/issues/$n/comments?per_page=100" \
+                      --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- e2e-report -->"))) | {id, body} | tojson') \
+              || { echo "::warning::PR #$n: can't read the comments"; failed=1; continue; }
+            found=${found%%$'\n'*}
+            jq -n --rawfile body body.md '{body: $body}' > body.json
+            if [ -z "$found" ]; then
+              if gh api "repos/$REPO/issues/$n/comments" --input body.json --silent; then
+                echo "PR #$n: comment created"
+              else
+                echo "::warning::PR #$n: can't create the comment"; failed=1
+              fi
+            elif [ "$(jq -r .body <<<"$found")" = "$(cat body.md)" ]; then
+              echo "PR #$n: comment already up to date"
+            else
+              id=$(jq -r .id <<<"$found")
+              if gh api -X PATCH "repos/$REPO/issues/comments/$id" --input body.json --silent; then
+                echo "PR #$n: comment updated"
+              else
+                echo "::warning::PR #$n: can't update the comment"; failed=1
+              fi
+            fi
+          done
+          exit "$failed"

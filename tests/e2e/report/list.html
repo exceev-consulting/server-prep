@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>E2E reports · server-prep</title>
+<!-- The list comes from index.js (window.E2E_INDEX), built by tests/e2e/build-report.sh --index.
+     No inline script or style is allowed. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="description" content="server-prep end-to-end test reports: the latest run on main and one report for each open pull request.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cstyle%3Epath%7Bfill:%230B1117%7D@media (prefers-color-scheme:dark)%7Bpath%7Bfill:%23F4F7FA%7D%7D%3C/style%3E%3Cpath fill-rule='evenodd' d='M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 13A9 9 0 0 1 36.2 30L38.3 37.6A2.6 2.6 0 0 1 35.8 41H28.2A2.6 2.6 0 0 1 25.7 37.6L27.8 30A9 9 0 0 1 32 13Z M22.5 45H41.5A3 3 0 0 1 41.5 51H22.5A3 3 0 0 1 22.5 45Z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="report.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg class="sprite" width="0" height="0" aria-hidden="true">
+  <symbol id="logo" viewBox="0 0 64 64"><path fill="currentColor" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 13A9 9 0 0 1 36.2 30L38.3 37.6A2.6 2.6 0 0 1 35.8 41H28.2A2.6 2.6 0 0 1 25.7 37.6L27.8 30A9 9 0 0 1 32 13Z M22.5 45H41.5A3 3 0 0 1 41.5 51H22.5A3 3 0 0 1 22.5 45Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor"/></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="../" aria-label="server-prep setup console">
+      <svg class="logo" aria-hidden="true"><use href="#logo"/></svg>
+      <b>server-prep</b>
+      <span class="chip">E2E</span>
+    </a>
+    <nav class="topnav" aria-label="Project">
+      <a class="sec" href="../">Setup console</a>
+      <button class="tbtn" type="button" id="theme-btn" aria-label="Theme: system"><svg class="i" aria-hidden="true"><use href="#i-theme"/></svg><span id="theme-label" class="tlabel">System</span></button>
+      <a class="tbtn" href="https://github.com/exceev-consulting/server-prep">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+<section class="hero" aria-labelledby="title">
+  <div class="wrap hero-in">
+    <span class="eyebrow">End-to-end tests in real VMs</span>
+    <h1 id="title">E2E reports</h1>
+    <p class="verdict" id="verdict">Each report runs server-prep in a real VM on every supported Debian and Ubuntu version, then audits it before and after a reboot.</p>
+    <p class="meta" id="meta"></p>
+  </div>
+</section>
+
+<div class="wrap"><div class="alerts" id="alerts"></div></div>
+
+<section class="block" aria-labelledby="list-h">
+  <div class="wrap">
+    <div class="block-head">
+      <span class="eyebrow">Reports</span>
+      <h2 id="list-h">Latest run on main, then open pull requests</h2>
+      <p class="lead">Each Pages deploy rebuilds this list from the latest runs. A pull request's report goes away when it is merged or closed.</p>
+    </div>
+    <ul class="card reps" id="reps"></ul>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="foot-brand"><svg class="logo" aria-hidden="true"><use href="#logo"/></svg>server-prep</span>
+    <span id="foot-gen"></span>
+    <span>Fonts load from Google Fonts. Nothing else leaves this page; it only remembers your theme choice in this browser.</span>
+  </div>
+</footer>
+
+<noscript><p class="wrap">This list needs JavaScript. The same data is in <a href="index.json">index.json</a>.</p></noscript>
+
+<script src="index.js"></script>
+<script src="list.js"></script>
+</body>
+</html>

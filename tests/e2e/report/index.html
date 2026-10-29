@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>E2E report · server-prep</title>
+<!-- The data comes from test VMs that ran pull request code: no inline script or style is allowed,
+     and data.js only sets a global. tests/e2e/build-report.sh copies this page as it is. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="description" content="server-prep end-to-end tests: each scenario on each Debian and Ubuntu version, run in a real VM, with the audit before and after.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cstyle%3Epath%7Bfill:%230B1117%7D@media (prefers-color-scheme:dark)%7Bpath%7Bfill:%23F4F7FA%7D%7D%3C/style%3E%3Cpath fill-rule='evenodd' d='M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 13A9 9 0 0 1 36.2 30L38.3 37.6A2.6 2.6 0 0 1 35.8 41H28.2A2.6 2.6 0 0 1 25.7 37.6L27.8 30A9 9 0 0 1 32 13Z M22.5 45H41.5A3 3 0 0 1 41.5 51H22.5A3 3 0 0 1 22.5 45Z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="report.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg class="sprite" width="0" height="0" aria-hidden="true">
+  <symbol id="logo" viewBox="0 0 64 64"><path fill="currentColor" fill-rule="evenodd" d="M18 0H46A18 18 0 0 1 64 18V46A18 18 0 0 1 46 64H18A18 18 0 0 1 0 46V18A18 18 0 0 1 18 0Z M32 13A9 9 0 0 1 36.2 30L38.3 37.6A2.6 2.6 0 0 1 35.8 41H28.2A2.6 2.6 0 0 1 25.7 37.6L27.8 30A9 9 0 0 1 32 13Z M22.5 45H41.5A3 3 0 0 1 41.5 51H22.5A3 3 0 0 1 22.5 45Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4m0-4h.01"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor"/></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#main" aria-label="server-prep E2E report, top of the page">
+      <svg class="logo" aria-hidden="true"><use href="#logo"/></svg>
+      <b>server-prep</b>
+      <span class="chip">E2E</span>
+    </a>
+    <nav class="topnav" aria-label="Report">
+      <a class="sec" href="#matrix">Matrix</a>
+      <a class="sec" href="#systems">Systems</a>
+      <a class="tbtn" href="../" id="nav-all" hidden>All reports</a>
+      <button class="tbtn" type="button" id="theme-btn" aria-label="Theme: system"><svg class="i" aria-hidden="true"><use href="#i-theme"/></svg><span id="theme-label" class="tlabel">System</span></button>
+      <a class="tbtn" href="https://github.com/exceev-consulting/server-prep" id="nav-repo">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+<section class="hero" aria-labelledby="title">
+  <div class="wrap hero-in">
+    <span class="eyebrow">End-to-end tests in real VMs</span>
+    <h1 id="title">E2E report <span class="hpill" id="status">Loading</span></h1>
+    <p class="verdict" id="verdict"></p>
+    <p class="meta" id="meta"></p>
+    <div class="kpis-hero" id="kpis"></div>
+  </div>
+</section>
+
+<div class="wrap"><div class="alerts" id="alerts"></div></div>
+
+<section class="block" id="failures" aria-labelledby="failures-h" hidden>
+  <div class="wrap">
+    <div class="block-head">
+      <span class="eyebrow">Failures first</span>
+      <h2 id="failures-h">What failed</h2>
+      <p class="lead">Each failed scenario with its first failed check. Open it for every check and the logs.</p>
+    </div>
+    <ul class="fails" id="fails"></ul>
+  </div>
+</section>
+
+<section class="block" id="matrix" aria-labelledby="matrix-h">
+  <div class="wrap">
+    <div class="block-head">
+      <span class="eyebrow">Matrix</span>
+      <h2 id="matrix-h">Scenarios by system</h2>
+      <p class="lead">One row per scenario, one column per OS. Select a result to open its checks and logs.</p>
+    </div>
+    <div class="card">
+      <div class="toolbar">
+        <div class="segs" role="group" aria-label="Show scenarios" id="filters"></div>
+        <label class="search"><span class="sr">Search scenarios</span><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input type="search" id="q" placeholder="Search scenarios" autocomplete="off" spellcheck="false" maxlength="100"></label>
+        <label class="toggle"><input type="checkbox" id="failed-first" checked> Failed first</label>
+      </div>
+      <div class="mx-wrap" id="mx-wrap" tabindex="0" role="region" aria-label="Scenario matrix, scrolls sideways on small screens">
+        <table class="mx" id="mx"><caption class="sr">Result of each scenario on each system</caption></table>
+      </div>
+      <p class="mx-empty" id="mx-empty" hidden>No scenario matches these filters.</p>
+      <p class="mx-legend" aria-hidden="true" id="mx-legend"></p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="systems" aria-labelledby="systems-h">
+  <div class="wrap">
+    <div class="block-head">
+      <span class="eyebrow">Systems</span>
+      <h2 id="systems-h">Details by system</h2>
+      <p class="lead">The VM, the audit score before and after, what each server-prep step did on the first and second run, and every scenario.</p>
+    </div>
+    <nav class="osnav" id="osnav" aria-label="Systems"></nav>
+    <div id="oses"></div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="foot-brand"><svg class="logo" aria-hidden="true"><use href="#logo"/></svg>server-prep</span>
+    <span id="foot-gen"></span>
+    <span>Built by <code>tests/e2e/build-report.sh</code>. Fonts load from Google Fonts. Nothing else leaves this page; it only remembers your theme choice in this browser.</span>
+  </div>
+</footer>
+
+<noscript><p class="wrap">This report needs JavaScript to draw. The raw results are in <a href="summary.json">summary.json</a> and in data.js.</p></noscript>
+
+<script src="data.js"></script>
+<script src="report.js"></script>
+</body>
+</html>

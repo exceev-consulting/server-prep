@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "os": "ubuntu-22.04",
+  "label": "Ubuntu </script><img src=x onerror=alert(1)>   22.04",
+  "os_release": "</script><script>alert(1)</script>",
+  "kernel": "<img src=x onerror=alert(1)>",
+  "image": {"url": "javascript:alert(1)", "checksum": "</script>"},
+  "accel": "<b>kvm</b>",
+  "cpus": "2; rm -rf /",
+  "memory_mb": 1e400,
+  "started": "</script>",
+  "duration_s": -5,
+  "status": "passed",
+  "reason": "",
+  "counts": {"passed": 99, "failed": 0, "skipped": 0},
+  "scenarios": [
+    {"id": "boot", "title": "</script><img src=x onerror=alert(1)>", "group": " ", "status": "passed",
+     "duration_s": 3, "reason": "",
+     "logs": ["ok.log", "../../etc/passwd", "a/b", ".hidden", "link.log", "evil.html", "big.log",
+              "ok.log\n", "results.json", 42, {"name": "x"}],
+     "assertions": [{"name": "</script><img src=x onerror=alert(1)>", "ok": false, "detail": " </script>"}]},
+    {"id": "../escape", "title": "A scenario id that is not allowed", "group": "x", "status": "weird",
+     "duration_s": "12", "reason": "<img src=x onerror=alert(1)>", "logs": "ok.log", "assertions": "none"},
+    {"id": "boot", "title": "A second scenario with the same id", "status": "passed", "assertions": []},
+    "not an object"
+  ],
+  "audit": {"fresh": [1, 2], "prepared": "nope", "rebooted": {"pass": "x", "warn": null, "fail": 2, "score": 50}},
+  "steps": [{"step": "<img src=x onerror=alert(1)>", "label": "</script>", "first": "CHANGED", "second": "CHANGED"}, "not an object"],
+  "files": [{"name": "../serial.log", "title": "</script>"}, {"name": "ok.log", "title": "<img src=x onerror=alert(1)>"}, "x"]
+}
