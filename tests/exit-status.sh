@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# Tests server-prep.sh's final status and argument validation without changing the host.
+# Tests server-prep.sh's final status, argument validation and secret masking without changing the host.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -103,3 +103,94 @@ expect_main_status firewall 'OK (already)' 1   # failure before the final step
 expect_main_status suid 'OK (already)' 1       # failure in the final step
 expect_main_status none 'OK (already)' 0       # a missing return 0 must fail this
 expect_main_status none SKIPPED 0             # no selected step failed
+
+# run_secret shows a token as *** in the log and in dry-run output, but runs the
+# command with the real value. Glob characters in the token must match literally.
+LOG_FILE="$tmp/run.log"
+: > "$LOG_FILE"
+secret='123:tok*[x]'
+fake_install() { printf 'installed with %s\n' "$*"; }
+DRY_RUN=1
+dry_out="$(run_secret "$secret" fake_install service install "$secret")"
+DRY_RUN=0
+run_secret "$secret" fake_install service install "$secret"
+if [[ "$dry_out" != *"[dry-run] fake_install service install ***"* || "$dry_out" == *"$secret"* ]]; then
+    printf 'not ok: run_secret dry-run output does not mask the secret: %s\n' "$dry_out"
+    exit 1
+fi
+if [[ "$(grep -cxF '+ fake_install service install ***' "$LOG_FILE")" -ne 2 ]] ||
+   grep '^+ ' "$LOG_FILE" | grep -qF -- "$secret"; then
+    printf 'not ok: run_secret writes the secret in the log\n'
+    cat "$LOG_FILE" >&2
+    exit 1
+fi
+if ! grep -qxF "installed with service install $secret" "$LOG_FILE"; then
+    printf 'not ok: run_secret did not pass the real secret to the command\n'
+    cat "$LOG_FILE" >&2
+    exit 1
+fi
+printf 'ok: run_secret masks the secret in the log and dry-run output, and runs with the real value\n'
+
+# server-prep-notify gives the Telegram bot URL (with the token) to curl on stdin,
+# never on its command line. Capture the scripts step_telegram would write.
+write_file() { cat > "$tmp/written-${1##*/}"; }
+run() { :; }
+DRY_RUN=1
+TELEGRAM_ENABLE=yes
+TELEGRAM_BOT_TOKEN='123456:test-token'
+TELEGRAM_CHAT_ID=42
+step_telegram >/dev/null 2>&1
+if [[ ! -s "$tmp/written-server-prep-notify" || ! -s "$tmp/written-telegram.env" ]]; then
+    printf 'not ok: step_telegram did not write server-prep-notify and telegram.env\n'
+    exit 1
+fi
+sed "s|/etc/server-prep/telegram.env|$tmp/telegram.env|" "$tmp/written-server-prep-notify" > "$tmp/notify"
+cp "$tmp/written-telegram.env" "$tmp/telegram.env"
+mkdir -p "$tmp/bin"
+cat > "$tmp/bin/curl" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$@" > "$CURL_ARGS"
+cat > "$CURL_STDIN"
+EOF
+chmod +x "$tmp/bin/curl"
+CURL_ARGS="$tmp/curl-args" CURL_STDIN="$tmp/curl-stdin" PATH="$tmp/bin:$PATH" bash "$tmp/notify" hello </dev/null
+if [[ ! -f "$tmp/curl-args" ]] || grep -qF -- "$TELEGRAM_BOT_TOKEN" "$tmp/curl-args"; then
+    printf 'not ok: server-prep-notify puts the bot token on the curl command line\n'
+    cat "$tmp/curl-args" >&2
+    exit 1
+fi
+if ! grep -qxF 'chat_id=42' "$tmp/curl-args" || ! grep -qxF 'text=hello' "$tmp/curl-args"; then
+    printf 'not ok: server-prep-notify does not send the chat id and the text\n'
+    cat "$tmp/curl-args" >&2
+    exit 1
+fi
+if [[ "$(cat "$tmp/curl-stdin")" != 'url = "https://api.telegram.org/bot123456:test-token/sendMessage"' ]]; then
+    printf 'not ok: server-prep-notify does not give curl the bot URL on stdin\n'
+    cat "$tmp/curl-stdin" >&2
+    exit 1
+fi
+printf 'ok: server-prep-notify gives the bot token to curl on stdin, not on its command line\n'
+
+# A bot token that does not look like 123456:ABC-... (a stray space or quote from a bad
+# paste) stops step_telegram before it writes anything.
+rm -f "$tmp"/written-*
+TELEGRAM_BOT_TOKEN='123456:bad "token'
+if step_telegram >/dev/null 2>&1 || compgen -G "$tmp/written-*" >/dev/null; then
+    printf 'not ok: step_telegram accepts a malformed bot token\n'
+    exit 1
+fi
+printf 'ok: step_telegram refuses a malformed bot token\n'
+
+# The answers file never holds the bot token: a re-run with --yes and no token keeps
+# the one already installed in telegram.env.
+CONF_DIR="$tmp/conf"
+mkdir -p "$CONF_DIR"
+printf 'TELEGRAM_BOT_TOKEN=123456:installed-token\nTELEGRAM_CHAT_ID=42\n' > "$CONF_DIR/telegram.env"
+rm -f "$tmp"/written-*
+TELEGRAM_BOT_TOKEN=''
+if ! step_telegram >/dev/null 2>&1 ||
+   ! grep -qxF 'TELEGRAM_BOT_TOKEN=123456:installed-token' "$tmp/written-telegram.env" 2>/dev/null; then
+    printf 'not ok: step_telegram does not keep the installed bot token on a re-run without one\n'
+    exit 1
+fi
+printf 'ok: step_telegram keeps the installed bot token on a re-run without one\n'
