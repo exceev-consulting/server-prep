@@ -59,6 +59,7 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
+[[ -n "$OUT_BASE" ]] || { echo "--out needs a directory" >&2; exit 2; }
 [[ "$CPUS" =~ ^[1-9][0-9]?$ && "$MEMORY_MB" =~ ^[1-9][0-9]{2,5}$ ]] || { echo "--cpus and --memory need numbers" >&2; exit 2; }
 for s in $ONLY; do
     [[ " ${SCENARIOS[*]} " == *" $s "* ]] || { echo "Unknown scenario: $s (valid: ${SCENARIOS[*]})" >&2; exit 2; }
