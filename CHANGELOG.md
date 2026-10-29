@@ -5,6 +5,19 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
+- **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
+  token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only
+  (folder 700, logs 600), and the next run also fixes the folder and the old logs of servers set up before. The CrowdSec
+  enroll key is typed hidden. `server-prep-notify` gives the Telegram bot token to curl on standard input instead of on
+  its command line, where `ps` showed it. To update that script, run its step again; it keeps the bot token already
+  installed: `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram --yes`. New audit check
+  `mon.prep_secrets` warns while the log folder or the Telegram script is still in its old state.
+  Logs from 1.1.1 and older could be read by every local user and can hold the tunnel token. If one of them left the
+  server (pasted, copied, backed up), rotate the token: refresh it on your tunnel in Cloudflare Zero Trust, run
+  `sudo cloudflared service uninstall` from a session that does not go through the tunnel, then
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only cloudflared` and type the new token at the
+  hidden prompt.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.
@@ -12,7 +25,12 @@ Highlights of each release. The full list of merged pull requests is in each
 - [Wiki](https://github.com/exceev-consulting/server-prep/wiki): beginner path, concepts, panels, troubleshooting, FAQ,
   glossary, architecture and roadmap. Its source lives in `wiki/` and `.github/workflows/wiki.yml` publishes it.
 - Discussions forms for Q&A, Ideas and Show and tell (setups and compatibility reports).
-- New logo: a keyhole standing on a terminal cursor, cut out of one rounded tile, black on light and white in dark mode. In the README
+- [Brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) on the setup console site: the logo, its
+  files to copy, the colours, type, interface parts and voice. Links to the repository and the site now show a preview
+  card, the site has an iPhone home-screen icon and a PNG favicon for older browsers, and its colours live in one file,
+  `site/tokens.css`. `scripts/check-tokens.sh` fails CI when a copy of them drifts. The setup console now loads
+  IBM Plex Mono SemiBold, so its name in the top bar matches the logo.
+- New logo: a keyhole cut out of one rounded tile, black on light and white in dark mode. In the README
   and the setup console (with an SVG favicon that follows the browser theme). Files in `.github/assets/`.
 - New [setup console](https://exceev-consulting.github.io/server-prep/) (`site/`): pick a VPS or a dedicated
   server, a panel (Coolify, Dokploy, Openship) and an access route, and see the open ports, who can log in, every

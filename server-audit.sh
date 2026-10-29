@@ -746,6 +746,35 @@ else
     result mon.journal WARN "Persistent logs" "journald logs are volatile (lost at reboot)" "mkdir /var/log/journal"
 fi
 
+# server-prep 1.1.1 and older: run logs readable by every local user (they can hold the Cloudflare
+# tunnel token), and a server-prep-notify that puts the Telegram bot token on curl's command line
+PREP_LOGS=/var/log/server-prep PREP_NOTIFY=/usr/local/sbin/server-prep-notify
+if [[ -d "$PREP_LOGS" || -f "$PREP_NOTIFY" ]]; then
+    prep_msg=""; prep_fix=""
+    if [[ -d "$PREP_LOGS" ]]; then
+        prep_mode=$(stat -c %a "$PREP_LOGS" 2>/dev/null)
+        prep_open=0
+        [[ $IS_ROOT -eq 1 ]] && prep_open=$(find "$PREP_LOGS" -maxdepth 1 -type f -perm /077 2>/dev/null | wc -l)
+        if (( 8#${prep_mode:-700} & 8#077 )); then
+            prep_msg="${PREP_LOGS} is ${prep_mode}: local users can read the run logs, and logs from 1.1.1 and older can hold the tunnel token (rotate it if a log left the server); "
+        elif [[ $prep_open -gt 0 ]]; then
+            prep_msg="${prep_open} file(s) in ${PREP_LOGS} are readable by others, and a copy keeps that mode; "
+        fi
+        [[ -n "$prep_msg" ]] && prep_fix="sudo chmod 700 ${PREP_LOGS} && sudo find ${PREP_LOGS} -type f -exec chmod 600 {} +; "
+    fi
+    # the literal text of the old script, not an expansion
+    # shellcheck disable=SC2016
+    if grep -qsF 'bot${TELEGRAM_BOT_TOKEN}' "$PREP_NOTIFY"; then
+        prep_msg+="server-prep-notify puts the Telegram bot token on curl's command line, where ps shows it; "
+        prep_fix+="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram --yes; "
+    fi
+    if [[ -n "$prep_msg" ]]; then
+        result mon.prep_secrets WARN "server-prep secrets" "${prep_msg%; }" "${prep_fix%; }"
+    else
+        result mon.prep_secrets PASS "server-prep secrets" "Run logs are root only and no bot token is on a command line$(need_root_note)"
+    fi
+fi
+
 # metrics agent: informational only (optional component)
 if have telegraf; then
     TG_VER=$(telegraf --version 2>/dev/null | awk '{print $2}')

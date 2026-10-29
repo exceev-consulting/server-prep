@@ -49,6 +49,7 @@ To rotate the release app's private key (for example when it may have leaked, or
 
 - The [setup console](https://exceev-consulting.github.io/server-prep/) deploys from `site/` on every push to `main` that touches it, the scripts or the README.
 - The wiki is published from the `wiki/` folder by `.github/workflows/wiki.yml`. Edit pages through pull requests, not in the web editor.
+- The [brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) (`site/brand/`) cover the logo, colours, type and voice. When `site/social-preview.png` changes, upload it again in **Settings → General → Social preview**: GitHub has no API for the repository's preview image.
 
 ## Security reports
 

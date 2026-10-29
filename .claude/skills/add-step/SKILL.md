@@ -18,6 +18,7 @@ Use the Telegraf step as the reference implementation: `grep -n -i telegraf serv
 6. **`step_x()`**:
    - starts with `yes_ "$INSTALL_X" || return $SKIP_RC`;
    - changes things only through `run`, `write_file`, `set_kv` and `pkg_install` (so dry-run works);
+   - a command that takes a token or key uses `run_secret SECRET CMD...` instead of `run`, so the secret shows as `***` in the log and the dry-run output;
    - is idempotent: a second run changes nothing and never overwrites the user's own config of an existing install;
    - records results with `note` (report), `changed`, and `todo` (manual follow-up for the user).
 7. **`run_step x "Label" step_x`** in the main sequence.

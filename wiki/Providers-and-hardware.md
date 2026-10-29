@@ -135,7 +135,7 @@ You get the audit version, the OS, the score, the PASS / WARN / FAIL / INFO coun
 
 - **No secrets.** Remove every token, key and password: tunnel tokens, CrowdSec enroll keys, Tailscale keys, InfluxDB tokens, Telegram bot tokens.
 - **Read every message line.** Some contain IPs, host names or user names. Replace them with examples such as `web-01`, `example.com` or `203.0.113.10`.
-- **Don't paste the whole log** from `/var/log/server-prep/`. It can contain secrets today ([#64](https://github.com/exceev-consulting/server-prep/issues/64)).
+- **Don't paste the whole log** from `/var/log/server-prep/`. It lists IPs and host names, and logs from version 1.1.1 and older can contain the tunnel token ([#64](https://github.com/exceev-consulting/server-prep/issues/64)).
 - **Never name a client or a site.** Describe the machine in generic words.
 
 Thank you: each report helps the next person pick a setup that works.
