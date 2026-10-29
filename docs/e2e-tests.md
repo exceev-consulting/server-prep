@@ -5,7 +5,7 @@ supported system gets its own virtual machine, booted from the official cloud im
 The tests log in over SSH, answer the questions, change the SSH port, reboot, and check the result from
 outside, like a person would. Then they write an HTML report.
 
-Why VMs and not containers: [docs/decisions/0001-e2e-test-platform.md](decisions/0001-e2e-test-platform.md).
+Why VMs and not containers: [docs/decisions/0002-e2e-test-platform.md](decisions/0002-e2e-test-platform.md).
 
 ## Where to see the results
 
