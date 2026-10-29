@@ -5,6 +5,7 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
 - **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
   token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only
   (folder 700, logs 600), and the next run also fixes the folder and the old logs of servers set up before. The CrowdSec
