@@ -242,3 +242,6 @@ printf 'ok: firewall without Docker adds a to-do\n'
 DRY_RUN=1
 expect_firewall 'dry run is WOULD CHANGE' 1 old 0 ok 1
 DRY_RUN=0
+
+# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
+bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1

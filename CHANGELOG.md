@@ -23,6 +23,11 @@ Highlights of each release. The full list of merged pull requests is in each
   The step now shows FAILED, the report says whether Docker ports still bypass UFW, and `server-prep.sh` exits 1.
   Scripts that run it will now see this failure. A re-run that changes nothing now shows `OK (already)` instead of
   CHANGED.
+- **Security fix:** the audit's "Docker vs firewall" check passed when the DOCKER-USER chain only had CrowdSec or
+  manual DROP rules, even though published container ports still bypassed UFW. It now passes only when the ufw-docker
+  rules are loaded, with both the `ufw-user-forward` and `ufw-docker-logging-deny` jumps (or Docker's iptables
+  management is off). If a server now shows this FAIL, re-run the firewall step:
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes`.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.

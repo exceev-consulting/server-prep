@@ -128,7 +128,7 @@ After the firewall step, check that Docker's ports go through UFW:
 sudo iptables -S DOCKER-USER | head -3
 ```
 
-The output must show `-j ufw-user-forward`. Check this yourself even when the audit passes: a bug can hide a missing rule today ([#69](https://github.com/exceev-consulting/server-prep/issues/69)).
+The output must show `-j ufw-user-forward`.
 
 ## Kernel settings and services
 
