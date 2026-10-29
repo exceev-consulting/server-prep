@@ -1626,6 +1626,8 @@ EOF
 step_telegram() {
     yes_ "$TELEGRAM_ENABLE" || return $SKIP_RC
     [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]] || { note "token/chat id missing"; return 1; }
+    # the token goes into a curl config line (url = "..."), whose errors are silenced: catch a bad paste here
+    [[ $TELEGRAM_BOT_TOKEN =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || { note "the bot token does not look like 123456:ABC-..."; return 1; }
     write_file "$CONF_DIR/telegram.env" 600 <<EOF
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}

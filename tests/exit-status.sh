@@ -170,3 +170,13 @@ if [[ "$(cat "$tmp/curl-stdin")" != 'url = "https://api.telegram.org/bot123456:t
     exit 1
 fi
 printf 'ok: server-prep-notify gives the bot token to curl on stdin, not on its command line\n'
+
+# A bot token that does not look like 123456:ABC-... (a stray space or quote from a bad
+# paste) stops step_telegram before it writes anything.
+rm -f "$tmp"/written-*
+TELEGRAM_BOT_TOKEN='123456:bad "token'
+if step_telegram >/dev/null 2>&1 || compgen -G "$tmp/written-*" >/dev/null; then
+    printf 'not ok: step_telegram accepts a malformed bot token\n'
+    exit 1
+fi
+printf 'ok: step_telegram refuses a malformed bot token\n'
