@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/exceev-consulting/server-prep/main/.github/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/exceev-consulting/server-prep/main/.github/assets/logo.svg" width="72" height="72" alt="server-prep logo">
+  </picture>
+</p>
+
 **server-prep** hardens a fresh Debian or Ubuntu server, a VPS or a dedicated machine, for a self-hosted deployment panel such as Coolify, Dokploy or Openship, and proves the result with a security audit.
 
 New here? Start with **[Start here](Start-here)**, or build your setup in the **[setup console](https://exceev-consulting.github.io/server-prep/)** to see the ports, the logins, the commands and a ready config file before you touch a server.

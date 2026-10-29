@@ -31,5 +31,8 @@ jobs:
       - name: Site data up to date
         run: scripts/gen-data.sh --check
 
+      - name: Design tokens in sync
+        run: scripts/check-tokens.sh
+
       - name: Exit status
         run: bash tests/exit-status.sh

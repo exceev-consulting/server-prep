@@ -133,7 +133,7 @@ The [setup console](https://exceev-consulting.github.io/server-prep/) shows what
 
 1. [`scripts/gen-data.sh`](https://github.com/exceev-consulting/server-prep/blob/main/scripts/gen-data.sh) reads `server-prep.sh`, `server-audit.sh`, `server-preconfig.sh`, the README tables and `server-prep.conf.example`.
 2. It writes `site/data.json` and `site/data.js` (the same data, loaded by the page so it also works offline). The output has no timestamps, so CI can compare it.
-3. `site/index.html` is one static page that reads that data. No build step, no CDN, no tracking.
+3. `site/index.html` is one static page that reads that data. Its colours and type come from `site/tokens.css`, which the brand guidelines page (`site/brand/`) shares. No build step, no CDN, no tracking.
 4. The `pages` workflow publishes `site/` to GitHub Pages.
 
 After you change a step, a setting or an audit check, regenerate the data and commit it.
