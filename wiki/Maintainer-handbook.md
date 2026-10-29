@@ -40,7 +40,7 @@ To rotate the release app's private key (for example when it may have leaked, or
 2. Put it in the `release` environment, then delete the `.pem` file from your computer:
 
    ```bash
-   gh secret set RELEASE_APP_PRIVATE_KEY --env release < new-key.pem
+   gh secret set RELEASE_APP_PRIVATE_KEY -R exceev-consulting/server-prep --env release < new-key.pem
    ```
 
 3. Back on the app's settings page, delete the old key. The next release uses the new one.
