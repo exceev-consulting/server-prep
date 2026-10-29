@@ -551,7 +551,8 @@
     if (o.image.url || o.image.checksum) {
       var img = el("span");
       var file = o.image.url.split("/").pop() || o.image.url;
-      if (/^https:\/\//.test(o.image.url)) img.appendChild(extLink(o.image.url, file));
+      // A link only to the official image hosts: the URL comes from the results, which a pull request controls.
+      if (/^https:\/\/(cloud\.debian\.org|cloud-images\.ubuntu\.com)\//.test(o.image.url)) img.appendChild(extLink(o.image.url, file));
       else if (file) img.appendChild(document.createTextNode(file));
       if (o.image.checksum) {
         var ck = el("code", null, o.image.checksum.length > 26 ? o.image.checksum.slice(0, 26) + "…" : o.image.checksum);
