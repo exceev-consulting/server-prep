@@ -17,13 +17,17 @@ jobs:
           persist-credentials: false
 
       - name: Syntax
-        run: bash -n server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh
+        # one file per call: "bash -n a b" only checks a
+        run: |
+          for f in server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh; do
+            bash -n "$f" || exit 1
+          done
 
       - name: ShellCheck
         run: |
           command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
           shellcheck --version | sed -n 2p
-          shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh
+          shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
 
       - name: Help output
         run: for s in server-prep.sh server-preconfig.sh server-audit.sh; do ./"$s" --help >/dev/null; done
@@ -33,3 +37,10 @@ jobs:
 
       - name: Exit status
         run: bash tests/exit-status.sh
+
+      - name: E2E report builder
+        run: bash tests/e2e-report.sh
+
+      # pages.yml runs e2e-pages.sh only on main, so this is its only run before a merge
+      - name: E2E pages builder
+        run: bash tests/e2e-pages.sh
