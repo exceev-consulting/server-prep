@@ -453,7 +453,7 @@ window.SERVER_PREP_DATA = {
       "name": "TELEGRAM_BOT_TOKEN",
       "example": null,
       "default": null,
-      "comment": null,
+      "comment": "empty on a re-run = keep the token already installed",
       "help": null,
       "saved": false,
       "secret": true

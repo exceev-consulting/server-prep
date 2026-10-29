@@ -9,8 +9,8 @@ Highlights of each release. The full list of merged pull requests is in each
   token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only
   (folder 700, logs 600), and the next run also fixes the folder and the old logs of servers set up before. The CrowdSec
   enroll key is typed hidden. `server-prep-notify` gives the Telegram bot token to curl on standard input instead of on
-  its command line, where `ps` showed it. To update that script, run its step again and type the bot token when asked:
-  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram`. New audit check
+  its command line, where `ps` showed it. To update that script, run its step again; it keeps the bot token already
+  installed: `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram --yes`. New audit check
   `mon.prep_secrets` warns while the log folder or the Telegram script is still in its old state.
   Logs from 1.1.1 and older could be read by every local user and can hold the tunnel token. If one of them left the
   server (pasted, copied, backed up), rotate the token: refresh it on your tunnel in Cloudflare Zero Trust, run

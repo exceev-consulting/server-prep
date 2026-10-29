@@ -180,3 +180,17 @@ if step_telegram >/dev/null 2>&1 || compgen -G "$tmp/written-*" >/dev/null; then
     exit 1
 fi
 printf 'ok: step_telegram refuses a malformed bot token\n'
+
+# The answers file never holds the bot token: a re-run with --yes and no token keeps
+# the one already installed in telegram.env.
+CONF_DIR="$tmp/conf"
+mkdir -p "$CONF_DIR"
+printf 'TELEGRAM_BOT_TOKEN=123456:installed-token\nTELEGRAM_CHAT_ID=42\n' > "$CONF_DIR/telegram.env"
+rm -f "$tmp"/written-*
+TELEGRAM_BOT_TOKEN=''
+if ! step_telegram >/dev/null 2>&1 ||
+   ! grep -qxF 'TELEGRAM_BOT_TOKEN=123456:installed-token' "$tmp/written-telegram.env" 2>/dev/null; then
+    printf 'not ok: step_telegram does not keep the installed bot token on a re-run without one\n'
+    exit 1
+fi
+printf 'ok: step_telegram keeps the installed bot token on a re-run without one\n'

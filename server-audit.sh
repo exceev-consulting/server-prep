@@ -766,7 +766,7 @@ if [[ -d "$PREP_LOGS" || -f "$PREP_NOTIFY" ]]; then
     # shellcheck disable=SC2016
     if grep -qsF 'bot${TELEGRAM_BOT_TOKEN}' "$PREP_NOTIFY"; then
         prep_msg+="server-prep-notify puts the Telegram bot token on curl's command line, where ps shows it; "
-        prep_fix+="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram (type the bot token when asked); "
+        prep_fix+="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram --yes; "
     fi
     if [[ -n "$prep_msg" ]]; then
         result mon.prep_secrets WARN "server-prep secrets" "${prep_msg%; }" "${prep_fix%; }"

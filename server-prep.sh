@@ -652,7 +652,8 @@ questions() {
     if yes_ "$TELEGRAM_ENABLE"; then
         explain "1) In Telegram, talk to @BotFather -> /newbot -> copy the token (123456:ABC...)." \
                 "2) Send any message to your new bot." \
-                "3) Open https://api.telegram.org/bot<TOKEN>/getUpdates and copy \"chat\":{\"id\": <number>}."
+                "3) Open https://api.telegram.org/bot<TOKEN>/getUpdates and copy \"chat\":{\"id\": <number>}." \
+                "On a re-run, leave the token empty to keep the one already installed."
         ask_secret TELEGRAM_BOT_TOKEN "Telegram bot token (input hidden)"
         ask TELEGRAM_CHAT_ID "Telegram chat id" "$TELEGRAM_CHAT_ID"
         explain "${PANEL_LABEL^} logs in as root every few minutes; alerting on those would spam you." \
@@ -1625,6 +1626,10 @@ EOF
 
 step_telegram() {
     yes_ "$TELEGRAM_ENABLE" || return $SKIP_RC
+    # the answers file never holds the token: a re-run without one keeps the token already installed
+    if [[ -z "$TELEGRAM_BOT_TOKEN" && -f "$CONF_DIR/telegram.env" ]]; then
+        TELEGRAM_BOT_TOKEN="$(sed -n 's/^TELEGRAM_BOT_TOKEN=//p' "$CONF_DIR/telegram.env" 2>/dev/null | tail -n 1)"
+    fi
     [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]] || { note "token/chat id missing"; return 1; }
     # the token goes into a curl config line (url = "..."), whose errors are silenced: catch a bad paste here
     [[ $TELEGRAM_BOT_TOKEN =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || { note "the bot token does not look like 123456:ABC-..."; return 1; }
