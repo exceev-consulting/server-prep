@@ -261,6 +261,14 @@ check "$tmp/rootadmin.conf"
     fail "ADMIN_USER=root gives exit $status, want 0 and one warning"
 printf 'ok: ADMIN_USER=root gives a warning\n'
 
+# A value the file does not set has - for its line, and one line explains the -
+grep -v '^ADMIN_PUBKEY=' "$tmp/good.conf" > "$tmp/nokey.conf"
+check "$tmp/nokey.conf"
+[[ $status -eq 0 && $(count WARN) -eq 1 && "$out" == *"WARN $tmp/nokey.conf:- ADMIN_PUBKEY is empty"* &&
+   $(grep -c '^(- instead of a line number' <<< "$out") -eq 1 ]] ||
+    fail "a config without ADMIN_PUBKEY gives exit $status, want 0, one warning on line - and one line that explains it"
+printf 'ok: a value the file does not set has - for its line, explained once\n'
+
 # The example as it is: only its two placeholder keys are errors
 check "$SCRIPT_DIR/server-prep.conf.example"
 admin_line="$(grep -n '^ADMIN_PUBKEY=' "$SCRIPT_DIR/server-prep.conf.example" | cut -d: -f1)"

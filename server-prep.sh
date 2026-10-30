@@ -169,6 +169,7 @@ vsay() {   # vsay ERROR|WARN|NOTE LINE MESSAGE: print one finding and count it f
         WARN) v_warns=$((v_warns + 1)) ;;
         *) v_notes=$((v_notes + 1)) ;;
     esac
+    [[ $2 == - ]] && v_dash=1
     printf '%s %s:%s %s\n' "$1" "$v_file" "$2" "$3"
 }
 vline() {   # vline KEY: the file line that sets KEY (or its old COOLIFY_* name), - when the value is a default or from the environment
@@ -211,6 +212,8 @@ vq() {   # vq VALUE: the value in quotes when it is short and plain, so a messag
     fi
 }
 vtotal() {   # vtotal: print the total, return 1 when there is an error
+    [[ $v_dash -eq 1 ]] &&
+        printf '(- instead of a line number: the finding is about the whole file, or about a value the file does not set, so the default or a variable exported in your shell is used)\n'
     if [[ $v_errors -gt 0 ]]; then
         printf '%s error(s), %s warning(s), %s note(s): fix the errors, then run --validate again\n' \
             "$v_errors" "$v_warns" "$v_notes"
@@ -268,7 +271,7 @@ valid_ip() {   # valid_ip ADDR[/PREFIX]: an IPv4 or IPv6 address or network
 # validate_config FILE: check a config file in two phases and print one line per finding, then a total.
 # Phase 1 reads the text and runs nothing. Phase 2 loads the known settings in a subshell and checks them.
 validate_config() {
-    local v_file="$1" v_errors=0 v_warns=0 v_notes=0 n=0 i line key value best best_d best_d_new d name chunk
+    local v_file="$1" v_errors=0 v_warns=0 v_notes=0 v_dash=0 n=0 i line key value best best_d best_d_new d name chunk
     local LC_ALL=C   # byte-wise matching, the same result in every locale
     local -A v_line=()
     local -a v_assign=() v_assign_line=() v_lines=()
