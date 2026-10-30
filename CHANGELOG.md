@@ -60,9 +60,10 @@ Highlights of each release. The full list of merged pull requests is in each
   release download (without the repo) has everything they mention.
 - New `./server-prep.sh --config FILE --validate` checks a config file before a run, without root and without running
   it. It prints one line per problem with its line number and what to do (an unknown setting with a "did you mean", a
-  bad yes/no value, access method, port, IP or time, a placeholder or private key, a secret left in the file or pasted
-  into the wrong setting, such as the Telegram bot token as the chat id, a line or value that would run a command, even
-  through escapes or invisible control characters) and exits 1 when there is an error. It never prints a secret.
+  bad yes/no value, access method, port, IP, time or admin user name, a placeholder or private key, a secret left in the
+  file or pasted into the wrong setting, such as the Telegram bot token as the chat id, a line or value that would run a
+  command, even through escapes or invisible control characters) and exits 1 when there is an error. It never prints a
+  secret.
 
 ## [1.1.1] - 2026-10-19
 

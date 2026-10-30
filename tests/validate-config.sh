@@ -121,6 +121,8 @@ broken "a PANEL_IP with a leading zero" 'PANEL_IP="010.0.0.1"' "not an IP addres
 broken "a prefix length with a leading zero" 'ADMIN_IPS="192.168.1.0/024"' '"192.168.1.0/024"'
 broken "a bad TELEGRAM_CHAT_ID" 'TELEGRAM_CHAT_ID="42 x"' "write the chat id"
 broken "a TELEGRAM_IGNORE_USERS item that is no user" 'TELEGRAM_IGNORE_USERS="root \${PATH}"' "not a user name"
+broken "an ADMIN_USER with a blank" 'ADMIN_USER="Admin User"' "not a user name"
+broken "an ADMIN_USER with an @" 'ADMIN_USER="admin@web-01"' "not a user name"
 broken "a bad EXTRA_PORTS item" 'EXTRA_PORTS="8000/sctp"' '"8000/sctp"'
 broken "AUTO_REBOOT_TIME=25:00" 'AUTO_REBOOT_TIME="25:00"' "HH:MM"
 broken "PTRACE_SCOPE=4" 'PTRACE_SCOPE="4"' "0, 1, 2 or 3"
@@ -252,6 +254,12 @@ check "$tmp/noaccess.conf"
 [[ $status -eq 0 && $(count WARN) -eq 1 && "$out" == *"root login will be refused everywhere"* ]] ||
     fail "a panel key without PANEL_ACCESS gives exit $status, want 0 and one warning"
 printf 'ok: a panel key without PANEL_ACCESS gives a warning\n'
+cp "$tmp/good.conf" "$tmp/rootadmin.conf"
+printf 'ADMIN_USER="root"\n' >> "$tmp/rootadmin.conf"
+check "$tmp/rootadmin.conf"
+[[ $status -eq 0 && $(count WARN) -eq 1 && "$out" == *"ADMIN_USER is root"* ]] ||
+    fail "ADMIN_USER=root gives exit $status, want 0 and one warning"
+printf 'ok: ADMIN_USER=root gives a warning\n'
 
 # The example as it is: only its two placeholder keys are errors
 check "$SCRIPT_DIR/server-prep.conf.example"

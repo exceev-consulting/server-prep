@@ -459,6 +459,12 @@ validate_values() {
     [[ $unchecked -eq 1 ]] && vsay WARN - "cannot check ADMIN_PUBKEY and PANEL_PUBKEY: ssh-keygen is missing (install openssh-client)"
     [[ -n "$ADMIN_PUBKEY" ]] ||
         vsay WARN "$(vline ADMIN_PUBKEY)" "ADMIN_PUBKEY is empty: password login over SSH gets turned off, so the admin user needs a key already on the server. Paste your public key here to be sure (cat ~/.ssh/id_ed25519.pub)"
+    # The admin user goes into useradd and AllowUsers: a blank or an @ there locks the admin out of SSH
+    if [[ -n "$ADMIN_USER" && ! "$ADMIN_USER" =~ ^[A-Za-z_][A-Za-z0-9_.-]{0,31}$ ]]; then
+        vsay ERROR "$(vline ADMIN_USER)" "ADMIN_USER is $(vq "$ADMIN_USER"), which is not a user name: write up to 32 letters, digits, _, . or -, starting with a letter, e.g. admin"
+    elif [[ "$ADMIN_USER" == root ]]; then
+        vsay WARN "$(vline ADMIN_USER)" "ADMIN_USER is root, but SSH refuses root logins except from the panel's sources: pick a normal user, e.g. admin"
+    fi
 
     # Ports, addresses and formats
     for k in SSH_PORT CROWDSEC_LAPI_PORT; do
