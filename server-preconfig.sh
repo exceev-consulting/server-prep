@@ -416,7 +416,7 @@ run_checks() {
             chk pre.net_source FAIL "/etc/network/interfaces does not include interfaces.d"
         fi
         if [[ "$(systemctl is-enabled networking 2>/dev/null)" == enabled ]]; then chk pre.net_boot PASS "networking enabled at boot"
-        else chk pre.net_boot FAIL "networking not enabled" "systemctl enable networking"; fi
+        else chk pre.net_boot FAIL "networking not enabled" "sudo systemctl enable networking"; fi
     else
         chk pre.net_saved PASS "network managed by $NET_MANAGER"
     fi
@@ -438,7 +438,7 @@ run_checks() {
         [[ $s == tailscaled ]] && ! have tailscale && continue
         st=$(systemctl is-enabled "$s" 2>/dev/null)
         if [[ $st == enabled ]]; then chk "pre.${s}_boot" PASS "$s enabled at boot"
-        else chk "pre.${s}_boot" FAIL "$s not enabled at boot ($st)" "systemctl enable --now $s"; fi
+        else chk "pre.${s}_boot" FAIL "$s not enabled at boot ($st)" "sudo systemctl enable --now $s"; fi
     done
 
     local t bad=""
@@ -467,7 +467,7 @@ run_checks() {
     local admin=${ADMIN:-$(default_admin)} home n
     if [[ -n $admin ]] && id "$admin" >/dev/null 2>&1; then
         if id -nG "$admin" | tr ' ' '\n' | grep -qx sudo; then chk pre.admin_sudo PASS "$admin in the sudo group"
-        else chk pre.admin_sudo FAIL "$admin not in the sudo group" "usermod -aG sudo $admin"; fi
+        else chk pre.admin_sudo FAIL "$admin not in the sudo group" "sudo usermod -aG sudo $admin"; fi
         home=$(getent passwd "$admin" | cut -d: -f6)
         if [[ -r $home/.ssh/authorized_keys ]]; then
             n=$(grep -cE '^(ssh-|ecdsa-|sk-)' "$home/.ssh/authorized_keys" 2>/dev/null)
