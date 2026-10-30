@@ -396,7 +396,10 @@ run_checks() {
     title "Checks: will it come back on its own after a reboot?"
     local h; h=$(hostname)
     if grep -qE "^127\.0\.1\.1[[:space:]]+$h([[:space:]]|$)" /etc/hosts; then chk pre.hostname PASS "hostname $h (in /etc/hosts)"
-    else chk pre.hostname WARN "hostname $h missing from /etc/hosts: sudo will warn 'unable to resolve host'"; fi
+    else
+        chk pre.hostname WARN "hostname $h missing from /etc/hosts: sudo will warn 'unable to resolve host'" \
+            "sudo ./server-preconfig.sh --hostname $h"
+    fi
 
     if [[ $NET_MANAGER == ifupdown ]]; then
         local mode saved; mode=$(iface_mode)
@@ -413,7 +416,8 @@ run_checks() {
             fi
         fi
         if ! { sources_dir || [[ $(grep -cE "^[[:space:]]*iface[[:space:]]+${IFACE}[[:space:]]" /etc/network/interfaces) -gt 0 ]]; }; then
-            chk pre.net_source FAIL "/etc/network/interfaces does not include interfaces.d"
+            chk pre.net_source FAIL "/etc/network/interfaces does not include interfaces.d" \
+                "echo 'source /etc/network/interfaces.d/*' | sudo tee -a /etc/network/interfaces"
         fi
         if [[ "$(systemctl is-enabled networking 2>/dev/null)" == enabled ]]; then chk pre.net_boot PASS "networking enabled at boot"
         else chk pre.net_boot FAIL "networking not enabled" "sudo systemctl enable networking"; fi
@@ -446,7 +450,7 @@ run_checks() {
         [[ "$(systemctl is-enabled "$t" 2>/dev/null)" == masked ]] || bad+="$t "
     done
     if [[ -z $bad ]]; then chk pre.sleep PASS "sleep/suspend/hibernate masked"
-    else chk pre.sleep WARN "not masked: ${bad% }"; fi
+    else chk pre.sleep WARN "not masked: ${bad% }" "sudo systemctl mask ${bad% }"; fi
 
     if have tailscale; then
         if [[ $TS_STATE == Running ]]; then
@@ -461,7 +465,7 @@ run_checks() {
             chk pre.tailscale FAIL "Tailscale not connected (state: ${TS_STATE:-unknown})" "sudo tailscale up"
         fi
     else
-        chk pre.tailscale WARN "Tailscale not installed"
+        chk pre.tailscale WARN "Tailscale not installed" "sudo ./server-preconfig.sh (answer yes to Tailscale)"
     fi
 
     local admin=${ADMIN:-$(default_admin)} home n
