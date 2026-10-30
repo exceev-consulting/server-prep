@@ -23,6 +23,8 @@ expect_usage_error "Unknown step: bogus" --skip ssh,bogus
 expect_usage_error "--only needs a value" --only
 expect_usage_error "--skip needs a value" --skip
 expect_usage_error "--config needs a value" --config
+expect_usage_error "--validate needs --config" --validate
+expect_usage_error "Cannot read" --config "$tmp" --validate   # a folder is not a config file
 
 # A config file is read before step names are validated, so it cannot bypass the check.
 printf 'ONLY=firewal\n' > "$tmp/config"
@@ -245,3 +247,6 @@ DRY_RUN=0
 
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
+
+# ... and the --validate test on a good config and broken ones (issue #17).
+bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1

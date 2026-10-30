@@ -33,7 +33,8 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
    shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh
    scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
-                                 # (audit "Docker vs firewall" matcher on sample iptables output); no system changes
+                                 # (audit "Docker vs firewall" matcher on sample iptables output)
+                                 # and tests/validate-config.sh (--validate on a good config and broken ones); no system changes
    ```
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
@@ -57,6 +58,9 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 - **A new or changed step** also updates `server-prep.conf.example`, the step table in `README.md`,
   and adds a check to `server-audit.sh` (INFO when optional). Then run `scripts/gen-data.sh` so the
   setup console (`site/`) shows it.
+- **A new setting** also goes into `KNOWN_SETTINGS` in `server-prep.sh`, so `--validate` knows it, and into
+  `validate_values` when it has a format to check (a yes/no setting not named `INSTALL_*`, a port, a list...).
+  `tests/validate-config.sh` fails when a setting is missing from `KNOWN_SETTINGS` or a yes/no setting is not checked.
 - **No secrets and no real infrastructure** in the repo: tokens, keys, real IPs or hostnames.
   Use examples like `web-01` and `192.168.1.50`.
 - **Simple words** in messages and docs. Many users are not security experts.
