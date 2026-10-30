@@ -249,7 +249,7 @@ DRY_RUN=0
 # when the firewall allows only Tailscale.
 # "tailscale" is a fake function here: the test never reads this host's real tailnet.
 # 192.0.2.10 (a documentation address) stands in for the server's 100.x Tailscale IP.
-timeout() { shift; "$@"; }   # the fake tailscale answers at once
+timeout() { shift; "$@"; }   # drops the duration (always the first argument): the fake tailscale answers at once
 tailscale() {
     [[ "$*" == 'ip -4' ]] || return 1
     [[ -n "${TS_OUT:-}" ]] && printf '%s\n' "$TS_OUT"
