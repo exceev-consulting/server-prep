@@ -36,3 +36,6 @@ jobs:
 
       - name: Exit status
         run: bash tests/exit-status.sh
+
+      - name: Swap file
+        run: bash tests/swap.sh

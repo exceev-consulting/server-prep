@@ -5,6 +5,9 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
+  file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
+  (some filesystems), it writes the file with `dd` instead.
 - The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
 - **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
   token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only
