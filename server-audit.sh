@@ -389,34 +389,102 @@ if have docker && systemctl is-active --quiet docker 2>/dev/null; then
     fi
 fi
 
-# UFW port matching: is PORT/PROTO allowed from "Anywhere"? echo any|restricted|none
+# ufw_rule_fields LINE: splits one rule line of `ufw status [verbose]` into the globals UFW_R_TO,
+# UFW_R_FROM and UFW_R_IFACE. Fails for lines that are not ALLOW/LIMIT rules (DENY, REJECT) and for
+# route (FWD) rules. It sets globals instead of printing, so callers need no subshell. ufw prints To with
+# "%-26s ", so a To value of 26 characters or more (80,443/tcp (Nginx Full (v6))) has only one space
+# before the action. To never holds "#", which starts a rule comment, so a comment cannot move the
+# split. Profile rules lose their label: 22/tcp (OpenSSH) and 22/tcp (OpenSSH (v6)) give 22/tcp, the
+# ports ufw loaded for that profile. A bare profile name (plain `ufw status`) is kept as it is.
+ufw_rule_fields() {
+    local line="$1" rule_re='^([^#]*[^#[:space:]])[[:space:]]+(ALLOW|LIMIT)[[:space:]]+(IN[[:space:]]+)?(.+)$'
+    local iface_re='^(.+) on ([^[:space:]()]+)$' label_re='^(.+[^[:space:]]) \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)$'
+    [[ "$line" =~ $rule_re ]] || return 1
+    [[ "${line%% #*}" == *FWD* ]] && return 1
+    UFW_R_TO="${BASH_REMATCH[1]}"; UFW_R_FROM="${BASH_REMATCH[4]}"; UFW_R_IFACE=""
+    UFW_R_FROM="${UFW_R_FROM%"${UFW_R_FROM##*[![:space:]]}"}"
+    # " on <iface>" comes last, after the label and after " (v6)". Anchored at the end with no spaces
+    # or parentheses, so a profile name such as "Web on Demand" stays inside its label.
+    if [[ "$UFW_R_TO" =~ $iface_re ]]; then
+        UFW_R_TO="${BASH_REMATCH[1]}"; UFW_R_IFACE="${BASH_REMATCH[2]}"
+    fi
+    UFW_R_TO="${UFW_R_TO% (v6)}"; UFW_R_FROM="${UFW_R_FROM% (v6)}"
+    if [[ "$UFW_R_TO" =~ $label_re ]]; then
+        UFW_R_TO="${BASH_REMATCH[1]}"
+    fi
+    return 0
+}
+
+# ufw_spec_match SPEC PORT PROTO: does a UFW port spec such as 22, 22/tcp, 80,443/tcp or
+# 60000:61000/udp cover PORT/PROTO? No protocol means tcp and udp. Anything else (an address,
+# a profile name) fails before any arithmetic, so a value read from ufw never reaches (( )).
+ufw_spec_match() {
+    local spec_re='^([0-9]+(:[0-9]+)?(,[0-9]+(:[0-9]+)?)*)(/([a-z0-9]+))?$' p s
+    [[ "$1" =~ $spec_re ]] || return 1
+    p="${BASH_REMATCH[6]:-any}"
+    [[ "$p" == any || "$p" == "$3" ]] || return 1
+    local IFS=','
+    for s in ${BASH_REMATCH[1]}; do
+        (( 10#$2 >= 10#${s%%:*} && 10#$2 <= 10#${s##*:} )) && return 0
+    done
+    return 1
+}
+
+# Profile name -> space-separated port entries from `ufw app info`, filled once per run.
+declare -A UFW_APP_PORTS=()
+
+# ufw_app_lookup NAME: for a bare profile name as plain `ufw status` prints it ("OpenSSH",
+# "Nginx Full"), stores the profile's port entries from `ufw app info` in UFW_APP_PORTS[NAME], once
+# per name. Fails when NAME is not a profile name (a port spec, Anywhere, an address). A missing or
+# deleted profile stores no ports, so its rule matches no port. `ufw status verbose` always prints
+# the loaded ports, so this only serves the bare form. Only the indented port lines are read, so
+# the translated "Port:"/"Ports:" label does not matter. The name is always quoted, never evaluated.
+ufw_app_lookup() {
+    local name="$1" line ports="" name_re='^[A-Za-z0-9][A-Za-z0-9 _.+-]*$'
+    local port_re='^[[:space:]]+([0-9][0-9,:]*(/[a-z0-9]+)?)[[:space:]]*$'
+    # A letter keeps addresses (192.168.1.50) out, and "all" would list every profile.
+    [[ "$name" =~ $name_re && "$name" == *[A-Za-z]* && "$name" != Anywhere && "$name" != all ]] || return 1
+    [[ -n "${UFW_APP_PORTS[$name]+x}" ]] && return 0
+    while IFS= read -r line; do
+        [[ "$line" =~ $port_re ]] && ports+="${BASH_REMATCH[1]} "
+    done < <(LC_ALL=C ufw app info "$name" 2>/dev/null)
+    UFW_APP_PORTS[$name]="$ports"
+    return 0
+}
+
+# ufw_cache_apps: looks up each bare profile name of UFW_STATUS once, in the main shell, so the
+# $(ufw_port_access ...) subshells of the exposure loop find it in UFW_APP_PORTS.
+ufw_cache_apps() {
+    local line
+    [[ $UFW_ACTIVE -eq 1 && -n "$UFW_STATUS" ]] || return 0
+    while IFS= read -r line; do
+        ufw_rule_fields "$line" && ufw_app_lookup "$UFW_R_TO"
+    done < <(sed -n '/^--/,$p' <<<"$UFW_STATUS" | tail -n +2)
+    return 0
+}
+
+# UFW port matching: is PORT/PROTO allowed from "Anywhere"? echo any|restricted|none, or nofw when
+# UFW is inactive or its rules cannot be read (no root, nftables only). Rules added through an
+# application profile count by their ports (22/tcp (OpenSSH), or the bare name OpenSSH looked up
+# in UFW_APP_PORTS). A rule for a whole protocol (`ufw allow proto tcp from any to any`) prints
+# Anywhere/tcp in To and From, and covers every port of that protocol. An interface or a source other
+# than Anywhere gives restricted.
 ufw_port_access() {
-    local port="$1" proto="$2" line to from spec p best="none"
+    local port="$1" proto="$2" line e matched best="none"
     [[ $UFW_ACTIVE -eq 1 && -n "$UFW_STATUS" ]] || { echo "nofw"; return; }
     while IFS= read -r line; do
-        [[ "$line" =~ ^(.+[^[:space:]])[[:space:]]{2,}(ALLOW|LIMIT)[[:space:]]+(IN[[:space:]]+)?(.+)$ ]] || continue
-        to="${BASH_REMATCH[1]}"; from="${BASH_REMATCH[4]}"
-        [[ "$line" == *"FWD"* ]] && continue
-        to="${to% (v6)}"; from="${from% (v6)}"
-        local iface=""
-        if [[ "$to" == *" on "* ]]; then iface="${to##* on }"; to="${to%% on *}"; fi
-        local matched=0
-        if [[ "$to" == "Anywhere" ]]; then
+        ufw_rule_fields "$line" || continue
+        matched=0
+        if [[ "$UFW_R_TO" == Anywhere || "$UFW_R_TO" == "Anywhere/$proto" ]] ||
+            ufw_spec_match "$UFW_R_TO" "$port" "$proto"; then
             matched=1
-        else
-            spec="${to%%/*}"; p="${to#*/}"; [[ "$to" == */* ]] || p="any"
-            [[ "$p" == "any" || "$p" == "$proto" ]] || continue
-            local IFS_OLD=$IFS; IFS=','
-            for s in $spec; do
-                if [[ "$s" == *:* ]]; then
-                    [[ $port -ge ${s%%:*} && $port -le ${s##*:} ]] && matched=1
-                elif [[ "$s" == "$port" ]]; then matched=1
-                fi
+        elif ufw_app_lookup "$UFW_R_TO"; then
+            for e in ${UFW_APP_PORTS[$UFW_R_TO]:-}; do
+                ufw_spec_match "$e" "$port" "$proto" && matched=1
             done
-            IFS=$IFS_OLD
         fi
         [[ $matched -eq 1 ]] || continue
-        if [[ -z "$iface" && "$from" == Anywhere* ]]; then echo "any"; return; fi
+        if [[ -z "$UFW_R_IFACE" && "$UFW_R_FROM" == Anywhere* ]]; then echo "any"; return; fi
         best="restricted"
     done < <(sed -n '/^--/,$p' <<<"$UFW_STATUS" | tail -n +2)
     echo "$best"
@@ -441,6 +509,8 @@ if have ss; then
     if [[ $DOCKER_ACTIVE -eq 1 && $IS_ROOT -eq 1 ]]; then
         DOCKER_PORTS+=$(docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '(0\.0\.0\.0|\[::\]|::):[0-9]+->' | grep -oE ':[0-9]+->' | tr -d ':>-' | sort -un | tr '\n' ' ')
     fi
+    # Profile names are resolved here, in the main shell, because ufw_port_access runs in $(...).
+    ufw_cache_apps
     while read -r local proc; do
         port="${local##*:}"; addr="${local%:*}"
         [[ "$port" =~ ^[0-9]+$ ]] || continue
