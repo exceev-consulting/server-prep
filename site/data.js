@@ -683,6 +683,11 @@ window.SERVER_PREP_DATA = {
     },
     {
       "script": "server-preconfig.sh",
+      "flag": "--json",
+      "help": "with --check: print the results as one JSON object on stdout (lines for people go to stderr)"
+    },
+    {
+      "script": "server-preconfig.sh",
       "flag": "--dry-run",
       "help": "show what would change, change nothing"
     },
@@ -1273,7 +1278,7 @@ window.SERVER_PREP_DATA = {
     {
       "title": "First boot",
       "path": "server-preconfig.md",
-      "details": "`server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale"
+      "details": "`server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale, and `--check --json` for agents"
     },
     {
       "title": "Cloudflare Tunnel",
