@@ -1088,7 +1088,7 @@ ssh_test_hint() {
     elif [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
         # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.
         echo "  Open a NEW terminal and test over Tailscale:  ssh -p ${SSH_PORT} ${ADMIN_USER}@${ts_ip}"
-        echo "  ADMIN_IPS is empty, so the firewall blocks SSH on the local IP. If this test fails, answer n."
+        echo "  ADMIN_IPS is empty, so the firewall blocks SSH to the local IP from your machine. If this test fails, answer n."
     else
         # ADMIN_IPS set, or the firewall is off (--skip firewall, --only ssh on a fresh server).
         echo "  Open a NEW terminal and test${from}:  ${lan}"
