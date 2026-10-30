@@ -163,6 +163,8 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 Contributions are welcome: tests on other providers and hardware, fixes, more panels and clearer docs.
 Read [CONTRIBUTING.md](CONTRIBUTING.md), then pick an item from the board. The *Agent-ready* view lists tasks
 that Claude Code or Codex can take on. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+Need help? See [SUPPORT.md](SUPPORT.md). How decisions are made and who maintains the project: [GOVERNANCE.md](GOVERNANCE.md).
+The phases and milestones: [ROADMAP.md](ROADMAP.md).
 
 ## Credits
 
