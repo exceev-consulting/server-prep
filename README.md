@@ -61,7 +61,8 @@ Prefer a download? Get the scripts from the [latest release](https://github.com/
 and check them with `sha256sum -c SHA256SUMS`. To prepare many servers the same way, fill a copy of
 [server-prep.conf.example](server-prep.conf.example) and run `sudo ./server-prep.sh --config web-01.conf --yes`.
 Check the file first, no root needed: `./server-prep.sh --config web-01.conf --validate` reads it without running it
-and prints one line per problem, with its line number and what to do. The saved answers in `/etc/server-prep/` can
+and prints one line per problem, with its line number and what to do. It runs on Linux, or on any machine with bash 4
+or later (the `/bin/bash` of macOS is too old: install a current bash first). The saved answers in `/etc/server-prep/` can
 only be read by root: check them with `sudo`, which still changes nothing.
 
 Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-steps` prints the names).
