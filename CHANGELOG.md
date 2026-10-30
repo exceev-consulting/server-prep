@@ -5,6 +5,10 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `server-preconfig.sh --check --json` prints the result as one JSON object, so an agent can read it instead of colored
+  text. The object holds facts about the server (OS, VM or bare metal, network manager, Tailscale) and each check with
+  an id, a status and, when the script knows it, how to fix it. The lines for people go to stderr, and the exit code
+  does not change. WARN and FAIL lines now show their fix on a separate `fix:` line.
 - The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
 - **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
   token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only

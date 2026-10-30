@@ -243,5 +243,7 @@ DRY_RUN=1
 expect_firewall 'dry run is WOULD CHANGE' 1 old 0 ok 1
 DRY_RUN=0
 
-# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
+# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69) and the
+# server-preconfig.sh --check --json test (issue #13).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
+bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
