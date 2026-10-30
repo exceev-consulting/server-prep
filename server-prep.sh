@@ -165,7 +165,11 @@ set_panel_label() {   # display name used in questions, notes and the report
     esac
 }
 set_panel_label
-[[ -r /dev/tty ]] || { [[ $INTERACTIVE -eq 1 ]] && { echo "No terminal: use --yes with --config" >&2; exit 2; }; }
+# /dev/tty can have readable permissions without a controlling terminal.
+if [[ $INTERACTIVE -eq 1 ]] && ! { true < /dev/tty; } 2>/dev/null; then
+    echo "No terminal: use --yes with --config" >&2
+    exit 2
+fi
 
 # ----------------------------------------------------------------------------
 # Output helpers
