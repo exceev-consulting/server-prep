@@ -25,7 +25,7 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
 ## Safety rules
 
 - Never ask for, print or store passwords, private keys or tokens: Tailscale keys, the CrowdSec enroll key, the Cloudflare tunnel token, the InfluxDB token, the Telegram bot token. The operator types them at the script prompts, never in the chat.
-- Never read filled configs (`*.conf` at the repo root, except `server-prep.conf.example`) or the Telegraf secret files (`/etc/default/telegraf`, `/etc/telegraf/telegraf.d/`): they can hold tokens, and reading a file puts its content in the session. Claude Code blocks these reads in `.claude/settings.json`; other agents must follow this rule themselves. To check a setting, ask the operator to paste that one line, without any secret value.
+- Never read filled configs (`*.conf` at the repo root, except `server-prep.conf.example`) or the Telegraf secret files (`/etc/default/telegraf`, `/etc/telegraf/telegraf.d/`): they can hold tokens, and reading a file puts its content in the session. Claude Code's `.claude/settings.json` denies the Read tool on these files, but not shell commands such as `cat`, so this rule applies to every agent, Claude Code included. To check a setting, ask the operator to paste that one line, without any secret value.
 - Never run `sudo`, and never change the server outside the scripts.
 - Always propose `--dry-run` before a real run.
 - When a step fails, check *Hard-won gotchas* below first, then have the operator re-run only that step, with `--dry-run` first: `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>`. Without `--yes` the run stays interactive (the saved answers are the defaults), so the SSH step still asks for the second-terminal login test.
