@@ -245,7 +245,8 @@ DRY_RUN=0
 
 # The SSH safety check tells the user which address to test from a second terminal
 # (issue #73). With Tailscale-only access the firewall blocks the local IP, so only the
-# Tailscale IP is shown. Without a Tailscale IP, the old text stays as it was.
+# Tailscale IP is shown. Without a Tailscale IP, the old text stays as it was, plus a warning
+# when the firewall allows only Tailscale.
 # "tailscale" is a fake function here: the test never reads this host's real tailnet.
 # 192.0.2.10 (a documentation address) stands in for the server's 100.x Tailscale IP.
 timeout() { shift; "$@"; }   # the fake tailscale answers at once
@@ -291,10 +292,16 @@ expect_hint 'with Tailscale and the firewall off also shows the local IP' tailsc
     is "$fallback" 'admin@192.0.2.10' ADMIN_IPS
 ufw() { echo "Status: active"; }
 TS_RC=1
-expect_hint 'with Tailscale logged out keeps the old text' tailscale '' '' \
-    is "$fallback" '' Tailscale
+expect_hint 'with Tailscale logged out keeps the old text and warns' tailscale '' '' \
+    is "$fallback" 'No Tailscale IP found' 'over Tailscale'
 expect_hint 'ignores a "Logged out." message' tailscale '' 'Logged out.' \
+    is "$fallback" 'No Tailscale IP found' 'over Tailscale'
+expect_hint 'with Tailscale logged out and ADMIN_IPS keeps the old text' tailscale 192.168.1.0/24 '' \
     is "$fallback" '' Tailscale
+ufw() { echo "Status: inactive"; }
+expect_hint 'with Tailscale logged out and the firewall off keeps the old text' tailscale '' '' \
+    is "$fallback" '' Tailscale
+ufw() { echo "Status: active"; }
 TS_RC=0
 expect_hint 'without tailscale in PANEL_ACCESS keeps the old text' cloudflared '' 192.0.2.10 \
     is "$fallback" '' 192.0.2.10
@@ -302,10 +309,10 @@ expect_hint 'without tailscale in PANEL_ACCESS keeps the old text' cloudflared '
 unset -f tailscale
 HINT_PATH="$tmp/no-bin"
 expect_hint 'without the tailscale command keeps the old text' tailscale '' '' \
-    is "$fallback" '' Tailscale
+    is "$fallback" '' 'over Tailscale'
 unset LOCAL_IP
 expect_hint 'without a local IP shows a placeholder' tailscale '' '' \
-    is '  Open a NEW terminal and test:  ssh -p 822 admin@<server-ip>' '' Tailscale
+    is '  Open a NEW terminal and test:  ssh -p 822 admin@<server-ip>' '' 'over Tailscale'
 unset -f timeout
 
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).

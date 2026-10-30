@@ -1080,6 +1080,11 @@ ssh_test_hint() {
     [[ -n "${ADMIN_IPS//[,[:space:]]/}" ]] && from=" from an ADMIN_IPS address"
     if [[ -z "$ts_ip" ]]; then
         echo "  Open a NEW terminal and test:  ${lan}"
+        if [[ "$PANEL_ACCESS" == *tailscale* && -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+            # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
+            echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
+            echo "  Check 'tailscale status' first. If this test fails, answer n."
+        fi
     elif [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
         # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.
         echo "  Open a NEW terminal and test over Tailscale:  ssh -p ${SSH_PORT} ${ADMIN_USER}@${ts_ip}"
