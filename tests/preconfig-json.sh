@@ -7,9 +7,10 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PRE="$SCRIPT_DIR/server-preconfig.sh"
 
+# jq reads the JSON. CI has it; on a machine without it, skip instead of failing the whole suite.
 if ! command -v jq >/dev/null 2>&1; then
-    printf 'not ok: tests/preconfig-json.sh needs jq to read the JSON\n'
-    exit 1
+    printf 'ok: skip server-preconfig.sh --check --json tests (jq missing)\n'
+    exit 0
 fi
 # server-preconfig.sh stops on other systems before its checks.
 os_info=$(. /etc/os-release 2>/dev/null; echo "${ID:-} ${ID_LIKE:-}")
