@@ -258,13 +258,12 @@ tailscale() {
 SSH_PORT=822
 ADMIN_USER='admin'
 LOCAL_IP=192.168.1.50
-HINT_PATH="$PATH"
 fallback='  Open a NEW terminal and test:  ssh -p 822 admin@192.168.1.50'
 
 expect_hint() {   # expect_hint LABEL PANEL_ACCESS ADMIN_IPS TS_OUT is|has WANT_FIRST WANT_ALSO NOT_WANT
     local label="$1" match="$5" want_first="$6" want_also="$7" not_want="$8" out first ok=1
     PANEL_ACCESS="$2"; ADMIN_IPS="$3"; TS_OUT="$4"
-    out="$(PATH="$HINT_PATH" ssh_test_hint)"
+    out="$(ssh_test_hint)"
     first="${out%%$'\n'*}"
     if [[ "$match" == is ]]; then
         [[ "$first" == "$want_first" ]] || ok=0
@@ -305,14 +304,18 @@ ufw() { echo "Status: active"; }
 TS_RC=0
 expect_hint 'without tailscale in PANEL_ACCESS keeps the old text' cloudflared '' 192.0.2.10 \
     is "$fallback" '' 192.0.2.10
-# No tailscale at all: an empty PATH also hides a real tailscale binary on this host.
+# No tailscale at all: have() says so for tailscale only, which also hides a real tailscale
+# binary on this host, and the rest of PATH (grep) keeps working. The firewall allows only
+# Tailscale, so the warning is expected.
 unset -f tailscale
-HINT_PATH="$tmp/no-bin"
-expect_hint 'without the tailscale command keeps the old text' tailscale '' '' \
-    is "$fallback" '' 'over Tailscale'
+real_have="$(declare -f have)"
+have() { [[ "$1" != tailscale ]] && command -v "$1" >/dev/null 2>&1; }
+expect_hint 'without the tailscale command keeps the old text and warns' tailscale '' '' \
+    is "$fallback" 'No Tailscale IP found' 'over Tailscale'
 unset LOCAL_IP
 expect_hint 'without a local IP shows a placeholder' tailscale '' '' \
-    is '  Open a NEW terminal and test:  ssh -p 822 admin@<server-ip>' '' 'over Tailscale'
+    is '  Open a NEW terminal and test:  ssh -p 822 admin@<server-ip>' 'No Tailscale IP found' 'over Tailscale'
+eval "$real_have"
 unset -f timeout
 
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
