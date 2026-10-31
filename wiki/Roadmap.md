@@ -4,7 +4,7 @@ Where server-prep is going: the phases, the epics that group the work, the publi
 
 The top epic is [#6](https://github.com/exceev-consulting/server-prep/issues/6). In short: someone with **no DevOps or security background** opens the repo in Claude Code or Codex, says "set up my new server", and ends with a hardened server, connected to their panel, with an audit that shows 0 FAIL.
 
-To get there, the work is split into five workstreams. Each one is an epic, and each epic has sub-issues, one pull request each.
+To get there, the work is split into six workstreams. Each one is an epic, and each epic has sub-issues, one pull request each.
 
 What exists today is described in the [README](https://github.com/exceev-consulting/server-prep/blob/main/README.md) and on [Architecture](Architecture). Everything on this page that is not marked as done is **planned**: follow the linked issue for its status.
 
@@ -51,7 +51,7 @@ The base that everything else plugs into:
 - `scripts/check-consistency.sh`, which keeps steps, README, config example and audit in sync ([#35](https://github.com/exceev-consulting/server-prep/issues/35));
 - Claude Code hooks: lint after each edit, block pushes to `main` ([#36](https://github.com/exceev-consulting/server-prep/issues/36));
 - labels kept in `.github/labels.yml` ([#24](https://github.com/exceev-consulting/server-prep/issues/24));
-- governance files: `GOVERNANCE.md`, `SUPPORT.md`, `CODEOWNERS`, a roadmap file and an ADR template ([#30](https://github.com/exceev-consulting/server-prep/issues/30)).
+- **done:** governance files: [`GOVERNANCE.md`](https://github.com/exceev-consulting/server-prep/blob/main/GOVERNANCE.md), [`SUPPORT.md`](https://github.com/exceev-consulting/server-prep/blob/main/SUPPORT.md), [`CODEOWNERS`](https://github.com/exceev-consulting/server-prep/blob/main/.github/CODEOWNERS), [`ROADMAP.md`](https://github.com/exceev-consulting/server-prep/blob/main/ROADMAP.md) and the ADRs in [`docs/decisions/`](https://github.com/exceev-consulting/server-prep/tree/main/docs/decisions) ([#30](https://github.com/exceev-consulting/server-prep/issues/30)).
 
 ### Phase 1: Community & CI
 
@@ -86,6 +86,18 @@ Today `PANEL=openship` only changes the labels in messages. Coolify has more: hi
 [Milestone](https://github.com/exceev-consulting/server-prep/milestone/5) · Epic [#11](https://github.com/exceev-consulting/server-prep/issues/11)
 
 **Partly done.** The [setup console](https://exceev-consulting.github.io/server-prep/) is live. Its data generator ([#59](https://github.com/exceev-consulting/server-prep/issues/59)), the page ([#60](https://github.com/exceev-consulting/server-prep/issues/60)) and the Pages deploy with a data-drift check ([#61](https://github.com/exceev-consulting/server-prep/issues/61)) are closed. Still open: an accessibility and mobile review ([#62](https://github.com/exceev-consulting/server-prep/issues/62)), and showing Openship and the beginner flow once they ship ([#63](https://github.com/exceev-consulting/server-prep/issues/63)).
+
+### Phase 5: Servers already in use
+
+[Milestone](https://github.com/exceev-consulting/server-prep/milestone/7) · Epic [#109](https://github.com/exceev-consulting/server-prep/issues/109)
+
+Today server-prep is written for a fresh server. This phase makes it safe on a server that already runs apps, users, containers and a firewall, without stopping or cutting anything that works:
+
+- an inventory of what already runs, before any change ([#110](https://github.com/exceev-consulting/server-prep/issues/110)), and the impact of each step in the plan and the report ([#112](https://github.com/exceev-consulting/server-prep/issues/112));
+- an `--existing` mode that asks on every conflict instead of overriding ([#111](https://github.com/exceev-consulting/server-prep/issues/111));
+- step fixes so nothing in use is cut or restarted: the firewall ([#114](https://github.com/exceev-consulting/server-prep/issues/114), [#115](https://github.com/exceev-consulting/server-prep/issues/115)), SSH ([#116](https://github.com/exceev-consulting/server-prep/issues/116), [#117](https://github.com/exceev-consulting/server-prep/issues/117)), updates and Docker ([#113](https://github.com/exceev-consulting/server-prep/issues/113), [#118](https://github.com/exceev-consulting/server-prep/issues/118)), fail2ban and CrowdSec ([#119](https://github.com/exceev-consulting/server-prep/issues/119)), and other settings ([#120](https://github.com/exceev-consulting/server-prep/issues/120));
+- a full-state backup with a verified rollback ([#122](https://github.com/exceev-consulting/server-prep/issues/122)), and a run that fixes only what the audit marks as failed ([#123](https://github.com/exceev-consulting/server-prep/issues/123));
+- an end-to-end test on a server in use ([#124](https://github.com/exceev-consulting/server-prep/issues/124)), a guide ([#125](https://github.com/exceev-consulting/server-prep/issues/125)) and a `/new-server` path for these servers ([#126](https://github.com/exceev-consulting/server-prep/issues/126)).
 
 ## How to pick an item
 
