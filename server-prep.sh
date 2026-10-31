@@ -1473,6 +1473,10 @@ EOF
     return 0
 }
 
+swapfile_enable() {   # /swapfile exists: make it a swap area and turn it on
+    run chmod 600 /swapfile && run mkswap /swapfile && run swapon /swapfile
+}
+
 step_logging() {
     write_file /etc/systemd/journald.conf.d/50-server-prep.conf 644 <<'EOF'
 # Managed by server-prep.sh
@@ -1485,7 +1489,31 @@ EOF
     run systemctl restart systemd-journald
     if [[ -z "$(swapon --show --noheadings 2>/dev/null)" && -n "$SWAP_SIZE" && "$SWAP_SIZE" != "0" ]]; then
         info "creating ${SWAP_SIZE} swap file"
-        run fallocate -l "$SWAP_SIZE" /swapfile && run chmod 600 /swapfile && run mkswap /swapfile && run swapon /swapfile
+        if ! run fallocate -l "$SWAP_SIZE" /swapfile; then
+            run rm -f /swapfile
+            grep -q '^/swapfile' /etc/fstab && todo "Remove the /swapfile line from /etc/fstab: there is no working swap file"
+            note "swap ${SWAP_SIZE} not created: fallocate failed (full disk?), see ${LOG_FILE}"
+            return 1
+        fi
+        if ! swapfile_enable; then
+            warn "swapon refused the fallocate swap file, trying again with a file written by dd"
+            local bytes mib
+            bytes=$(numfmt --from=iec -- "${SWAP_SIZE^^}" 2>/dev/null)
+            [[ $bytes =~ ^[0-9]+$ ]] || bytes=0
+            mib=$(( bytes / 1048576 ))
+            run rm -f /swapfile
+            if (( mib < 1 )); then
+                grep -q '^/swapfile' /etc/fstab && todo "Remove the /swapfile line from /etc/fstab: there is no working swap file"
+                note "swap ${SWAP_SIZE} not created: size not understood, use a value like 2G or 512M"
+                return 1
+            fi
+            if ! run dd if=/dev/zero of=/swapfile bs=1M count="$mib" || ! swapfile_enable; then
+                run rm -f /swapfile
+                grep -q '^/swapfile' /etc/fstab && todo "Remove the /swapfile line from /etc/fstab: there is no working swap file"
+                note "swap ${SWAP_SIZE} not created: mkswap/swapon failed, see ${LOG_FILE} (set SWAP_SIZE=0 to skip)"
+                return 1
+            fi
+        fi
         grep -q '^/swapfile' /etc/fstab || { { cat /etc/fstab; echo '/swapfile none swap sw 0 0'; } | write_file /etc/fstab 644; }
         changed; note "swap ${SWAP_SIZE} created"
     fi
