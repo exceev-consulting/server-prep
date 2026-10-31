@@ -37,6 +37,7 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
                                  # (audit "Docker vs firewall" matcher on sample iptables output) and
                                  # tests/preconfig-json.sh (server-preconfig.sh --check --json with fake host
                                  # commands, needs jq, skipped without it); no system changes
+   bash tests/swap.sh            # swap file creation with fake commands; no system changes
    ```
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash

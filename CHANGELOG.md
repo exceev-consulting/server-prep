@@ -5,6 +5,10 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
+  file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
+  (some filesystems), it writes the file with `dd` instead.
+- The `/new-server` guide checks SSH journal entries and panel connection settings when validation fails.
 - `server-preconfig.sh --check --json` prints the result as one JSON object, so an agent can read it instead of colored
   text. The object holds facts about the server (OS, VM or bare metal, network manager, Tailscale) and each check with
   an id, a status and, when the script knows it, how to fix it. The lines for people go to stderr, and the exit code
@@ -32,6 +36,7 @@ Highlights of each release. The full list of merged pull requests is in each
   rules are loaded, with both the `ufw-user-forward` and `ufw-docker-logging-deny` jumps (or Docker's iptables
   management is off). If a server now shows this FAIL, re-run the firewall step:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes`.
+- Stop interactive `server-prep.sh` runs when no terminal can be opened, instead of silently accepting defaults. `--yes` still works without a terminal.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.
