@@ -159,6 +159,8 @@ set_rules 'OpenSSH on eth0' 'ALLOW' 'Anywhere'
 expect 22 tcp restricted "bare OpenSSH on an interface"
 set_rules 'OpenSSH' 'ALLOW' '192.168.1.0/24'
 expect 22 tcp restricted "bare OpenSSH from a LAN"
+set_rules 'OpenSSH' 'ALLOW' 'OUTline'
+expect 22 tcp restricted "bare OpenSSH from a source profile whose name starts with OUT"
 
 # --- Port rules: what worked before must keep working --------------------------------------------
 HEADER=$VERBOSE_HEADER

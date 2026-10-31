@@ -402,7 +402,8 @@ ufw_rule_fields() {
     local line="$1" rule_re='^([^#]*[^#[:space:]])[[:space:]]+(ALLOW|LIMIT)[[:space:]]+(IN[[:space:]]+)?(.+)$'
     local iface_re='^(.+) on ([^[:space:]()]+)$' label_re='^(.+[^[:space:]]) \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)$'
     [[ "$line" =~ $rule_re ]] || return 1
-    [[ "${BASH_REMATCH[4]}" == FWD* || "${BASH_REMATCH[4]}" == OUT* ]] && return 1
+    # A glob, not =~, so BASH_REMATCH keeps the groups read below.
+    [[ -z "${BASH_REMATCH[3]}" && ( "${BASH_REMATCH[4]}" == FWD[[:space:]]* || "${BASH_REMATCH[4]}" == OUT[[:space:]]* ) ]] && return 1
     UFW_R_TO="${BASH_REMATCH[1]}"; UFW_R_FROM="${BASH_REMATCH[4]}"; UFW_R_IFACE=""
     UFW_R_FROM="${UFW_R_FROM%"${UFW_R_FROM##*[![:space:]]}"}"
     # " on <iface>" comes last, after the label and after " (v6)". Anchored at the end with no spaces
