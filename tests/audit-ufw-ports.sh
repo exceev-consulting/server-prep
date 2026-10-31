@@ -194,6 +194,8 @@ set_rules 'Anywhere/tcp on eth0' 'ALLOW IN' 'Anywhere/tcp'
 expect 22 tcp restricted "whole protocol on an interface"
 set_rules 'Anywhere/tcp (v6) on eth0' 'ALLOW IN' 'Anywhere/tcp (v6)'
 expect 22 tcp restricted "whole protocol, v6, on an interface"
+# Destination-address rules are not resolved yet (issue #162): a rule to the server's own public
+# address shows as firewalled. This case and the IPv6 one below record today's behaviour.
 set_rules '192.168.1.50/tcp' 'ALLOW IN' '192.168.1.50/tcp'
 expect 22 tcp none "whole protocol to one destination address"
 set_rules '22/tcp' 'ALLOW IN' '203.0.113.0/24'
@@ -209,7 +211,7 @@ expect 3000 tcp none "outgoing (OUT) rule"
 set_rules '23/tcp' 'DENY IN' 'Anywhere'
 expect 23 tcp none "deny rule"
 set_rules '2001:db8::1 2222/tcp' 'ALLOW IN' 'Anywhere'
-expect 2222 tcp none "rule with an IPv6 destination address"
+expect 2222 tcp none "rule with an IPv6 destination address (issue #162)"
 UFW_ACTIVE=0
 set_rules '3000/tcp' 'ALLOW IN' 'Anywhere'
 expect 3000 tcp nofw "UFW inactive"
