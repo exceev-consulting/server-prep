@@ -212,6 +212,15 @@ run_secret() {
 have() { command -v "$1" >/dev/null 2>&1; }
 yes_() { [[ "${1,,}" =~ ^(y|yes|true|1)$ ]]; }
 
+# This server's Tailscale IPv4, or nothing when tailscale is missing, logged out or stopped.
+# Bounded: step_ssh calls it while the 10-minute rollback timer runs.
+tailscale_ipv4() {
+    local ip=""
+    have tailscale && ip="$(timeout 5 tailscale ip -4 2>/dev/null | head -1)"
+    [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]] && printf '%s\n' "$ip"
+    return 0
+}
+
 # ----------------------------------------------------------------------------
 # Interactive prompts (read from /dev/tty so "curl | bash" also works)
 # ----------------------------------------------------------------------------
@@ -1062,6 +1071,32 @@ Match Address $(IFS=,; echo "${ROOT_SOURCES[*]}")
     fi
 }
 
+# Tells the user how to test SSH from a second terminal, with an address the firewall
+# allows (see ufw_allow_ssh). Each label comes before its command, so copying a line to
+# its end pastes a valid command. Read-only: safe while the rollback timer runs.
+ssh_test_hint() {
+    local lan="ssh -p ${SSH_PORT} ${ADMIN_USER}@${LOCAL_IP:-<server-ip>}" ts_ip="" from=""
+    [[ "$PANEL_ACCESS" == *tailscale* ]] && ts_ip="$(tailscale_ipv4)"
+    [[ -n "${ADMIN_IPS//[,[:space:]]/}" ]] && from=" from an ADMIN_IPS address"
+    if [[ -z "$ts_ip" ]]; then
+        echo "  Open a NEW terminal and test:  ${lan}"
+        if [[ "$PANEL_ACCESS" == *tailscale* && -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+            # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
+            echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
+            echo "  Check 'tailscale status' first. If this test fails, answer n."
+        fi
+    elif [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+        # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.
+        echo "  Open a NEW terminal and test over Tailscale:  ssh -p ${SSH_PORT} ${ADMIN_USER}@${ts_ip}"
+        echo "  ADMIN_IPS is empty, so the firewall blocks SSH to the local IP from your machine. If this test fails, answer n."
+    else
+        # ADMIN_IPS set, or the firewall is off (--skip firewall, --only ssh on a fresh server).
+        echo "  Open a NEW terminal and test${from}:  ${lan}"
+        echo "  or test over Tailscale:  ssh -p ${SSH_PORT} ${ADMIN_USER}@${ts_ip}"
+    fi
+    echo "  Keep this terminal open: answer here once the test is done."
+}
+
 step_ssh() {
     compute_root_sources
     local home nkeys=0
@@ -1138,7 +1173,7 @@ EOF
     if [[ $INTERACTIVE -eq 1 ]]; then
         echo
         echo "${C_Y}${C_BOLD}  SSH SAFETY CHECK${C_0} - an automatic rollback runs in 10 minutes unless you confirm."
-        echo "  Open a NEW terminal and test:  ssh -p ${SSH_PORT} ${ADMIN_USER}@${LOCAL_IP:-<server-ip>}"
+        ssh_test_hint
         echo "  y = it works   n = roll back now   s = skip test (I have console access)"
         while true; do
             read -r -p "  Result [y/n/s]: " answer < /dev/tty || answer=s
@@ -1878,7 +1913,7 @@ write_report() {
             echo "   - IP/Domain: the tunnel SSH hostname (e.g. \`ssh-${HOST_SHORT}.<your-domain>\`), then enable the panel's Cloudflare Tunnel option if it has one (Coolify: server configuration)"
         fi
         if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
-            echo "   - or IP: the Tailscale IP of this server ($(tailscale ip -4 2>/dev/null | head -1)) - the panel server must be in the same tailnet"
+            echo "   - or IP: the Tailscale IP of this server ($(tailscale_ipv4)) - the panel server must be in the same tailnet"
         fi
         if [[ "$PANEL_ACCESS" == *public* ]]; then
             echo "   - IP: this server's public IP (panel server ${PANEL_IP} is the only allowed source)"
