@@ -79,7 +79,7 @@ a command-line usage error, including an unknown step name or a missing option v
 | [Monitoring](docs/monitoring.md) | Server and Docker metrics: Telegraf, InfluxDB and Grafana |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
-| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and what is planned for Codex |
+| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and how Codex and other agents get the project rules |
 
 ## Supported systems
 
