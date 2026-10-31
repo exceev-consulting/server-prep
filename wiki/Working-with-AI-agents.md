@@ -98,7 +98,7 @@ Planned: a `/pick-issue` skill that does steps 2 to 6 ([#44](https://github.com/
 These rules apply to any agent, in any session:
 
 - Never ask for, print or store passwords, private keys or tokens.
-- Never read a filled config or the Telegraf secret files: reading a file puts its tokens in the session. Claude Code blocks these reads; other agents must follow this rule themselves.
+- Never read a filled config or the Telegraf secret files: reading a file puts its tokens in the session. Claude Code's `.claude/settings.json` denies the Read tool on these files, but not shell commands, so every agent, Claude Code included, must follow this rule itself.
 - Never run `sudo`, and never change the server outside the scripts.
 - Always propose `--dry-run` before a real run.
 - When a step fails, re-run only that step with `--only <step>`, and check the *Hard-won gotchas* in `AGENTS.md` first.
