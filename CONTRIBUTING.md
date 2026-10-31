@@ -9,6 +9,7 @@ Thanks for helping. All kinds of help are welcome:
 
 Issues labelled [`good first issue`](https://github.com/exceev-consulting/server-prep/labels/good%20first%20issue) are a good place to start.
 For a big change, open an issue first so we can agree on the approach.
+[GOVERNANCE.md](GOVERNANCE.md#how-decisions-are-made) says which changes need one.
 
 Security problems: **don't open a public issue**. See [SECURITY.md](SECURITY.md).
 
@@ -35,6 +36,7 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
                                  # (audit "Docker vs firewall" matcher on sample iptables output)
                                  # and tests/validate-config.sh (--validate on a good config and broken ones); no system changes
+   bash tests/swap.sh            # swap file creation with fake commands; no system changes
    ```
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
