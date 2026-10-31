@@ -35,8 +35,14 @@ jobs:
       - name: Site data up to date
         run: scripts/gen-data.sh --check
 
+      - name: Design tokens in sync
+        run: scripts/check-tokens.sh
+
       - name: Exit status
         run: bash tests/exit-status.sh
+
+      - name: Swap file
+        run: bash tests/swap.sh
 
       - name: E2E report builder
         run: bash tests/e2e-report.sh

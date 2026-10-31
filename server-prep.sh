@@ -165,7 +165,11 @@ set_panel_label() {   # display name used in questions, notes and the report
     esac
 }
 set_panel_label
-[[ -r /dev/tty ]] || { [[ $INTERACTIVE -eq 1 ]] && { echo "No terminal: use --yes with --config" >&2; exit 2; }; }
+# /dev/tty can have readable permissions without a controlling terminal.
+if [[ $INTERACTIVE -eq 1 ]] && ! { true < /dev/tty; } 2>/dev/null; then
+    echo "No terminal: use --yes with --config" >&2
+    exit 2
+fi
 
 # ----------------------------------------------------------------------------
 # Output helpers
@@ -924,7 +928,9 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
             if ! sha256sum "$tmp" | grep -q "^$UFW_DOCKER_SHA256 "; then
                 rm -f "$tmp"; err "ufw-docker checksum mismatch: not installed"; return 1
             fi
-            install -m 755 "$tmp" "$bin"; rm -f "$tmp"
+            write_file "$bin" 755 < "$tmp"; rm -f "$tmp"
+            # write_file leaves an identical file as it is, so restore a lost exec bit here
+            [[ -x $bin ]] || { run chmod 755 "$bin" && changed; }
             note "ufw-docker $UFW_DOCKER_VERSION installed (checksum verified)"
         fi
     fi
@@ -952,6 +958,9 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
     fi
 }
 
+# 'ufw allow/limit/route/default' exit 0 even when the rule or policy already exists, so compare the rule files instead.
+ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/dev/null | sha256sum; }
+
 ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
     local port="$1" c="$2" ip any=1
     for ip in ${ADMIN_IPS//,/ }; do
@@ -970,13 +979,10 @@ ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
     fi
 }
 
-ufw_state() {   # hash of the UFW status and rules, to tell whether this run changed them
-    { ufw status verbose; cat /etc/ufw/user.rules /etc/ufw/user6.rules; } 2>/dev/null | sha256sum
-}
-
 step_firewall() {
     pkg_install ufw || return 1
-    local before; before="$(ufw_state)"
+    local before=""
+    before="$(ufw_state)"
     # 'ufw default' reloads the whole firewall even when the policy does not change, and a reload
     # drops CrowdSec from DOCKER-USER: set the policies only when they differ.
     if [[ "$(ufw status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
@@ -1005,6 +1011,9 @@ step_firewall() {
         run ufw route allow proto "${e#*/}" from any to any port "${e%/*}" comment "docker extra"
         note "extra port $e"
     done
+    # A rule or policy counts as a change only if the rule files differ. A dry run executes
+    # nothing, so it keeps showing what it would do.
+    if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
 
     if ! ufw status 2>/dev/null | grep -q "Status: active"; then
         run ufw --force enable && { changed; note "UFW enabled"; }
@@ -1014,7 +1023,15 @@ step_firewall() {
 
     # Stop Docker from bypassing UFW. ufw-docker needs UFW active, so this runs after enable
     if [[ $HAS_DOCKER -eq 1 ]]; then
-        ufw_docker_rules || { note "Docker-published ports still bypass UFW"; return 1; }
+        if ! ufw_docker_rules; then
+            # a failed download or update can leave the rules of an earlier run in place
+            if iptables -S DOCKER-USER 2>/dev/null | grep -q -- '-j ufw-user-forward'; then
+                note "ufw-docker could not be updated (see the log): the rules of an earlier run are still loaded"
+            else
+                note "ufw-docker rules not loaded: Docker ports still bypass UFW (see the log)"
+            fi
+            return 1
+        fi
     else
         todo "Docker is not installed yet. If your panel installs it later, run: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes (so container ports obey UFW)"
     fi
@@ -1022,9 +1039,6 @@ step_firewall() {
         run systemctl restart crowdsec-firewall-bouncer \
             && { changed; note "CrowdSec bouncer restarted: its DOCKER-USER rule was missing"; }
     fi
-    # ufw skips rules it already has, so only a different state means a change. A dry run only
-    # printed the commands, so it can't measure that: it reports the step as WOULD CHANGE.
-    if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
     return 0
 }
 
@@ -1505,6 +1519,10 @@ EOF
     return 0
 }
 
+swapfile_enable() {   # /swapfile exists: make it a swap area and turn it on
+    run chmod 600 /swapfile && run mkswap /swapfile && run swapon /swapfile
+}
+
 step_logging() {
     write_file /etc/systemd/journald.conf.d/50-server-prep.conf 644 <<'EOF'
 # Managed by server-prep.sh
@@ -1517,7 +1535,31 @@ EOF
     run systemctl restart systemd-journald
     if [[ -z "$(swapon --show --noheadings 2>/dev/null)" && -n "$SWAP_SIZE" && "$SWAP_SIZE" != "0" ]]; then
         info "creating ${SWAP_SIZE} swap file"
-        run fallocate -l "$SWAP_SIZE" /swapfile && run chmod 600 /swapfile && run mkswap /swapfile && run swapon /swapfile
+        if ! run fallocate -l "$SWAP_SIZE" /swapfile; then
+            run rm -f /swapfile
+            grep -q '^/swapfile' /etc/fstab && todo "Remove the /swapfile line from /etc/fstab: there is no working swap file"
+            note "swap ${SWAP_SIZE} not created: fallocate failed (full disk?), see ${LOG_FILE}"
+            return 1
+        fi
+        if ! swapfile_enable; then
+            warn "swapon refused the fallocate swap file, trying again with a file written by dd"
+            local bytes mib
+            bytes=$(numfmt --from=iec -- "${SWAP_SIZE^^}" 2>/dev/null)
+            [[ $bytes =~ ^[0-9]+$ ]] || bytes=0
+            mib=$(( bytes / 1048576 ))
+            run rm -f /swapfile
+            if (( mib < 1 )); then
+                grep -q '^/swapfile' /etc/fstab && todo "Remove the /swapfile line from /etc/fstab: there is no working swap file"
+                note "swap ${SWAP_SIZE} not created: size not understood, use a value like 2G or 512M"
+                return 1
+            fi
+            if ! run dd if=/dev/zero of=/swapfile bs=1M count="$mib" || ! swapfile_enable; then
+                run rm -f /swapfile
+                grep -q '^/swapfile' /etc/fstab && todo "Remove the /swapfile line from /etc/fstab: there is no working swap file"
+                note "swap ${SWAP_SIZE} not created: mkswap/swapon failed, see ${LOG_FILE} (set SWAP_SIZE=0 to skip)"
+                return 1
+            fi
+        fi
         grep -q '^/swapfile' /etc/fstab || { { cat /etc/fstab; echo '/swapfile none swap sw 0 0'; } | write_file /etc/fstab 644; }
         changed; note "swap ${SWAP_SIZE} created"
     fi

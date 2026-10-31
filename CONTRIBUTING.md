@@ -9,6 +9,7 @@ Thanks for helping. All kinds of help are welcome:
 
 Issues labelled [`good first issue`](https://github.com/exceev-consulting/server-prep/labels/good%20first%20issue) are a good place to start.
 For a big change, open an issue first so we can agree on the approach.
+[GOVERNANCE.md](GOVERNANCE.md#how-decisions-are-made) says which changes need one.
 
 Security problems: **don't open a public issue**. See [SECURITY.md](SECURITY.md).
 
@@ -36,7 +37,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    done
    shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
    scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
-   bash tests/exit-status.sh     # argument and final-status checks; no system changes
+   bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
+                                 # (audit "Docker vs firewall" matcher on sample iptables output); no system changes
+   bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
 2. **Dry run** on a test server, then a real run if your change modifies the system:
@@ -78,7 +81,15 @@ The [setup console](https://exceev-consulting.github.io/server-prep/) is `site/i
 with GitHub Pages by `.github/workflows/pages.yml`. Its data (`site/data.json`, `site/data.js`) is generated from the
 scripts, the README tables and `server-prep.conf.example` by `scripts/gen-data.sh`. CI fails when the data is out of date,
 so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result.
-To view it locally:
+
+Colours, type, radii and spacing are the tokens in `site/tokens.css`, shared with the
+[brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) (`site/brand/`). Use a token instead of a new
+colour. A page that must also work offline, like the e2e report, keeps its own copy of the tokens, and
+`scripts/check-tokens.sh` fails CI when a copy, or a colour ramp on the brand page (sections 2.2 and 2.4), differs
+from `site/tokens.css`. The PNG files in `site/` (link preview, home-screen icon, favicon) are
+renders of the logo: section 6.2 of the brand guidelines gives their sizes.
+
+To view the console and the brand page locally:
 
 ```bash
 python3 -m http.server --bind 127.0.0.1 -d site 8000
@@ -111,11 +122,16 @@ or `major` (breaking changes). From a terminal: `gh workflow run release -f bump
 
 The workflow:
 1. bumps `PREP_VERSION` in `server-prep.sh` and moves the `[Unreleased]` notes under the new version
-   in `CHANGELOG.md`, through a `release: vX.Y.Z` pull request that it lints and merges itself;
-2. tags the merge commit and publishes the GitHub release: the changelog notes, the merged pull requests,
+   in `CHANGELOG.md`, lints them, and puts that `release: vX.Y.Z` commit straight on `main`;
+2. tags that commit and publishes the GitHub release: the changelog notes, the merged pull requests,
    the scripts, the Telegraf template (`telegraf.conf.example`) and a `SHA256SUMS` file.
 
-GitHub signs the commit, the merge and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
+`main` only takes approved pull requests. The one exception is the release GitHub App, which only this
+workflow uses: it is on `main`'s bypass list, and its client ID (`RELEASE_APP_CLIENT_ID`) and private key
+(`RELEASE_APP_PRIVATE_KEY`) live in the `release` environment, which only `main` can use. The app has
+**Contents: read and write** on this repository and nothing else.
+
+GitHub signs the commit and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
 in a normal pull request, when the audit changes a lot.
 
 ## License

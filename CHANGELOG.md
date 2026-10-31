@@ -5,6 +5,10 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
+  file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
+  (some filesystems), it writes the file with `dd` instead.
+- The `/new-server` guide checks SSH journal entries and panel connection settings when validation fails.
 - The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
 - **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
   token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only
@@ -18,6 +22,17 @@ Highlights of each release. The full list of merged pull requests is in each
   `sudo cloudflared service uninstall` from a session that does not go through the tunnel, then
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only cloudflared` and type the new token at the
   hidden prompt.
+- **Security fix:** the firewall step said CHANGED even when the ufw-docker rules could not be set up (download blocked,
+  checksum mismatch, `ufw-docker install` failed, or rules not loaded), so Docker-published ports could still bypass UFW.
+  The step now shows FAILED, the report says whether Docker ports still bypass UFW, and `server-prep.sh` exits 1.
+  Scripts that run it will now see this failure. A re-run that changes nothing now shows `OK (already)` instead of
+  CHANGED.
+- **Security fix:** the audit's "Docker vs firewall" check passed when the DOCKER-USER chain only had CrowdSec or
+  manual DROP rules, even though published container ports still bypassed UFW. It now passes only when the ufw-docker
+  rules are loaded, with both the `ufw-user-forward` and `ufw-docker-logging-deny` jumps (or Docker's iptables
+  management is off). If a server now shows this FAIL, re-run the firewall step:
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes`.
+- Stop interactive `server-prep.sh` runs when no terminal can be opened, instead of silently accepting defaults. `--yes` still works without a terminal.
 - End-to-end tests ([docs/e2e-tests.md](docs/e2e-tests.md)): every supported system boots in a KVM virtual machine
   from its official cloud image and goes through `server-preconfig.sh`, a dry run, the interactive questions, a real
   run, SSH and Docker-vs-firewall checks from outside, a second run that must change nothing, and a reboot, with the
@@ -26,12 +41,10 @@ Highlights of each release. The full list of merged pull requests is in each
   them (**Test reports**), and `tests/e2e/preview.sh` shows the same pages from a local run.
 - Security: on Debian, where UFW is not installed by default, container ports published with `-p` bypassed UFW until
   the first reboot. The ufw-docker rules were written, but `systemctl restart ufw` did not load them. server-prep now
-  loads them with `ufw reload`, and the firewall step FAILs when they are still not loaded instead of reporting
-  CHANGED ([#68](https://github.com/exceev-consulting/server-prep/issues/68)). Found by the new end-to-end tests.
+  loads them with `ufw reload`. Found by the new end-to-end tests.
 - After a UFW reload, CrowdSec's bans covered the server again but not container ports: the reload removes the bouncer's
   rule from the DOCKER-USER chain. server-prep restarts the bouncer after reloading UFW, and `server-audit.sh` WARNs
   (`ips.crowdsec_bouncer`) when the rule is missing.
-- A second `server-prep.sh` run no longer reports the firewall step as CHANGED when its rules did not change.
 - Ubuntu 22.10+ (sshd started by `ssh.socket`): the SSH step could fail with "Address already in use" and roll back,
   and the rollback could then leave no SSH at all. server-prep now stops sshd before it restarts `ssh.socket`, and both
   rollback scripts do the same. If the restart that closes the old SSH port fails, the step rolls back too.
@@ -55,7 +68,12 @@ Highlights of each release. The full list of merged pull requests is in each
 - [Wiki](https://github.com/exceev-consulting/server-prep/wiki): beginner path, concepts, panels, troubleshooting, FAQ,
   glossary, architecture and roadmap. Its source lives in `wiki/` and `.github/workflows/wiki.yml` publishes it.
 - Discussions forms for Q&A, Ideas and Show and tell (setups and compatibility reports).
-- New logo: a keyhole standing on a terminal cursor, cut out of one rounded tile, black on light and white in dark mode. In the README
+- [Brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) on the setup console site: the logo, its
+  files to copy, the colours, type, interface parts and voice. Links to the repository and the site now show a preview
+  card, the site has an iPhone home-screen icon and a PNG favicon for older browsers, and its colours live in one file,
+  `site/tokens.css`. `scripts/check-tokens.sh` fails CI when a copy of them drifts. The setup console now loads
+  IBM Plex Mono SemiBold, so its name in the top bar matches the logo.
+- New logo: a keyhole cut out of one rounded tile, black on light and white in dark mode. In the README
   and the setup console (with an SVG favicon that follows the browser theme). Files in `.github/assets/`.
 - New [setup console](https://exceev-consulting.github.io/server-prep/) (`site/`): pick a VPS or a dedicated
   server, a panel (Coolify, Dokploy, Openship) and an access route, and see the open ports, who can log in, every
