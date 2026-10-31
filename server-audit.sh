@@ -438,9 +438,11 @@ declare -A UFW_APP_PORTS=()
 # ufw_app_lookup NAME: for a bare profile name as plain `ufw status` prints it ("OpenSSH",
 # "Nginx Full"), stores the profile's port entries from `ufw app info` in UFW_APP_PORTS[NAME], once
 # per name. Fails when NAME is not a profile name (a port spec, Anywhere, an address). A missing or
-# deleted profile stores no ports, so its rule matches no port. `ufw status verbose` always prints
-# the loaded ports, so this only serves the bare form. Only the indented port lines are read, so
-# the translated "Port:"/"Ports:" label does not matter. The name is always quoted, never evaluated.
+# deleted profile stores no ports, so its rule matches no port. This path is defensive: the audit
+# reads `ufw status verbose`, which always prints the loaded ports (22/tcp (OpenSSH)) and never a
+# bare name, so the verbose form does not depend on it and ufw_cache_apps finds nothing to look up.
+# Only the indented port lines are read, so the translated "Port:"/"Ports:" label does not matter.
+# The name is always quoted, never evaluated.
 ufw_app_lookup() {
     local name="$1" line ports="" name_re='^[A-Za-z0-9][A-Za-z0-9 _.+-]*$'
     local port_re='^[[:space:]]+([0-9][0-9,:]*(/[a-z0-9]+)?)[[:space:]]*$'
