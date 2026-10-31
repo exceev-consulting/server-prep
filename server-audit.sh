@@ -391,16 +391,18 @@ fi
 
 # ufw_rule_fields LINE: splits one rule line of `ufw status [verbose]` into the globals UFW_R_TO,
 # UFW_R_FROM and UFW_R_IFACE. Fails for lines that are not ALLOW/LIMIT rules (DENY, REJECT) and for
-# route (FWD) rules. It sets globals instead of printing, so callers need no subshell. ufw prints To with
-# "%-26s ", so a To value of 26 characters or more (80,443/tcp (Nginx Full (v6))) has only one space
-# before the action. To never holds "#", which starts a rule comment, so a comment cannot move the
-# split. Profile rules lose their label: 22/tcp (OpenSSH) and 22/tcp (OpenSSH (v6)) give 22/tcp, the
-# ports ufw loaded for that profile. A bare profile name (plain `ufw status`) is kept as it is.
+# route (FWD) and outgoing (OUT) rules, found by the word after the action, so a profile label such as
+# (FWD Proxy) still counts. It sets globals instead of printing, so callers need no subshell. ufw
+# prints To with "%-26s ", so a To value of 26 characters or more (80,443/tcp (Nginx Full (v6))) has
+# only one space before the action. To never holds "#", which starts a rule comment, so a comment
+# cannot move the split. Profile rules lose their label: 22/tcp (OpenSSH) and 22/tcp (OpenSSH (v6))
+# give 22/tcp, the ports ufw loaded for that profile. A bare profile name (plain `ufw status`) is
+# kept as it is.
 ufw_rule_fields() {
     local line="$1" rule_re='^([^#]*[^#[:space:]])[[:space:]]+(ALLOW|LIMIT)[[:space:]]+(IN[[:space:]]+)?(.+)$'
     local iface_re='^(.+) on ([^[:space:]()]+)$' label_re='^(.+[^[:space:]]) \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)$'
     [[ "$line" =~ $rule_re ]] || return 1
-    [[ "${line%% #*}" == *FWD* ]] && return 1
+    [[ "${BASH_REMATCH[4]}" == FWD* || "${BASH_REMATCH[4]}" == OUT* ]] && return 1
     UFW_R_TO="${BASH_REMATCH[1]}"; UFW_R_FROM="${BASH_REMATCH[4]}"; UFW_R_IFACE=""
     UFW_R_FROM="${UFW_R_FROM%"${UFW_R_FROM##*[![:space:]]}"}"
     # " on <iface>" comes last, after the label and after " (v6)". Anchored at the end with no spaces

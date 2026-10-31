@@ -131,6 +131,8 @@ set_rules '22/tcp (OpenSSH)' 'LIMIT IN' 'Anywhere'
 expect 22 tcp any "OpenSSH profile with limit"
 UFW_STATUS=$HEADER$'\n'"$(rule '22/tcp (OpenSSH)' 'ALLOW IN' 'Anywhere' 'ALLOW web, not FWD')"
 expect 22 tcp any "rule comment with ALLOW and FWD in it"
+set_rules '8080/tcp (FWD Proxy)' 'ALLOW IN' 'Anywhere'
+expect 8080 tcp any "profile label with FWD in it"
 UFW_STATUS=$HEADER$'\n'"$(rule '23/tcp' 'DENY IN' 'Anywhere' 'ALLOW later')"
 expect 23 tcp none "DENY rule with ALLOW in its comment"
 [[ -s "$tmp/ufw-calls" ]] && fail "verbose profile rules called ufw app info: $(tr '\n' ' ' <"$tmp/ufw-calls")"
@@ -202,6 +204,8 @@ set_rules '22/tcp (v6) on eth0' 'ALLOW IN' 'Anywhere (v6)'
 expect 22 tcp restricted "v6 port rule on an interface"
 set_rules '9000/tcp' 'ALLOW FWD' 'Anywhere'
 expect 9000 tcp none "route (FWD) rule"
+set_rules '3000/tcp' 'ALLOW OUT' 'Anywhere'
+expect 3000 tcp none "outgoing (OUT) rule"
 set_rules '23/tcp' 'DENY IN' 'Anywhere'
 expect 23 tcp none "deny rule"
 set_rules '2001:db8::1 2222/tcp' 'ALLOW IN' 'Anywhere'
