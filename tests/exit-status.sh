@@ -263,8 +263,9 @@ if ! step_telegram >/dev/null 2>&1 ||
 fi
 printf 'ok: step_telegram keeps the installed bot token on a re-run without one\n'
 
-# step_firewall: a re-run that changes nothing is "OK (already)" and a ufw-docker
-# failure fails the step. Every call that would reach the host is replaced first.
+# step_firewall: a re-run that changes nothing is "OK (already)" and reloads nothing, a
+# ufw-docker failure fails the step, and a missing CrowdSec rule in DOCKER-USER restarts the
+# bouncer. Every call that would reach the host is replaced first.
 LOG_FILE="$tmp/run.log"
 DRY_RUN=0
 SSH_PORT=822
@@ -275,16 +276,23 @@ PANEL_IP=""
 EXPOSE_WEB=no
 EXTRA_PORTS=""
 pkg_install() { :; }
-ufw() { echo "Status: active"; }                   # only "ufw status" is called directly
-run() { UFW_STATE="$UFW_STATE_AFTER"; }            # the ufw commands leave the rules as UFW_STATE_AFTER
+ufw() {                                            # only "ufw status [verbose]" is called directly
+    echo "Status: active"
+    [[ ${2:-} == verbose ]] && echo "Default: ${UFW_POLICY:-deny (incoming), allow (outgoing), deny (routed)}"
+    return 0
+}
+RAN=()
+run() { RAN+=("$*"); UFW_STATE="$UFW_STATE_AFTER"; }   # the ufw commands leave the rules as UFW_STATE_AFTER
 ufw_state() { printf '%s\n' "$UFW_STATE"; }
 ufw_docker_rules() { return "$UFW_DOCKER_RC"; }    # the real one runs ufw-docker, iptables and systemctl
 iptables() { printf '%s\n' "${DOCKER_USER_RULES:-}"; }   # the live DOCKER-USER chain
+CROWDSEC_RC=0
+crowdsec_in_docker_user() { return "$CROWDSEC_RC"; }   # the real one reads systemctl and the bouncer config
 
 expect_firewall() {   # expect_firewall LABEL HAS_DOCKER STATE_AFTER UFW_DOCKER_RC WANT(ok|fail) WANT_CHANGED [WANT_NOTE]
     local label="$1" want="$5" want_changed="$6" want_note="${7:-}" status=0 got=ok
     HAS_DOCKER="$2"; UFW_STATE_AFTER="$3"; UFW_DOCKER_RC="$4"
-    STEP_CHANGED=0; STEP_NOTES=""; MANUAL_TODO=(); UFW_STATE=old
+    STEP_CHANGED=0; STEP_NOTES=""; MANUAL_TODO=(); UFW_STATE=old; RAN=()
     step_firewall >"$tmp/firewall-output" 2>&1 || status=$?
     [[ "$status" -eq 0 ]] || got=fail
     if [[ "$got" != "$want" || "$STEP_CHANGED" -ne "$want_changed" || "$STEP_NOTES" != *"$want_note"* ]]; then
@@ -295,8 +303,25 @@ expect_firewall() {   # expect_firewall LABEL HAS_DOCKER STATE_AFTER UFW_DOCKER_
     fi
     printf 'ok: firewall %s\n' "$label"
 }
+expect_ran() {   # expect_ran LABEL yes|no COMMAND: did the last step_firewall run a command starting with COMMAND
+    local label="$1" want="$2" cmd="$3" c got=no
+    for c in "${RAN[@]}"; do [[ "$c" == "$cmd"* ]] && got=yes; done
+    if [[ "$got" != "$want" ]]; then
+        printf 'not ok: firewall %s ran "%s": %s, want %s\n' "$label" "$cmd" "$got" "$want"
+        exit 1
+    fi
+    printf 'ok: firewall %s ran "%s": %s\n' "$label" "$cmd" "$got"
+}
 expect_firewall 're-run with nothing to change is OK (already)' 1 old 0 ok 0
+# 'ufw default' and 'ufw reload' both reload the firewall, which drops CrowdSec's DOCKER-USER rule
+expect_ran 're-run with nothing to change' no 'ufw default'
+expect_ran 're-run with nothing to change' no 'ufw reload'
 expect_firewall 'with a new rule is CHANGED' 1 new 0 ok 1
+expect_ran 'with a new rule' yes 'ufw reload'
+UFW_POLICY='allow (incoming), allow (outgoing), disabled (routed)'
+expect_firewall 'with other default policies is CHANGED' 1 new 0 ok 1
+expect_ran 'with other default policies' yes 'ufw default deny incoming'
+UFW_POLICY=""
 expect_firewall 'fails when the ufw-docker rules are not loaded' 1 old 1 fail 0 'Docker ports still bypass UFW'
 DOCKER_USER_RULES='-A DOCKER-USER -j ufw-user-forward'
 expect_firewall 'fails but says when the rules of an earlier run are still loaded' 1 old 1 fail 0 'rules of an earlier run are still loaded'
@@ -307,9 +332,14 @@ if [[ ${#MANUAL_TODO[@]} -eq 0 ]]; then
     exit 1
 fi
 printf 'ok: firewall without Docker adds a to-do\n'
+CROWDSEC_RC=1
+expect_firewall 'restarts the CrowdSec bouncer when its DOCKER-USER rule is missing' 1 old 0 ok 1 'CrowdSec bouncer restarted'
+expect_ran 'with the CrowdSec rule missing' yes 'systemctl restart crowdsec-firewall-bouncer'
 DRY_RUN=1
 expect_firewall 'dry run is WOULD CHANGE' 1 old 0 ok 1
+expect_ran 'dry run' no 'systemctl restart crowdsec-firewall-bouncer'
 DRY_RUN=0
+CROWDSEC_RC=0
 
 # The SSH safety check tells the user which address to test from a second terminal
 # (issue #73). With Tailscale-only access the firewall blocks the local IP, so only the
