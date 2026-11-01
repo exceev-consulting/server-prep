@@ -24,26 +24,34 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
 **Never test on a server you care about.** Use a throwaway VM or a cheap VPS:
 `multipass launch 24.04`, an LXD/Incus VM, or a cloud VPS you delete afterwards.
 
+The easiest throwaway VM is the one the end-to-end tests make. On Linux with QEMU, `tests/e2e/run.sh --os debian-13`
+boots the official cloud image, runs the three scripts like an operator, reboots and checks the result, without
+root. See [docs/e2e-tests.md](docs/e2e-tests.md).
+
 ## Before you open a pull request
 
 1. **Syntax, lint and regression checks**:
    ```bash
-   for script in server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh; do
+   for script in server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh; do
        bash -n "$script" || exit 1
    done
-   shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh
+   shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
    scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
                                  # (audit "Docker vs firewall" matcher on sample iptables output)
                                  # and tests/validate-config.sh (--validate on a good config and broken ones); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
+   bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
    sudo ./server-prep.sh --dry-run --only <step>
    sudo ./server-audit.sh
    ```
-3. Say in the PR **what you tested**: OS and version, VPS or dedicated server, panel, dry run or real run.
+3. **End-to-end tests:** a PR that changes a script or the tests runs them on every supported system in CI, then
+   a comment gives the link to the HTML report. You can run one system locally first:
+   `tests/e2e/run.sh --os ubuntu-24.04` ([docs/e2e-tests.md](docs/e2e-tests.md)).
+4. Say in the PR **what you tested**: OS and version, VPS or dedicated server, panel, dry run or real run.
 
 ## Rules for the scripts
 

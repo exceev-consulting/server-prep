@@ -896,6 +896,7 @@ window.SERVER_PREP_DATA = {
             "id": "ips.crowdsec_bouncer",
             "title": "CrowdSec bouncer",
             "statuses": [
+              "WARN",
               "PASS",
               "FAIL"
             ]
@@ -1289,6 +1290,11 @@ window.SERVER_PREP_DATA = {
       "title": "Monitoring",
       "path": "docs/monitoring.md",
       "details": "Server and Docker metrics: Telegraf, InfluxDB and Grafana"
+    },
+    {
+      "title": "End-to-end tests",
+      "path": "docs/e2e-tests.md",
+      "details": "How every system is tested in a VM like a real server, where the reports are, run it yourself"
     },
     {
       "title": "Troubleshooting",
