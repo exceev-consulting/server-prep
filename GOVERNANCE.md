@@ -34,7 +34,7 @@ Never report one in a public issue or discussion.
 ## AI-assisted contributions
 
 Contributions made with Claude Code, Codex or other AI tools are welcome. They follow the same rules
-([CONTRIBUTING.md](CONTRIBUTING.md), [CLAUDE.md](CLAUDE.md)) and get the same review.
+([CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md)) and get the same review.
 
 The person who opens the pull request answers for it. They understand the change, they ran the tests the pull request
 mentions, and they reply to the review. See

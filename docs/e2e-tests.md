@@ -38,7 +38,7 @@ Each system (Debian 12 and 13, Ubuntu 22.04, 24.04 and 26.04) goes through these
 | `prep-run` | The real run exits 0, no step FAILs, and the panel's key logs in as root on port 822. |
 | `ssh-access` | The admin logs in with a key and can use sudo, the provider user and root with the admin key are refused, password login is off, root is refused from an address that is not the panel's, and port 22 gives no login: the Endlessh tarpit really listens there. |
 | `docker-firewall` | A container published with `-p` answers inside the server but not from outside. With a `ufw route allow` rule it does answer, which proves the test goes through the firewall. |
-| `audit-prepared` | The audit exits 0 with 0 FAIL, the checks a prepared server must pass are PASS, and the "hard-won gotchas" of `CLAUDE.md` hold. |
+| `audit-prepared` | The audit exits 0 with 0 FAIL, the checks a prepared server must pass are PASS, and the "hard-won gotchas" of `AGENTS.md` hold. |
 | `prep-rerun` | A second run reports every step as `OK (already)` or `SKIPPED`. Then a `--only firewall` run (what the to-do says when a panel installs Docker later) keeps container traffic going through UFW and CrowdSec. |
 | `reboot` | The server comes back, root and the admin log in on 822, no unit failed, and the tarpit is back on port 22. |
 | `audit-rebooted` | Still 0 FAIL after the reboot, and the gotchas still hold (`log_martians`, `suid_dumpable`...). |

@@ -122,7 +122,7 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
     done
 }
 
-check_regressions() {   # the "hard-won gotchas" of CLAUDE.md that a reboot or a re-run can undo
+check_regressions() {   # the "hard-won gotchas" of AGENTS.md that a reboot or a re-run can undo
     local v
     v="$(as_root 'sysctl -n net.ipv4.conf.all.log_martians')"
     check_eq "net.ipv4.conf.all.log_martians is 1 (UFW's sysctl.conf can reset it)" "$v" 1

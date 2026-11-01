@@ -81,7 +81,7 @@ a command-line usage error, including an unknown step name or a missing option v
 | [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
-| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and what is planned for Codex |
+| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and how Codex and other agents get the project rules |
 
 ## Supported systems
 

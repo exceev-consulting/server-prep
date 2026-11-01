@@ -67,6 +67,9 @@ Highlights of each release. The full list of merged pull requests is in each
 - Do not look for `server-audit.sh` in the current folder when `server-prep.sh` comes from standard input or `bash -c`.
 - [Wiki](https://github.com/exceev-consulting/server-prep/wiki): beginner path, concepts, panels, troubleshooting, FAQ,
   glossary, architecture and roadmap. Its source lives in `wiki/` and `.github/workflows/wiki.yml` publishes it.
+- Codex and other coding agents now get the project rules: they live in a new `AGENTS.md` (project map, safety rules,
+  commands, script conventions, a definition of done and the problems already fixed), which `CLAUDE.md` imports for
+  Claude Code. `docs/` and `.github/` each get a short `AGENTS.md` with their own rules.
 - Discussions forms for Q&A, Ideas and Show and tell (setups and compatibility reports).
 - [Brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) on the setup console site: the logo, its
   files to copy, the colours, type, interface parts and voice. Links to the repository and the site now show a preview
