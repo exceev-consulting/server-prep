@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml/badge.svg" alt="lint"></a>
+  <a href="https://exceev-consulting.github.io/server-prep/e2e/main/"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/e2e.yml/badge.svg?branch=main" alt="end-to-end tests"></a>
   <a href="https://github.com/exceev-consulting/server-prep/releases/latest"><img src="https://img.shields.io/github/v/release/exceev-consulting/server-prep" alt="latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0B1117.svg" alt="MIT license"></a>
 </p>
@@ -77,6 +78,7 @@ a command-line usage error, including an unknown step name or a missing option v
 | [First boot](server-preconfig.md) | `server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale |
 | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) | Publish apps with no open port, from Coolify, with a Zero Trust login |
 | [Monitoring](docs/monitoring.md) | Server and Docker metrics: Telegraf, InfluxDB and Grafana |
+| [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
 | [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and how Codex and other agents get the project rules |
@@ -84,6 +86,9 @@ a command-line usage error, including an unknown step name or a missing option v
 ## Supported systems
 
 Tested target: Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, on cloud VPS and on dedicated / on-premise servers.
+
+Each of these systems also runs end to end on every change to the scripts, in a VM booted from its official cloud image:
+[latest report](https://exceev-consulting.github.io/server-prep/e2e/main/) ([how it works](docs/e2e-tests.md)).
 
 ### VPS or dedicated server
 
