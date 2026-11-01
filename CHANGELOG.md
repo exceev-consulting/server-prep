@@ -61,6 +61,12 @@ Highlights of each release. The full list of merged pull requests is in each
   stop it: server-prep now stops it in a second call.
 - The default admin user `admin` could not be created on Ubuntu: its cloud images already have an `admin` group, so
   `useradd` refused and the users step FAILED with no reason given. The user now joins that group, and a failure says why.
+- **Security fix:** the audit's "Exposed TCP ports" check listed a port as firewalled when a UFW application profile
+  opened it (`ufw allow OpenSSH`, `ufw allow 'Nginx Full'`), so it did not count ports open to the internet. It now
+  reads the ports of profile rules, including IPv6 copies and long profile names. A rule that opens a whole protocol
+  (`ufw allow proto tcp from any to any`, shown as `Anywhere/tcp`) now counts too. On servers with such rules the count
+  can rise to a WARN (4 ports or more) or a FAIL (6 or more); on a FAIL, `server-audit.sh` exits 1. Servers set up
+  only by server-prep are not affected: its firewall step adds port rules, not profiles.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.
