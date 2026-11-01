@@ -5,6 +5,10 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
+  file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
+  (some filesystems), it writes the file with `dd` instead.
+- The `/new-server` guide checks SSH journal entries and panel connection settings when validation fails.
 - The SSH safety check now also prints the test command with the server's Tailscale IP when `PANEL_ACCESS` includes
   `tailscale`. When `ADMIN_IPS` is empty and the firewall is on, it shows only that command, because the firewall blocks
   SSH on the local IP. Before, it showed only the local IP, so with Tailscale-only access the test timed out and could
@@ -34,6 +38,7 @@ Highlights of each release. The full list of merged pull requests is in each
   rules are loaded, with both the `ufw-user-forward` and `ufw-docker-logging-deny` jumps (or Docker's iptables
   management is off). If a server now shows this FAIL, re-run the firewall step:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes`.
+- Stop interactive `server-prep.sh` runs when no terminal can be opened, instead of silently accepting defaults. `--yes` still works without a terminal.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.

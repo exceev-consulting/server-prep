@@ -35,6 +35,7 @@ git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
    scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
                                  # (audit "Docker vs firewall" matcher on sample iptables output); no system changes
+   bash tests/swap.sh            # swap file creation with fake commands; no system changes
    ```
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
