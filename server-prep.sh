@@ -5,6 +5,7 @@
 #
 #   Interactive:      sudo ./server-prep.sh
 #   From a config:    sudo ./server-prep.sh --config server-prep.conf --yes
+#   Check a config:   ./server-prep.sh --config server-prep.conf --validate   (no root needed)
 #   Preview only:     sudo ./server-prep.sh --dry-run
 #   Some steps only:  sudo ./server-prep.sh --only ssh,firewall
 #
@@ -76,6 +77,16 @@ AUDIT_SCRIPT="${AUDIT_SCRIPT:-}"
 AUDIT_URL="${AUDIT_URL:-}"                    # raw URL of server-audit.sh (single-file installs)
 PROJECT_URL="https://github.com/exceev-consulting/server-prep"   # guides linked from messages (release downloads have no docs/)
 
+# Every key a config file may set, for --validate: the settings above (keep both in sync,
+# tests/validate-config.sh checks it), ONLY and SKIP (a config can set them too) and the old COOLIFY_* names.
+# --validate checks every INSTALL_* setting as yes/no; another yes/no setting, or one with a format, also goes
+# into validate_values (tests/validate-config.sh fails on a yes/no setting it does not check).
+KNOWN_SETTINGS="ADMIN_USER ADMIN_PUBKEY PANEL PANEL_PUBKEY PANEL_ACCESS PANEL_IP CLOUDFLARED_TOKEN SSH_PORT ADMIN_IPS \
+EXPOSE_WEB EXTRA_PORTS TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_ENROLL_KEY CROWDSEC_LAPI_PORT INSTALL_DOCKER \
+DOCKER_AUTO_UPDATE AUTO_REBOOT AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER \
+INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF TELEGRAM_ENABLE TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS \
+SWAP_SIZE PTRACE_SCOPE AUDIT_SCRIPT AUDIT_URL ONLY SKIP COOLIFY_PUBKEY COOLIFY_ACCESS COOLIFY_IP"
+
 SERVICE_CANDIDATES="avahi-daemon cups cups-browsed bluetooth ModemManager apport"
 
 DRY_RUN=0
@@ -84,6 +95,7 @@ ASSUME_YES=0
 ONLY=""
 SKIP=""
 CONFIG_FILE=""
+VALIDATE=0
 
 usage() {
     cat <<EOF
@@ -92,6 +104,7 @@ server-prep.sh v${PREP_VERSION} - secure a Debian/Ubuntu server (VPS or dedicate
 Usage: sudo $0 [options]
 
   --config FILE        read settings from FILE (see server-prep.conf.example)
+  --validate           check the --config FILE and exit (no root, runs nothing, writes nothing)
   --yes                non-interactive: use config/env values and defaults
   --dry-run            show what would change, change nothing
   --only a,b,c         run only these steps
@@ -100,9 +113,10 @@ Usage: sudo $0 [options]
   -h, --help           this help
 
 Exit codes:
-  0  every selected step completed (or was skipped)
-  1  a step failed, or the run stopped early (not root, unsupported OS, aborted, invalid settings)
-  2  command-line usage error, including an unknown --only or --skip name
+  0  every selected step completed (or was skipped); with --validate: the config has no error (warnings allowed)
+  1  a step failed, or the run stopped early (not root, unsupported OS, aborted, invalid settings);
+     with --validate: the config has at least one error
+  2  command-line usage error, including an unknown --only or --skip name, or --validate without --config
 
 Steps: ${ALL_STEPS}
 EOF
@@ -120,6 +134,7 @@ while [[ $# -gt 0 ]]; do
         --config) [[ $# -ge 2 ]] || { echo "--config needs a value" >&2; exit 2; }; CONFIG_FILE="$2"; shift 2 ;;
         --yes|-y) ASSUME_YES=1; INTERACTIVE=0; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --validate) VALIDATE=1; shift ;;
         --only) [[ $# -ge 2 ]] || { echo "--only needs a value" >&2; exit 2; }; ONLY="${2//,/ }"; shift 2 ;;
         --skip) [[ $# -ge 2 ]] || { echo "--skip needs a value" >&2; exit 2; }; SKIP="${2//,/ }"; shift 2 ;;
         --list-steps) echo "$ALL_STEPS"; exit 0 ;;
@@ -141,6 +156,402 @@ check_step_names() {   # check_step_names NAMES...
 read -ra parsed_only <<< "$ONLY"
 read -ra parsed_skip <<< "$SKIP"
 check_step_names "${parsed_only[@]}" "${parsed_skip[@]}"
+
+# ----------------------------------------------------------------------------
+# Config check (--validate): runs before the file is sourced, never runs it, writes nothing
+# ----------------------------------------------------------------------------
+valid_pubkey() { [[ -n "$1" ]] && ssh-keygen -l -f /dev/stdin <<<"$1" >/dev/null 2>&1; }
+
+# The helpers below print with printf only: the output helpers and the log do not exist yet.
+vsay() {   # vsay ERROR|WARN|NOTE LINE MESSAGE: print one finding and count it for the total
+    case "$1" in
+        ERROR) v_errors=$((v_errors + 1)) ;;
+        WARN) v_warns=$((v_warns + 1)) ;;
+        *) v_notes=$((v_notes + 1)) ;;
+    esac
+    [[ $2 == - ]] && v_dash=1
+    printf '%s %s:%s %s\n' "$1" "$v_file" "$2" "$3"
+}
+vline() {   # vline KEY: the file line that sets KEY (or its old COOLIFY_* name), - when the value is a default or from the environment
+    local old=""
+    [[ $1 == PANEL_PUBKEY || $1 == PANEL_ACCESS || $1 == PANEL_IP ]] && old="COOLIFY_${1#PANEL_}"
+    if [[ -n "${v_line[$1]:-}" ]]; then
+        printf '%s' "${v_line[$1]}"
+    elif [[ -n "$old" && -n "${v_line[$old]:-}" ]]; then
+        printf '%s' "${v_line[$old]}"
+    else
+        printf '%s' -
+    fi
+}
+looks_like_token() {   # looks_like_token VALUE: true for a Telegram bot token, or a run of 20+ letters, digits, _ or -
+    # that mixes two of lowercase, uppercase and digits (an enroll key, an auth key...). Settings like IPs,
+    # timezones and service names never have one.
+    local w kinds
+    local -a words=()
+    [[ "$1" =~ [0-9]+:[A-Za-z0-9_-]{20,} ]] && return 0
+    read -ra words <<< "${1//[^A-Za-z0-9_-]/ }"
+    for w in "${words[@]}"; do
+        [[ ${#w} -ge 20 ]] || continue
+        kinds=0
+        [[ $w == *[[:lower:]]* ]] && kinds=$((kinds + 1))
+        [[ $w == *[[:upper:]]* ]] && kinds=$((kinds + 1))
+        [[ $w == *[[:digit:]]* ]] && kinds=$((kinds + 1))
+        [[ $kinds -ge 2 ]] && return 0
+    done
+    return 1
+}
+vq() {   # vq VALUE: the value in quotes when it is short and plain, so a message never prints control characters,
+    # and never when it looks like a token pasted into the wrong setting (the output gets pasted for help)
+    local plain='^[A-Za-z0-9 ._:/,+@=-]{0,60}$'
+    if ! [[ "$1" =~ $plain ]]; then
+        printf 'a value with special characters'
+    elif looks_like_token "$1"; then
+        printf 'a value that looks like a token (not shown)'
+    else
+        printf '"%s"' "$1"
+    fi
+}
+vtotal() {   # vtotal: print the total, return 1 when there is an error
+    [[ $v_dash -eq 1 ]] &&
+        printf '(- instead of a line number: the finding is about the whole file, or about a value the file does not set, so the default or a variable exported in your shell is used)\n'
+    if [[ $v_errors -gt 0 ]]; then
+        printf '%s error(s), %s warning(s), %s note(s): fix the errors, then run --validate again\n' \
+            "$v_errors" "$v_warns" "$v_notes"
+        return 1
+    fi
+    printf 'config OK (%s warning(s), %s note(s))\n' "$v_warns" "$v_notes"
+}
+
+edit_distance() {   # edit_distance A B: Levenshtein distance between two setting names
+    local a="$1" b="$2" i j cost best
+    local -a d_prev=() d_cur=()
+    for (( j = 0; j <= ${#b}; j++ )); do d_prev[j]=$j; done
+    for (( i = 1; i <= ${#a}; i++ )); do
+        d_cur=("$i")
+        for (( j = 1; j <= ${#b}; j++ )); do
+            cost=1; [[ "${a:i-1:1}" == "${b:j-1:1}" ]] && cost=0
+            best=$(( d_prev[j] + 1 ))
+            (( d_cur[j-1] + 1 < best )) && best=$(( d_cur[j-1] + 1 ))
+            (( d_prev[j-1] + cost < best )) && best=$(( d_prev[j-1] + cost ))
+            d_cur[j]=$best
+        done
+        d_prev=("${d_cur[@]}")
+    done
+    printf '%s\n' "${d_prev[${#b}]}"
+}
+
+valid_ip() {   # valid_ip ADDR[/PREFIX]: an IPv4 or IPv6 address or network
+    # no leading zero in an IPv4 number or a prefix length: ufw refuses 192.168.001.050 (inet_pton)
+    local addr="${1%%/*}" max=32 hex='[0-9A-Fa-f]{1,4}' num='(0|[1-9][0-9]{0,2})' o side colons n=0
+    if [[ "$addr" =~ ^${num}\.${num}\.${num}\.${num}$ ]]; then
+        for o in "${BASH_REMATCH[@]:1}"; do
+            (( 10#$o <= 255 )) || return 1
+        done
+    elif [[ "$addr" == *::* ]]; then
+        max=128
+        # one :: at most, and 7 groups at most around it
+        for side in "${addr%%::*}" "${addr#*::}"; do
+            [[ -z "$side" ]] && continue
+            [[ "$side" =~ ^${hex}(:${hex})*$ ]] || return 1
+            colons="${side//[^:]/}"
+            n=$(( n + ${#colons} + 1 ))
+        done
+        [[ $n -le 7 ]] || return 1
+    else
+        max=128
+        [[ "$addr" =~ ^${hex}(:${hex}){7}$ ]] || return 1
+    fi
+    if [[ "$1" == */* ]]; then
+        [[ "${1#*/}" =~ ^${num}$ ]] || return 1
+        (( 10#${1#*/} <= max )) || return 1
+    fi
+    return 0
+}
+
+# validate_config FILE: check a config file in two phases and print one line per finding, then a total.
+# Phase 1 reads the text and runs nothing. Phase 2 loads the known settings in a subshell and checks them.
+validate_config() {
+    local v_file="$1" v_errors=0 v_warns=0 v_notes=0 v_dash=0 n=0 i line key value best best_d best_d_new d name chunk
+    local LC_ALL=C   # byte-wise matching, the same result in every locale
+    local -A v_line=()
+    local -a v_assign=() v_assign_line=() v_lines=()
+    # what a value may be: "..." (escapes \" \\ \$ \`), '...', $'...' or a word with \x escapes,
+    # then blanks and a # comment. Nothing that expands or runs: no unescaped $ or `, no | & ; < > ( ).
+    # Blanks are space and tab only, as for bash (a form feed or vertical tab is part of a word for bash).
+    local dq='"([^"\\$`]|\\.)*"' sq="'[^']*'" ansi="[\$]'([^'\\\\]|\\\\.)*'"
+    local uq='[^[:blank:]"'"'"'\\$`|&;<>()]|\\.'
+    local re_val="^((${dq}|${sq}|${ansi}|${uq})*)([[:blank:]]+(#.*)?)?$"
+
+    # A NUL byte: mapfile ends the line there, but bash drops it and reads on, so the scan would check
+    # another line than the one bash runs. One error on the line of the first one, then stop.
+    if IFS= read -r -d '' chunk < "$v_file"; then
+        chunk="${chunk//[!$'\n']/}"
+        vsay ERROR "$(( ${#chunk} + 1 ))" "the file holds a NUL byte, so it is not a text file: remove it with: tr -d '\\000' < $v_file > $v_file.new"
+        vtotal; return 1
+    fi
+    mapfile -t v_lines < "$v_file"
+    # A pasted private key, a BOM or Windows line endings: one error for the whole file, then stop
+    for line in "${v_lines[@]}"; do
+        n=$((n + 1))
+        [[ "$line" == *"PRIVATE KEY"* && ! "$line" =~ ^[[:blank:]]*# ]] || continue
+        if [[ "$line" =~ ^[[:blank:]]*([A-Za-z_][A-Za-z0-9_]{0,39})= ]]; then
+            vsay ERROR "$n" "${BASH_REMATCH[1]} holds a private key: remove it and paste the public key (the .pub file: cat ~/.ssh/id_ed25519.pub). Make a new key if this file was shared"
+        else
+            vsay ERROR "$n" "line $n is part of a private key: remove the whole key and paste the public key (the .pub file: cat ~/.ssh/id_ed25519.pub). Make a new key if this file was shared"
+        fi
+        vtotal; return 1
+    done
+    if [[ "${v_lines[0]:-}" == $'\xef\xbb\xbf'* ]]; then
+        vsay ERROR 1 "the file starts with a UTF-8 BOM (a Windows editor): remove it with: sed -i '1s/^\xEF\xBB\xBF//' $v_file"
+        vtotal; return 1
+    fi
+    n=0
+    for line in "${v_lines[@]}"; do
+        n=$((n + 1))
+        if [[ "$line" == *$'\r' ]]; then
+            vsay ERROR "$n" "the file has Windows line endings (CRLF): convert it with: sed -i 's/\r\$//' $v_file"
+            vtotal; return 1
+        fi
+    done
+    # Any other control character but tab (a form feed, a vertical tab, a carriage return inside a line...):
+    # invisible in most editors, and bash reads it as part of a word, so a # after it is no comment
+    n=0
+    for line in "${v_lines[@]}"; do
+        n=$((n + 1))
+        [[ "${line//$'\t'/ }" == *[[:cntrl:]]* ]] &&
+            vsay ERROR "$n" "line $n holds a control character (cat -A $v_file shows it, as ^L or ^K for example): remove it"
+    done
+    if [[ $v_errors -gt 0 ]]; then
+        vtotal; return 1
+    fi
+
+    # Phase 1: the scan. A line that cannot be read stops it; unknown keys are all listed.
+    # Messages never print the line or the value, which can be a token or a key.
+    n=0
+    for line in "${v_lines[@]}"; do
+        n=$((n + 1))
+        [[ "$line" =~ ^[[:blank:]]*$ || "$line" =~ ^[[:blank:]]*# ]] && continue
+        if ! [[ "$line" =~ ^[[:blank:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            vsay ERROR "$n" "line $n is not a setting: write KEY=\"value\" or start a comment with #"
+            break
+        fi
+        key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        name="$key"
+        [[ ${#key} -gt 40 ]] && name="line $n"   # a pasted token, never printed
+        if ! [[ "$value" =~ $re_val ]]; then
+            vsay ERROR "$n" "${name}: this value cannot be read safely: put it in double quotes, without \$, \` or ;"
+            break
+        fi
+        value="${BASH_REMATCH[1]}"
+        if [[ "$value" == *'$('* || "$value" == *'`'* || "$value" == *';'* ]]; then
+            vsay ERROR "$n" "${name}: a value cannot hold \$(, \` or ;: remove them"
+            break
+        fi
+        if [[ " $KNOWN_SETTINGS " == *" $key "* ]]; then
+            [[ $key == COOLIFY_* ]] &&
+                vsay NOTE "$n" "$key is the old name of PANEL_${key#COOLIFY_}: it still works, rename it"
+            v_line[$key]=$n            # the last one wins, as in bash
+            v_assign+=("$key=$value")
+            v_assign_line+=("$n")
+        elif [[ ${#key} -gt 40 ]]; then
+            vsay ERROR "$n" "line $n is not a setting (a pasted token or key?): remove it"
+        else
+            best=""; best_d=99
+            for d in $KNOWN_SETTINGS; do
+                best_d_new="$(edit_distance "${key^^}" "$d")"
+                [[ $best_d_new -lt $best_d ]] && { best_d=$best_d_new; best=$d; }
+            done
+            if [[ $best_d -le 3 && $(( best_d * 3 )) -le ${#key} ]]; then
+                vsay ERROR "$n" "$key is not a known setting: did you mean $best?"
+            else
+                vsay ERROR "$n" "$key is not a known setting: see server-prep.conf.example for the names"
+            fi
+        fi
+    done
+    if [[ $v_errors -gt 0 ]]; then
+        vtotal; return 1
+    fi
+
+    # Phase 2, in a subshell: load the known settings over the defaults (the grammar above leaves
+    # nothing to expand but a tilde), map the old names like a real run, then check the values.
+    # Escapes like $'\x24(' or \$\( give back what the scan refused: check every value once read,
+    # since some go into files that root sources (telegram.env).
+    (
+        for i in "${!v_assign[@]}"; do
+            eval "${v_assign[i]}"
+            key="${v_assign[i]%%=*}"
+            value="${!key}"
+            if [[ "$value" == *'$('* || "$value" == *'`'* || "$value" == *';'* || "${value//$'\t'/ }" == *[[:cntrl:]]* ]]; then
+                vsay ERROR "${v_assign_line[i]}" "$key: once its escapes are read, this value holds \$(, \`, ; or a control character: remove them"
+            fi
+        done
+        if [[ $v_errors -gt 0 ]]; then
+            vtotal; exit
+        fi
+        [[ -n "$PANEL_PUBKEY" ]] || PANEL_PUBKEY="${COOLIFY_PUBKEY:-}"
+        [[ -n "$PANEL_ACCESS" ]] || PANEL_ACCESS="${COOLIFY_ACCESS:-}"
+        [[ -n "$PANEL_IP" ]] || PANEL_IP="${COOLIFY_IP:-}"
+        validate_values
+        vtotal
+    )
+}
+
+# validate_values: phase 2 of validate_config. A value goes into arithmetic only after it matched digits,
+# lists are split with read (no globbing) and ${!k} only reads fixed setting names.
+validate_values() {
+    local k v l item bad has_public=0 has_tunnel=0 unchecked=0 secret=0 mode
+    local yesno="DOCKER_AUTO_UPDATE AUTO_REBOOT HEADLESS TELEGRAM_ENABLE EXPOSE_WEB"
+    local -a access=() list=() bad_list=()
+
+    for k in $KNOWN_SETTINGS; do [[ $k == INSTALL_* ]] && yesno+=" $k"; done   # every INSTALL_* is yes/no
+    for k in $yesno; do
+        v="${!k}"
+        [[ $k == EXPOSE_WEB && -z "$v" ]] && continue   # empty: yes with public access, no otherwise
+        [[ "${v,,}" == yes || "${v,,}" == no ]] || vsay ERROR "$(vline "$k")" "$k is $(vq "$v"): write yes or no"
+    done
+    [[ "$LAPTOP_MODE" == auto || "$LAPTOP_MODE" == yes || "$LAPTOP_MODE" == no ]] ||
+        vsay ERROR "$(vline LAPTOP_MODE)" "LAPTOP_MODE is $(vq "$LAPTOP_MODE"): write auto, yes or no (lowercase)"
+
+    # How the panel reaches this server, and who else can reach SSH
+    read -rd '' -a access <<< "${PANEL_ACCESS//,/ }"
+    for item in "${access[@]}"; do
+        case "$item" in
+            public) has_public=1 ;;
+            tailscale|cloudflared) has_tunnel=1 ;;
+            *) vsay ERROR "$(vline PANEL_ACCESS)" "PANEL_ACCESS has $(vq "$item"): use cloudflared, tailscale or public (a comma list, e.g. tailscale,public)" ;;
+        esac
+    done
+    if [[ -n "$PANEL_IP" ]]; then
+        valid_ip "$PANEL_IP" ||
+            vsay ERROR "$(vline PANEL_IP)" "PANEL_IP is $(vq "$PANEL_IP"), which is not an IP address: set it to the public IP of your panel server (on that server: curl -4 ifconfig.me)"
+    elif [[ $has_public -eq 1 ]]; then
+        l="$(vline PANEL_IP)"; [[ $l == - ]] && l="$(vline PANEL_ACCESS)"
+        vsay ERROR "$l" "PANEL_ACCESS has public but PANEL_IP is empty: Set PANEL_IP to the public IP of your panel server (on that server: curl -4 ifconfig.me)"
+    fi
+    if [[ -z "${ADMIN_IPS//[[:space:],]/}" && $has_tunnel -eq 0 ]]; then
+        l="$(vline ADMIN_IPS)"; [[ $l == - ]] && l="$(vline PANEL_ACCESS)"
+        if [[ $has_public -eq 1 ]]; then
+            vsay WARN "$l" "ADMIN_IPS is empty and PANEL_ACCESS has no tailscale or cloudflared: only the panel server (PANEL_IP) will reach SSH, so you will be locked out of new SSH logins. Add your IP or network to ADMIN_IPS"
+        elif [[ ${#access[@]} -eq 0 ]]; then
+            vsay WARN "$l" "ADMIN_IPS and PANEL_ACCESS are empty: SSH will be open to everyone (rate-limited, keys only). Add your IPs to ADMIN_IPS to limit it"
+        fi
+    fi
+    if [[ -n "$PANEL_PUBKEY" && ${#access[@]} -eq 0 ]]; then
+        l="$(vline PANEL_ACCESS)"; [[ $l == - ]] && l="$(vline PANEL_PUBKEY)"
+        vsay WARN "$l" "PANEL_PUBKEY is set but PANEL_ACCESS is empty: root login will be refused everywhere, the panel will not connect. Set PANEL_ACCESS to cloudflared, tailscale or public"
+    fi
+
+    # SSH keys (never printed)
+    for k in ADMIN_PUBKEY PANEL_PUBKEY; do
+        v="${!k}"
+        [[ -n "$v" ]] || continue
+        l="$(vline "$k")"
+        if [[ "$v" == *"PRIVATE KEY"* ]]; then
+            vsay ERROR "$l" "$k holds a private key: remove it and paste the public key (the .pub file: cat ~/.ssh/id_ed25519.pub). Make a new key if it was shared"
+        elif [[ "$v" == *"AAAA..."* && $k == ADMIN_PUBKEY ]]; then
+            vsay ERROR "$l" "ADMIN_PUBKEY is still the example placeholder: paste your public key (on your computer: cat ~/.ssh/id_ed25519.pub)"
+        elif [[ "$v" == *"AAAA..."* ]]; then
+            vsay ERROR "$l" "PANEL_PUBKEY is still the example placeholder: paste the public part of the panel's SSH key (Coolify: Keys & Tokens -> Private Keys -> the key -> Public Key)"
+        elif ! command -v ssh-keygen >/dev/null 2>&1; then
+            unchecked=1
+        elif ! valid_pubkey "$v"; then
+            vsay ERROR "$l" "$k is not a valid public key (expected one line like: ssh-ed25519 AAAA... comment)"
+        fi
+    done
+    [[ $unchecked -eq 1 ]] && vsay WARN - "cannot check ADMIN_PUBKEY and PANEL_PUBKEY: ssh-keygen is missing (install openssh-client)"
+    [[ -n "$ADMIN_PUBKEY" ]] ||
+        vsay WARN "$(vline ADMIN_PUBKEY)" "ADMIN_PUBKEY is empty: password login over SSH gets turned off, so the admin user needs a key already on the server. Paste your public key here to be sure (cat ~/.ssh/id_ed25519.pub)"
+    # The admin user goes into useradd and AllowUsers: a blank or an @ there locks the admin out of SSH
+    if [[ -n "$ADMIN_USER" && ! "$ADMIN_USER" =~ ^[A-Za-z_][A-Za-z0-9_.-]{0,31}$ ]]; then
+        vsay ERROR "$(vline ADMIN_USER)" "ADMIN_USER is $(vq "$ADMIN_USER"), which is not a user name: write up to 32 letters, digits, _, . or -, starting with a letter, e.g. admin"
+    elif [[ "$ADMIN_USER" == root ]]; then
+        vsay WARN "$(vline ADMIN_USER)" "ADMIN_USER is root, but SSH refuses root logins except from the panel's sources: pick a normal user, e.g. admin"
+    fi
+
+    # Ports, addresses and formats
+    for k in SSH_PORT CROWDSEC_LAPI_PORT; do
+        v="${!k}"
+        [[ "$v" =~ ^[1-9][0-9]{0,4}$ ]] && (( 10#$v <= 65535 )) && continue
+        vsay ERROR "$(vline "$k")" "$k is $(vq "$v"): write a number from 1 to 65535"
+    done
+    [[ "$SSH_PORT" == 22 ]] &&
+        vsay WARN "$(vline SSH_PORT)" "SSH_PORT is 22, the port bots scan all day (and the Endlessh tarpit needs it): pick another port, e.g. 822"
+    [[ "$CROWDSEC_LAPI_PORT" == 8080 ]] &&
+        vsay WARN "$(vline CROWDSEC_LAPI_PORT)" "CROWDSEC_LAPI_PORT is 8080, which Traefik dashboards use: use 8091"
+    read -rd '' -a list <<< "${ADMIN_IPS//,/ }"
+    for item in "${list[@]}"; do
+        valid_ip "$item" ||
+            vsay ERROR "$(vline ADMIN_IPS)" "ADMIN_IPS has $(vq "$item"), which is not an IP address or network: write IPs or networks like 203.0.113.4 192.168.1.0/24"
+    done
+    read -rd '' -a list <<< "${EXTRA_PORTS//,/ }"
+    for item in "${list[@]}"; do
+        [[ "$item" =~ ^([1-9][0-9]{0,4})(/(tcp|udp))?$ ]] && (( 10#${BASH_REMATCH[1]} <= 65535 )) && continue
+        vsay ERROR "$(vline EXTRA_PORTS)" "EXTRA_PORTS has $(vq "$item"): write port, port/tcp or port/udp with a port from 1 to 65535, e.g. 8000/tcp"
+    done
+    [[ "$AUTO_REBOOT_TIME" =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]] ||
+        vsay ERROR "$(vline AUTO_REBOOT_TIME)" "AUTO_REBOOT_TIME is $(vq "$AUTO_REBOOT_TIME"): write HH:MM, e.g. 04:00"
+    [[ "$PTRACE_SCOPE" =~ ^[0-3]$ ]] ||
+        vsay ERROR "$(vline PTRACE_SCOPE)" "PTRACE_SCOPE is $(vq "$PTRACE_SCOPE"): write 0, 1, 2 or 3 (2 is the default)"
+    [[ "$SWAP_SIZE" =~ ^(0|[1-9][0-9]*[KMGTkmgt](iB|B)?)?$ ]] ||
+        vsay ERROR "$(vline SWAP_SIZE)" "SWAP_SIZE is $(vq "$SWAP_SIZE"): write a size like 2G or 512M, or 0 for no swap"
+    if [[ -n "$TIMEZONE" ]]; then
+        if ! [[ "$TIMEZONE" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] ||
+           { [[ -d /usr/share/zoneinfo ]] && [[ ! -f "/usr/share/zoneinfo/$TIMEZONE" ]]; }; then
+            vsay ERROR "$(vline TIMEZONE)" "TIMEZONE is $(vq "$TIMEZONE"), which is not a known timezone: write a name like Europe/Paris or UTC (list them with: timedatectl list-timezones)"
+        fi
+    fi
+    # Both are written into telegram.env, which root sources at every SSH login: nothing but a chat id and user names
+    if [[ -n "$TELEGRAM_CHAT_ID" && ! "$TELEGRAM_CHAT_ID" =~ ^(-?[0-9]+|@[A-Za-z0-9_]+)$ ]]; then
+        if [[ "$TELEGRAM_CHAT_ID" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
+            # the bot token, swapped with the chat id: never printed, and the file mode is checked below
+            [[ -n "${v_line[TELEGRAM_CHAT_ID]:-}" ]] && secret=1
+            vsay ERROR "$(vline TELEGRAM_CHAT_ID)" "TELEGRAM_CHAT_ID looks like the bot token: put the token in TELEGRAM_BOT_TOKEN (or leave it empty and type it at the hidden prompt) and the chat id here, a number like 123456789. Revoke the token in @BotFather if this file was shared"
+        else
+            vsay ERROR "$(vline TELEGRAM_CHAT_ID)" "TELEGRAM_CHAT_ID is $(vq "$TELEGRAM_CHAT_ID"): write the chat id, a number like 123456789 or -1001234567890 (or @channelname)"
+        fi
+    fi
+    read -rd '' -a list <<< "$TELEGRAM_IGNORE_USERS"
+    for item in "${list[@]}"; do
+        [[ "$item" =~ ^[A-Za-z_][A-Za-z0-9_.-]*[$]?$ ]] ||
+            vsay ERROR "$(vline TELEGRAM_IGNORE_USERS)" "TELEGRAM_IGNORE_USERS has $(vq "$item"), which is not a user name: write user names separated by spaces, e.g. root deploy"
+    done
+    read -rd '' -a list <<< "$DISABLE_SERVICES"
+    for item in "${list[@]}"; do
+        [[ " $SERVICE_CANDIDATES " == *" $item "* ]] ||
+            vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES has $(vq "$item"), which is not one of: ${SERVICE_CANDIDATES}. The service of that name will be disabled: check the name"
+    done
+    for k in ONLY SKIP; do
+        [[ -n "${v_line[$k]:-}" ]] || continue
+        read -rd '' -a list <<< "${!k}"
+        bad="$(invalid_steps "${list[@]}")"
+        read -rd '' -a bad_list <<< "$bad"
+        for item in "${bad_list[@]}"; do
+            vsay ERROR "$(vline "$k")" "$k has $(vq "$item"), which is not a step: write step names separated by spaces, from: ${ALL_STEPS}"
+        done
+    done
+
+    # Secrets: never printed. The file should stay on the server, readable by its owner only.
+    for k in CLOUDFLARED_TOKEN TELEGRAM_BOT_TOKEN CROWDSEC_ENROLL_KEY; do
+        [[ -n "${v_line[$k]:-}" && -n "${!k}" ]] || continue
+        secret=1
+        vsay WARN "$(vline "$k")" "$k holds a secret: never commit or paste this file (or leave it empty and type it at the hidden prompt)"
+    done
+    if [[ $secret -eq 1 ]]; then
+        mode="$(stat -c %a -- "$v_file" 2>/dev/null)"
+        if [[ "$mode" =~ ^[0-7]+$ ]] && (( 8#$mode & 8#044 )); then
+            vsay WARN - "other users can read this file and it holds a secret: chmod 600 $v_file"
+        fi
+    fi
+    return 0
+}
+
+if [[ $VALIDATE -eq 1 ]]; then
+    [[ -n "$CONFIG_FILE" ]] || { echo "--validate needs --config FILE" >&2; exit 2; }
+    [[ -f "$CONFIG_FILE" && -r "$CONFIG_FILE" ]] || { echo "Cannot read $CONFIG_FILE" >&2; exit 2; }
+    validate_config "$CONFIG_FILE"
+    exit $?
+fi
 
 if [[ -n "$CONFIG_FILE" ]]; then
     [[ -r "$CONFIG_FILE" ]] || { echo "Cannot read $CONFIG_FILE" >&2; exit 2; }
@@ -255,8 +666,6 @@ confirm() {   # confirm "question" -> 0 yes / 1 no
     [[ $ASSUME_YES -eq 1 ]] && return 0
     local a; ask_yn a "$1" "${2:-no}"; [[ $a == yes ]]
 }
-
-valid_pubkey() { [[ -n "$1" ]] && ssh-keygen -l -f /dev/stdin <<<"$1" >/dev/null 2>&1; }
 
 # ----------------------------------------------------------------------------
 # Step bookkeeping & file helpers
