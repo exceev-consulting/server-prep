@@ -154,14 +154,16 @@ Then open http://localhost:8000 in your browser.
 
 ## CI workflows
 
-Three workflows live in [`.github/workflows/`](https://github.com/exceev-consulting/server-prep/tree/main/.github/workflows).
+Five workflows live in [`.github/workflows/`](https://github.com/exceev-consulting/server-prep/tree/main/.github/workflows).
 
 | Workflow | When | What it does |
 |---|---|---|
-| `lint` | Every push to `main` and every PR | `bash -n` on every script, ShellCheck at `-S warning`, each script's `--help`, and `scripts/gen-data.sh --check` (fails when the site data is out of date) |
-| `pages` | Push to `main` that touches the site, the scripts, the README or the config example; or by hand | Checks the site data again, then deploys `site/` to GitHub Pages |
+| `lint` | Every push to `main` and every PR | `bash -n` on every script, ShellCheck at `-S warning`, each script's `--help`, `scripts/gen-data.sh --check` (fails when the site data is out of date), and the quick tests in `tests/` |
+| `e2e` | PRs and pushes to `main` that change a script or the tests; every Monday; or by hand | Boots each supported system in a KVM virtual machine from its official cloud image and runs the scripts like an operator: preconfig, dry run, interactive questions, real run, SSH and firewall checks from outside, a second run, a reboot, and the audit at each stage. See [docs/e2e-tests.md](https://github.com/exceev-consulting/server-prep/blob/main/docs/e2e-tests.md) |
+| `pages` | Push to `main` that touches the site, the scripts, the README or the config example; when an `e2e` run ends; when a PR closes; or by hand | Checks the site data again, rebuilds the end-to-end reports (the last run of `main` and of each open PR) under `/e2e/`, and deploys everything to GitHub Pages. It runs from `main` and never runs PR code |
+| `wiki` | Push to `main` that touches `wiki/`; or by hand | Publishes `wiki/` to the GitHub Wiki |
 | `release` | By hand only (the release button) | Bumps the version, updates the changelog and the site data in one commit put on `main` by the release app (the one exception to `main`'s required approval), tags, and publishes the release with `SHA256SUMS`. See [Maintainer handbook](Maintainer-handbook). |
 
-More checks are planned: a consistency check that keeps steps, README, config example and audit in sync ([#35](https://github.com/exceev-consulting/server-prep/issues/35)), one local script that runs everything CI runs ([#34](https://github.com/exceev-consulting/server-prep/issues/34)), unit tests ([#37](https://github.com/exceev-consulting/server-prep/issues/37)), an Ubuntu and Debian integration matrix with an idempotency check ([#38](https://github.com/exceev-consulting/server-prep/issues/38)), and secret scanning ([#40](https://github.com/exceev-consulting/server-prep/issues/40)).
+More checks are planned: a consistency check that keeps steps, README, config example and audit in sync ([#35](https://github.com/exceev-consulting/server-prep/issues/35)), one local script that runs everything CI runs ([#34](https://github.com/exceev-consulting/server-prep/issues/34)), unit tests ([#37](https://github.com/exceev-consulting/server-prep/issues/37)), and secret scanning ([#40](https://github.com/exceev-consulting/server-prep/issues/40)).
 
 Architecture choices are recorded as ADRs (architecture decision records) in [`docs/decisions/`](https://github.com/exceev-consulting/server-prep/tree/main/docs/decisions). Its README says when to write one. How decisions are made: [GOVERNANCE.md](https://github.com/exceev-consulting/server-prep/blob/main/GOVERNANCE.md).
