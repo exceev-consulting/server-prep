@@ -33,6 +33,34 @@ Highlights of each release. The full list of merged pull requests is in each
   management is off). If a server now shows this FAIL, re-run the firewall step:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --yes`.
 - Stop interactive `server-prep.sh` runs when no terminal can be opened, instead of silently accepting defaults. `--yes` still works without a terminal.
+- End-to-end tests ([docs/e2e-tests.md](docs/e2e-tests.md)): every supported system boots in a KVM virtual machine
+  from its official cloud image and goes through `server-preconfig.sh`, a dry run, the interactive questions, a real
+  run, SSH and Docker-vs-firewall checks from outside, a second run that must change nothing, and a reboot, with the
+  audit at each stage. `main` and pull requests (from forks: only those of collaborators) get an HTML report on
+  GitHub Pages ([latest](https://exceev-consulting.github.io/server-prep/e2e/main/)). The setup console links to
+  them (**Test reports**), and `tests/e2e/preview.sh` shows the same pages from a local run.
+- Security: on Debian, where UFW is not installed by default, container ports published with `-p` bypassed UFW until
+  the first reboot. The ufw-docker rules were written, but `systemctl restart ufw` did not load them. server-prep now
+  loads them with `ufw reload`. Found by the new end-to-end tests.
+- After a UFW reload, CrowdSec's bans covered the server again but not container ports: the reload removes the bouncer's
+  rule from the DOCKER-USER chain. server-prep restarts the bouncer after reloading UFW, and `server-audit.sh` WARNs
+  (`ips.crowdsec_bouncer`) when the rule is missing.
+- Ubuntu 22.10+ (sshd started by `ssh.socket`): the SSH step could fail with "Address already in use" and roll back,
+  and the rollback could then leave no SSH at all. server-prep now stops sshd before it restarts `ssh.socket`, and both
+  rollback scripts do the same. If the restart that closes the old SSH port fails, the step rolls back too.
+- `server-preconfig.sh` enables `ssh.socket` instead of `ssh.service` where sshd is socket-activated, and `--check`
+  accepts it. Enabling both made the later port change fail.
+- Rollbacks: when the SSH restart failed, the 10-minute rollback timer stayed armed and could undo a re-run made in
+  the meantime; it is now stopped, like any timer left by an earlier run. `rollback.sh` stops the Endlessh tarpit before
+  SSH goes back to port 22, and restarts the CrowdSec bouncer after its UFW reload.
+- Ubuntu 24.04: the Endlessh tarpit never ran. Its packaged unit hides `/run`, which systemd 255 can't set up, so it
+  exited at once (226/NAMESPACE) while the step reported CHANGED, and a re-run FAILED. server-prep's override now hides
+  only `/var` and makes the rest read-only, and the step checks that port 22 really listens.
+- Ubuntu 22.04: apport kept running after the services step "disabled" it, so `fs.suid_dumpable` could go back to 2
+  and every re-run reported the step as CHANGED. For a unit made from an init script, `systemctl disable --now` does not
+  stop it: server-prep now stops it in a second call.
+- The default admin user `admin` could not be created on Ubuntu: its cloud images already have an `admin` group, so
+  `useradd` refused and the users step FAILED with no reason given. The user now joins that group, and a failure says why.
 - **Security fix:** the audit's "Exposed TCP ports" check listed a port as firewalled when a UFW application profile
   opened it (`ufw allow OpenSSH`, `ufw allow 'Nginx Full'`), so it did not count ports open to the internet. It now
   reads the ports of profile rules, including IPv6 copies and long profile names. A rule that opens a whole protocol

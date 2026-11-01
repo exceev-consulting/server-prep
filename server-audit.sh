@@ -577,7 +577,16 @@ if have cscli || systemctl cat crowdsec >/dev/null 2>&1; then
         [[ $IS_ROOT -eq 1 ]] && dec=$(cscli decisions list -o raw 2>/dev/null | tail -n +2 | wc -l)
         result ips.crowdsec PASS "CrowdSec" "Running${dec:+ - ${dec} active local decision(s)}"
         if systemctl list-units --type=service --state=running 2>/dev/null | grep -q 'crowdsec-firewall-bouncer'; then
-            result ips.crowdsec_bouncer PASS "CrowdSec bouncer" "Firewall bouncer is running (bans are enforced)"
+            # A UFW reload empties DOCKER-USER and drops the bouncer's jump until the bouncer restarts.
+            if [[ $DOCKER_ACTIVE -eq 1 && $IS_ROOT -eq 1 ]] \
+                && grep -Eqs '^mode:[[:space:]]*iptables' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml \
+                && grep -Eqs '^[[:space:]]*-[[:space:]]*DOCKER-USER' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml \
+                && ! iptables -S DOCKER-USER 2>/dev/null | grep -qi crowdsec; then
+                result ips.crowdsec_bouncer WARN "CrowdSec bouncer" "Running, but not in the DOCKER-USER chain: bans do not cover container ports" \
+                    "sudo systemctl restart crowdsec-firewall-bouncer"
+            else
+                result ips.crowdsec_bouncer PASS "CrowdSec bouncer" "Firewall bouncer is running (bans are enforced)"
+            fi
         else
             result ips.crowdsec_bouncer FAIL "CrowdSec bouncer" "No firewall bouncer running - CrowdSec detects but does not block" \
                 "sudo apt install crowdsec-firewall-bouncer-iptables"
