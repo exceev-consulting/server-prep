@@ -341,5 +341,80 @@ expect_ran 'dry run' no 'systemctl restart crowdsec-firewall-bouncer'
 DRY_RUN=0
 CROWDSEC_RC=0
 
+# The SSH safety check tells the user which address to test from a second terminal
+# (issue #73). With Tailscale-only access the firewall blocks the local IP, so only the
+# Tailscale IP is shown. Without a Tailscale IP, the old text stays as it was, plus a warning
+# when the firewall allows only Tailscale.
+# "tailscale" is a fake function here: the test never reads this host's real tailnet.
+# 192.0.2.10 (a documentation address) stands in for the server's 100.x Tailscale IP.
+timeout() { shift; "$@"; }   # drops the duration (always the first argument): the fake tailscale answers at once
+tailscale() {
+    [[ "$*" == 'ip -4' ]] || return 1
+    [[ -n "${TS_OUT:-}" ]] && printf '%s\n' "$TS_OUT"
+    return "${TS_RC:-0}"
+}
+SSH_PORT=822
+ADMIN_USER='admin'
+LOCAL_IP=192.168.1.50
+fallback='  Open a NEW terminal and test:  ssh -p 822 admin@192.168.1.50'
+
+expect_hint() {   # expect_hint LABEL PANEL_ACCESS ADMIN_IPS TS_OUT is|has WANT_FIRST WANT_ALSO NOT_WANT
+    local label="$1" match="$5" want_first="$6" want_also="$7" not_want="$8" out first ok=1
+    PANEL_ACCESS="$2"; ADMIN_IPS="$3"; TS_OUT="$4"
+    out="$(ssh_test_hint)"
+    first="${out%%$'\n'*}"
+    if [[ "$match" == is ]]; then
+        [[ "$first" == "$want_first" ]] || ok=0
+    else
+        [[ "$first" == *"$want_first"* ]] || ok=0
+    fi
+    [[ "$out" == *"$want_also"* && "$out" == *"Keep this terminal open"* ]] || ok=0
+    [[ -n "$not_want" && "$out" == *"$not_want"* ]] && ok=0
+    if [[ $ok -eq 0 ]]; then
+        printf 'not ok: SSH test hint %s; first line %s "%s", also "%s", never "%s"; got:\n%s\n' \
+            "$label" "$match" "$want_first" "$want_also" "$not_want" "$out"
+        exit 1
+    fi
+    printf 'ok: SSH test hint %s\n' "$label"
+}
+TS_RC=0
+expect_hint 'with Tailscale only shows only the Tailscale IP' tailscale '' 192.0.2.10 \
+    has 'admin@192.0.2.10' 'ADMIN_IPS is empty' 'admin@192.168.1.50'
+expect_hint 'with Tailscale and a blank ADMIN_IPS shows only the Tailscale IP' tailscale $' ,\t' 192.0.2.10 \
+    has 'admin@192.0.2.10' 'ADMIN_IPS is empty' 'admin@192.168.1.50'
+expect_hint 'with Tailscale and ADMIN_IPS shows the local IP first' tailscale 192.168.1.0/24 192.0.2.10 \
+    has 'admin@192.168.1.50' 'admin@192.0.2.10' 'ADMIN_IPS is empty'
+ufw() { echo "Status: inactive"; }   # --skip firewall, or --only ssh on a fresh server
+expect_hint 'with Tailscale and the firewall off also shows the local IP' tailscale '' 192.0.2.10 \
+    is "$fallback" 'admin@192.0.2.10' ADMIN_IPS
+ufw() { echo "Status: active"; }
+TS_RC=1
+expect_hint 'with Tailscale logged out keeps the old text and warns' tailscale '' '' \
+    is "$fallback" 'No Tailscale IP found' 'over Tailscale'
+expect_hint 'ignores a "Logged out." message' tailscale '' 'Logged out.' \
+    is "$fallback" 'No Tailscale IP found' 'over Tailscale'
+expect_hint 'with Tailscale logged out and ADMIN_IPS keeps the old text' tailscale 192.168.1.0/24 '' \
+    is "$fallback" '' Tailscale
+ufw() { echo "Status: inactive"; }
+expect_hint 'with Tailscale logged out and the firewall off keeps the old text' tailscale '' '' \
+    is "$fallback" '' Tailscale
+ufw() { echo "Status: active"; }
+TS_RC=0
+expect_hint 'without tailscale in PANEL_ACCESS keeps the old text' cloudflared '' 192.0.2.10 \
+    is "$fallback" '' 192.0.2.10
+# No tailscale at all: have() says so for tailscale only, which also hides a real tailscale
+# binary on this host, and the rest of PATH (grep) keeps working. The firewall allows only
+# Tailscale, so the warning is expected.
+unset -f tailscale
+real_have="$(declare -f have)"
+have() { [[ "$1" != tailscale ]] && command -v "$1" >/dev/null 2>&1; }
+expect_hint 'without the tailscale command keeps the old text and warns' tailscale '' '' \
+    is "$fallback" 'No Tailscale IP found' 'over Tailscale'
+unset LOCAL_IP
+expect_hint 'without a local IP shows a placeholder' tailscale '' '' \
+    is '  Open a NEW terminal and test:  ssh -p 822 admin@<server-ip>' 'No Tailscale IP found' 'over Tailscale'
+eval "$real_have"
+unset -f timeout
+
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1

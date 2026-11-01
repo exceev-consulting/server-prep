@@ -9,6 +9,12 @@ Highlights of each release. The full list of merged pull requests is in each
   file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
   (some filesystems), it writes the file with `dd` instead.
 - The `/new-server` guide checks SSH journal entries and panel connection settings when validation fails.
+- The SSH safety check now also prints the test command with the server's Tailscale IP when `PANEL_ACCESS` includes
+  `tailscale`. When `ADMIN_IPS` is empty and the firewall is on, it shows only that command, because the firewall blocks
+  SSH on the local IP. Before, it showed only the local IP, so with Tailscale-only access the test timed out and could
+  lead to a wrong answer. It also reminds you to keep the current terminal open. Without Tailscale, or when
+  `tailscale ip -4` gives no address, the test command is unchanged; with Tailscale-only access and the firewall on, a
+  second line warns that the firewall may block it and says to check `tailscale status` first.
 - The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
 - **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
   token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only

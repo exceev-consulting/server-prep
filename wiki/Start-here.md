@@ -147,7 +147,7 @@ You should get a shell on the server, without a password prompt (your key is use
 
 4. Go back to the first terminal and answer `y` if it worked, or `n` to roll back now.
 
-If you answer nothing, the SSH change rolls back by itself after 10 minutes. With Tailscale-only access, use the server's Tailscale IP in the test: the address the script prints may be blocked by the firewall (fix planned in [issue #73](https://github.com/exceev-consulting/server-prep/issues/73)).
+If you answer nothing, the SSH change rolls back by itself after 10 minutes. With Tailscale access, the script also prints the command with the server's Tailscale IP (it starts with `100.`). Use the local-IP command only from a network listed in `ADMIN_IPS`, otherwise use the Tailscale one. With Tailscale-only access (no `ADMIN_IPS`), the script shows only the Tailscale command, because the firewall blocks the local IP.
 
 Today, `--yes` skips this test and confirms on its own ([issue #65](https://github.com/exceev-consulting/server-prep/issues/65)). That is why the first run should be without it.
 
