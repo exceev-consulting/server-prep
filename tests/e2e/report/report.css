@@ -1,6 +1,6 @@
 /* E2E report and report list (tests/e2e/build-report.sh copies this file next to each page).
-   Same look as the setup console (site/index.html): its tokens are copied below unchanged,
-   black and white, with colour only for status. Keep them in sync when the console changes. */
+   Same look as the setup console: black and white, with colour only for status. The three token
+   blocks below are a copy of site/tokens.css, and scripts/check-tokens.sh fails CI when they differ. */
 :root {
   --bg: #EEF1F4;
   --panel: #FFFFFF;
