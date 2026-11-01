@@ -341,5 +341,7 @@ expect_ran 'dry run' no 'systemctl restart crowdsec-firewall-bouncer'
 DRY_RUN=0
 CROWDSEC_RC=0
 
-# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
+# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69) and the
+# server-preconfig.sh --check --json test (issue #13).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
+bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
