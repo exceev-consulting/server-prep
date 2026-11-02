@@ -639,7 +639,7 @@ window.SERVER_PREP_DATA = {
     {
       "script": "server-audit.sh",
       "flag": "--no-network",
-      "help": "do not query the public IP"
+      "help": "no public IP lookup, no GitHub release check"
     },
     {
       "script": "server-audit.sh",

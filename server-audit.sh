@@ -62,7 +62,7 @@ Usage: sudo $0 [options]
   --no-txt         do not write the text report
   --quiet          no console output (reports only)
   --no-color       disable colors
-  --no-network     do not query the public IP
+  --no-network     no public IP lookup, no GitHub release check
   -h, --help       this help
 
 Run as root for complete results (sshd -T, firewall, shadow, docker...).
