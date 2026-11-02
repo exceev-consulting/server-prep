@@ -43,8 +43,12 @@ settle_listchanges() {   # run apt-listchanges' one-time job before a dry run's 
     # Debian 13's apt-listchanges.timer fires on the hour, and its service disables the timer
     # once it has filled its database. When the hour falls inside a dry run, the unit list
     # moves and the "nothing changed" check fails. Systems without the timer skip this.
+    local st
     SSH_LIMIT=300 as_root 'systemctl is-enabled -q apt-listchanges.timer 2>/dev/null || exit 0
         systemctl start apt-listchanges.service' 2>&1 | log_to > /dev/null
+    st=${PIPESTATUS[0]}
+    # never fails the scenario, but a timeout leaves the job running and the race can come back
+    [[ $st -eq 0 ]] || printf 'settle_listchanges: apt-listchanges.service failed or timed out (status %s)\n' "$st" | log_to > /dev/null
 }
 
 snapshot() {   # what a dry run must not change: files under /etc, packages, enabled units
