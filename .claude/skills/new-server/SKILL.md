@@ -7,6 +7,8 @@ description: Guide the user through preparing a new Debian/Ubuntu server (VPS or
 
 The user runs every command and pastes the output. You give short, concise, precise guidance at each step: the command or answer, plus one line on why. Read `AGENTS.md` and `CLAUDE.local.md` (infrastructure, usual answers) first.
 
+Never ask for a token or key (Tailscale auth key, CrowdSec enroll key, Cloudflare tunnel token, Telegram bot token): the user types it at the script prompt or in their own terminal on the server, never in the chat.
+
 ## 0. Before starting, ask only what is unknown
 - Which OS, and is it a VPS, a bare-metal machine or a laptop?
 - Which panel manages it (`PANEL`) and how it reaches the server (`PANEL_ACCESS`; see `CLAUDE.local.md`, usually **tailscale**).
@@ -68,7 +70,7 @@ sudo ./server-prep.sh --dry-run
 | Services to disable | accept the defaults (avahi, cups, bluetooth, ModemManager, apport) |
 | Headless | `no` on a desktop the user still uses, `yes` on a pure server |
 | auditd / rkhunter / AIDE / endlessh | yes |
-| Telegraf | yes. It is configured afterwards with `/monitoring` |
+| Telegraf | yes. It is configured afterwards with the `monitoring` skill (`/monitoring` in Claude Code, `$monitoring` in Codex) |
 | Telegram | can be done later with `--only telegram` |
 | Docker restart | yes, unless important containers are running |
 
@@ -104,7 +106,7 @@ Then click Validate. If it fails:
 
 ## 7. After the run
 1. **CrowdSec:** `sudo cscli console enroll <key>` (if not done earlier), then accept the machine in app.crowdsec.net.
-2. **Monitoring:** follow the `/monitoring` skill.
+2. **Monitoring:** follow the `monitoring` skill (`/monitoring` in Claude Code, `$monitoring` in Codex).
 3. **Laptop with GitHub runners:** `sudo extras/github-runners/limit-runners-memory.sh`.
 4. **Reboot** if the kernel was updated: `sudo reboot`.
-5. **Final audit:** `sudo ./server-audit.sh`, then analyse it with `/audit-review`.
+5. **Final audit:** `sudo ./server-audit.sh`, then analyse it with the `audit-review` skill (`/audit-review` in Claude Code, `$audit-review` in Codex).

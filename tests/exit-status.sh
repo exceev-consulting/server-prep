@@ -425,3 +425,6 @@ bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
+
+# ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
+bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1

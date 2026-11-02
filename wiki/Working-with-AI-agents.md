@@ -5,7 +5,7 @@ How to use a coding agent with server-prep, to set up a server or to contribute,
 | | Today | Planned |
 |---|---|---|
 | **Claude Code** | Project context in `AGENTS.md` (imported by `CLAUDE.md`), four skills, read-only permissions in `.claude/settings.json` | Lint and safety hooks ([#36](https://github.com/exceev-consulting/server-prep/issues/36)), contributor skills ([#44](https://github.com/exceev-consulting/server-prep/issues/44)) |
-| **Codex and other agents** | They read the project context in `AGENTS.md`; the skills are not shared yet | The same skills in Codex ([#33](https://github.com/exceev-consulting/server-prep/issues/33)) |
+| **Codex and other agents** | They read the project context in `AGENTS.md`, and Codex gets the four skills through `.agents/skills` | Contributor skills ([#44](https://github.com/exceev-consulting/server-prep/issues/44)), shared the same way |
 | **Beginners** | `/new-server` guides an operator who already knows SSH keys, Tailscale and their panel | A beginner mode with plain questions, safe defaults and a lockout guard ([#18](https://github.com/exceev-consulting/server-prep/issues/18)), JSON outputs so the agent reads facts ([#7](https://github.com/exceev-consulting/server-prep/issues/7)) |
 
 An *agent* here is an AI coding assistant that runs in your terminal and can read files and run commands, like [Claude Code](https://claude.com/claude-code) or Codex.
@@ -57,7 +57,7 @@ Do not put tokens or keys in it. It is for facts like "the panel reaches servers
 
 ### The four skills
 
-A *skill* is a guided workflow stored in [`.claude/skills/`](https://github.com/exceev-consulting/server-prep/tree/main/.claude/skills). You start one by typing its name with a slash in Claude Code.
+A *skill* is a guided workflow stored in [`.claude/skills/`](https://github.com/exceev-consulting/server-prep/tree/main/.claude/skills). You start one by typing its name with a slash in Claude Code. In Codex, type `$` and the name (`$new-server`) or pick it from `/skills`.
 
 | Skill | Use it to... |
 |---|---|
@@ -74,9 +74,11 @@ A *skill* is a guided workflow stored in [`.claude/skills/`](https://github.com/
 
 Codex and many other agents read a file named `AGENTS.md`. Started at the repo root, they get the same project rules as Claude Code. In `docs/` or `.github/`, Codex also reads the `AGENTS.md` of that folder.
 
-- Planned: [#33](https://github.com/exceev-consulting/server-prep/issues/33) makes the same skills available to Codex, from one source folder.
+Codex reads skills from `.agents/skills`, a link to `.claude/skills`, so it uses the same four skill files as Claude Code. Started anywhere in the repo, it lists them: type `$new-server`, or pick one from `/skills`.
 
-Until then, ask the agent to read the relevant `.claude/skills/<name>/SKILL.md` file first.
+- **Windows:** unless symlinks are on, Git for Windows checks the link out as a small text file, and Codex then finds no skills. Turn on Developer Mode and clone with `git clone -c core.symlinks=true https://github.com/exceev-consulting/server-prep.git`, or work in WSL.
+
+Other agents do not load skills on their own: ask them to read the relevant `.claude/skills/<name>/SKILL.md` file first.
 
 ## Contributing with an agent
 
@@ -86,7 +88,7 @@ A typical flow today:
 
 1. Pick an `agent-ready` issue and comment that you are on it.
 2. Ask the agent to read the issue and `AGENTS.md`, create a branch, and make the change.
-3. For a script change, use `/add-step`.
+3. For a script change, use the `add-step` skill (`/add-step` in Claude Code, `$add-step` in Codex).
 4. Have it run the same checks as CI: `bash -n`, ShellCheck at `-S warning`, and `scripts/gen-data.sh --check`.
 5. Run any `sudo` test yourself, on a throwaway VM, never on a server you care about.
 6. Open the PR and fill in the template, including what you tested.
