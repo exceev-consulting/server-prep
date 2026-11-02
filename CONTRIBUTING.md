@@ -42,8 +42,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
                                  # tests/audit-logind-lid.sh (audit lid-switch parser on sample
                                  # systemd-analyze cat-config output), tests/preconfig-json.sh
                                  # (server-preconfig.sh --check --json with fake host commands, needs jq,
-                                 # skipped without it) and tests/validate-config.sh
-                                 # (--validate on a good config and broken ones); no system changes
+                                 # skipped without it), tests/validate-config.sh
+                                 # (--validate on a good config and broken ones) and tests/audit-ufw-ports.sh
+                                 # (audit UFW port matcher on sample ufw status output); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
