@@ -22,7 +22,7 @@ Why VMs and not containers: [docs/decisions/0002-e2e-test-platform.md](decisions
 - When the pull request is merged or closed, its report is deleted. A merge starts a new run on `main`, and that
   run replaces the `main` report.
 - The tests also run every Monday, which catches changes in the distributions themselves.
-- The `e2e` workflow keeps each run's results and report as artifacts for 30 days.
+- The `e2e` workflow keeps each run's results and report as artifacts for 90 days, the most GitHub allows.
 
 ## What runs
 
