@@ -75,7 +75,7 @@ a command-line usage error, including an unknown step name or a missing option v
 | [Concepts](https://github.com/exceev-consulting/server-prep/wiki/Concepts) | SSH keys, the firewall, Docker and UFW, Tailscale, tunnels, the audit score |
 | [VPS or dedicated](https://github.com/exceev-consulting/server-prep/wiki/VPS-or-dedicated) | What changes between a cloud VPS, a dedicated server and a laptop |
 | [Panels](https://github.com/exceev-consulting/server-prep/wiki/Panels) | Connect the server to Coolify, Dokploy or Openship |
-| [First boot](server-preconfig.md) | `server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale |
+| [First boot](server-preconfig.md) | `server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale, and `--check --json` for agents |
 | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) | Publish apps with no open port, from Coolify, with a Zero Trust login |
 | [Monitoring](docs/monitoring.md) | Server and Docker metrics: Telegraf, InfluxDB and Grafana |
 | [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
