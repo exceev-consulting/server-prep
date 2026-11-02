@@ -7,7 +7,7 @@ Highlights of each release. The full list of merged pull requests is in each
 
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
-  now says it would merge the log rotation into that file.
+  now says it would check that file and merge the log rotation if it is missing.
 - The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
   file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
   (some filesystems), it writes the file with `dd` instead.

@@ -440,7 +440,7 @@ expect_docker() {   # expect_docker LABEL DRY_RUN WANT_STATUS WANT_TEXT
     fi
     printf 'ok: docker %s\n' "$label"
 }
-expect_docker 'dry run without jq says what it would merge' 1 0 '[dry-run] merge log rotation (10m x 3) into /etc/docker/daemon.json'
+expect_docker 'dry run without jq says what it would merge' 1 0 '[dry-run] check /etc/docker/daemon.json and merge log rotation (10m x 3) if missing'
 expect_docker 'real run without jq fails with a clear note' 0 1 'jq is missing - /etc/docker/daemon.json left untouched'
 eval "$real_have"
 unset -f jq docker
