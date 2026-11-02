@@ -20,7 +20,7 @@ description: Analyse server-audit.sh output pasted by the user (or a report file
 - **Desktop service count** (GNOME, about 40 services) on the laptop server.
 - **Regular, non-security updates pending:** suggest `sudo apt upgrade`. Unattended-upgrades only handles security updates.
 - **Reboot required after a kernel update:** suggest `sudo reboot` in a quiet moment (GitHub runners idle).
-- **Telegraf INFO "installed, not configured"** until `/monitoring` is done.
+- **Telegraf INFO "installed, not configured"** until the `monitoring` skill (`/monitoring` in Claude Code, `$monitoring` in Codex) is done.
 
 ## Investigating memory or OOM events
 ```bash
