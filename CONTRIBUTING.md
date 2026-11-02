@@ -38,7 +38,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
    scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
-                                 # (audit "Docker vs firewall" matcher on sample iptables output); no system changes
+                                 # (audit "Docker vs firewall" matcher on sample iptables output) and
+                                 # tests/preconfig-json.sh (server-preconfig.sh --check --json with fake host
+                                 # commands, needs jq, skipped without it); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
@@ -72,7 +74,7 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 - **Simple words** in messages and docs. Many users are not security experts.
 - Style: 4 spaces, `[[ ]]`, quote variables. `.editorconfig` has the basics.
 
-[CLAUDE.md](CLAUDE.md) has the full list of conventions and the bugs already fixed (don't bring them back).
+[AGENTS.md](AGENTS.md) has the full list of conventions and the bugs already fixed (don't bring them back).
 If you use [Claude Code](https://claude.com/claude-code), the `/add-step` skill walks through the checklist.
 
 ## The setup console (site/)

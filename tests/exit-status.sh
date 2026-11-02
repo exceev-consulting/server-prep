@@ -416,5 +416,7 @@ expect_hint 'without a local IP shows a placeholder' tailscale '' '' \
 eval "$real_have"
 unset -f timeout
 
-# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69).
+# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69) and the
+# server-preconfig.sh --check --json test (issue #13).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
+bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1

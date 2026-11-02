@@ -9,6 +9,10 @@ Highlights of each release. The full list of merged pull requests is in each
   file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
   (some filesystems), it writes the file with `dd` instead.
 - The `/new-server` guide checks SSH journal entries and panel connection settings when validation fails.
+- `server-preconfig.sh --check --json` prints the result as one JSON object, so an agent can read it instead of colored
+  text. The object holds facts about the server (OS, VM or bare metal, network manager, Tailscale) and each check with
+  an id, a status and, when the script knows it, how to fix it. The lines for people go to stderr, and the exit code
+  does not change. WARN and FAIL lines now show their fix on a separate `fix:` line.
 - The SSH safety check now also prints the test command with the server's Tailscale IP when `PANEL_ACCESS` includes
   `tailscale`. When `ADMIN_IPS` is empty and the firewall is on, it shows only that command, because the firewall blocks
   SSH on the local IP. Before, it showed only the local IP, so with Tailscale-only access the test timed out and could
@@ -73,6 +77,9 @@ Highlights of each release. The full list of merged pull requests is in each
 - Do not look for `server-audit.sh` in the current folder when `server-prep.sh` comes from standard input or `bash -c`.
 - [Wiki](https://github.com/exceev-consulting/server-prep/wiki): beginner path, concepts, panels, troubleshooting, FAQ,
   glossary, architecture and roadmap. Its source lives in `wiki/` and `.github/workflows/wiki.yml` publishes it.
+- Codex and other coding agents now get the project rules: they live in a new `AGENTS.md` (project map, safety rules,
+  commands, script conventions, a definition of done and the problems already fixed), which `CLAUDE.md` imports for
+  Claude Code. `docs/` and `.github/` each get a short `AGENTS.md` with their own rules.
 - Discussions forms for Q&A, Ideas and Show and tell (setups and compatibility reports).
 - [Brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) on the setup console site: the logo, its
   files to copy, the colours, type, interface parts and voice. Links to the repository and the site now show a preview

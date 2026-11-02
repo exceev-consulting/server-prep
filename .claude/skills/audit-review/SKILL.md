@@ -13,7 +13,8 @@ description: Analyse server-audit.sh output pasted by the user (or a report file
    - **Next action:** one command if possible.
 3. **Prefer server-prep re-runs** over manual edits, so that the saved config stays the source of truth:
    `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <steps> --yes`
-4. **Before suggesting a fix,** check `CLAUDE.md` → *Hard-won gotchas*. Several "regressions" after a reboot are already known (log_martians, suid_dumpable, sudo-rs).
+   Leave out `--yes` when the steps include `ssh`: it skips the second-terminal login test and stops the 10-minute rollback (#65).
+4. **Before suggesting a fix,** check `AGENTS.md` → *Hard-won gotchas*. Several "regressions" after a reboot are already known (log_martians, suid_dumpable, sudo-rs).
 
 ## Expected WARNs on this fleet
 - **Desktop service count** (GNOME, about 40 services) on the laptop server.
