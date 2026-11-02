@@ -1287,6 +1287,11 @@ EOF
     fi
 
     # Log rotation (merge into existing daemon.json)
+    if ! have jq; then
+        # a dry run only printed the jq install above
+        if [[ $DRY_RUN -eq 1 ]]; then info "[dry-run] check /etc/docker/daemon.json and merge log rotation (10m x 3) if missing"; return 0; fi
+        note "jq is missing - /etc/docker/daemon.json left untouched"; return 1
+    fi
     local cur='{}' new
     [[ -s /etc/docker/daemon.json ]] && cur="$(cat /etc/docker/daemon.json)"
     if ! jq -e . >/dev/null 2>&1 <<<"$cur"; then
