@@ -27,3 +27,8 @@ CLAUDE.local.md
 *~
 .vscode/
 .idea/
+
+# End-to-end test output (tests/e2e/run.sh)
+tests/e2e/out/
+# ...but the fake results the report test reads are part of the repo
+!tests/e2e/fixtures/*/*.log

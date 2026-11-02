@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "os": "debian-12",
+  "label": "Debian 12 (bookworm)",
+  "os_release": "Debian GNU/Linux 12 (bookworm)",
+  "kernel": "6.1.0-40-cloud-amd64",
+  "image": {"url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2", "checksum": "sha512:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"},
+  "accel": "kvm",
+  "cpus": 2,
+  "memory_mb": 3072,
+  "started": "2026-10-27T18:00:00Z",
+  "duration_s": 1312,
+  "status": "passed",
+  "reason": "",
+  "counts": {"passed": 3, "failed": 0, "skipped": 0},
+  "scenarios": [
+    {"id": "boot", "title": "Boot the official cloud image and log in over SSH", "group": "boot", "status": "passed",
+     "duration_s": 41, "reason": "", "logs": ["boot.log"],
+     "assertions": [{"name": "the image matches its published checksum", "ok": true, "detail": ""},
+                    {"name": "the cloud-init user logs in over SSH on port 22", "ok": true, "detail": ""}]},
+    {"id": "prep-run", "title": "Real run with the CI config (Coolify, SSH on 822)", "group": "server-prep", "status": "passed",
+     "duration_s": 512, "reason": "", "logs": ["prep-run.log"],
+     "assertions": [{"name": "server-prep exits 0", "ok": true, "detail": "exit 0"},
+                    {"name": "no step FAILED", "ok": true, "detail": ""}]},
+    {"id": "audit-rebooted", "title": "Audit after the reboot: still 0 FAIL", "group": "audit", "status": "passed",
+     "duration_s": 18, "reason": "", "logs": ["audit-rebooted.log"],
+     "assertions": [{"name": "the audit exits 0", "ok": true, "detail": "exit 0"}]}
+  ],
+  "audit": {
+    "fresh": {"pass": 20, "warn": 9, "fail": 4, "info": 3, "score": 61},
+    "prepared": {"pass": 47, "warn": 0, "fail": 0, "info": 5, "score": 100},
+    "rebooted": {"pass": 47, "warn": 0, "fail": 0, "info": 5, "score": 100}
+  },
+  "steps": [
+    {"step": "update", "label": "System update", "first": "CHANGED", "second": "OK (already)"},
+    {"step": "firewall", "label": "Firewall (UFW)", "first": "CHANGED", "second": "OK (already)"},
+    {"step": "telegram", "label": "Telegram login alerts", "first": "SKIPPED", "second": "SKIPPED"}
+  ],
+  "files": [{"name": "serial.log", "title": "Serial console"}, {"name": "harness.log", "title": "Harness output"}]
+}

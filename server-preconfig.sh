@@ -241,7 +241,13 @@ step_packages() {
     else
         ok "openssh-server sudo curl jq already installed"
     fi
-    run systemctl enable --now -q ssh && ok "ssh started and enabled at boot"
+    # Ubuntu 22.10+ starts sshd from ssh.socket. Enabling ssh.service next to it makes later
+    # port changes (server-prep's ssh step) fail with "Address already in use".
+    if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+        run systemctl enable --now -q ssh.socket && ok "ssh.socket started and enabled at boot (socket-activated sshd)"
+    else
+        run systemctl enable --now -q ssh && ok "ssh started and enabled at boot"
+    fi
 }
 
 add_github_keys() {
@@ -438,7 +444,9 @@ run_checks() {
     fi
 
     local s st
-    for s in ssh tailscaled; do
+    local ssh_unit=ssh
+    systemctl is-enabled --quiet ssh.socket 2>/dev/null && ssh_unit=ssh.socket
+    for s in "$ssh_unit" tailscaled; do
         [[ $s == tailscaled ]] && ! have tailscale && continue
         st=$(systemctl is-enabled "$s" 2>/dev/null)
         if [[ $st == enabled ]]; then chk "pre.${s}_boot" PASS "$s enabled at boot"

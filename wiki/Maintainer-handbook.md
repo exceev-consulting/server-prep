@@ -20,7 +20,8 @@ The release notes group merged pull requests by the `security`, `enhancement`, `
 - One topic per pull request, from a branch: `fix/…`, `feat/…` or `docs/…`. Nobody pushes to `main`.
 - Title: `<script or area>: <what changes>`. It becomes the release-note line.
 - Add a release-notes label and, for a user-visible change, a line under `## [Unreleased]` in `CHANGELOG.md`.
-- CI must pass: `bash -n`, ShellCheck at warning level, `--help` for each script, and `scripts/gen-data.sh --check`.
+- CI must pass: `bash -n`, ShellCheck at warning level, `--help` for each script, `scripts/gen-data.sh --check` and the quick tests in `tests/`.
+- The `e2e` workflow runs the scripts in a VM per system when a PR changes a script or the tests. It is not a required check yet: read its report (linked in a PR comment) before merging. A red system shows the failed assertion first.
 - A changed step, setting or audit check also updates `server-prep.conf.example`, the README step table and an audit check. Then run `scripts/gen-data.sh` so the setup console shows it.
 - Pull requests are squash-merged. GitHub signs the merge commit.
 

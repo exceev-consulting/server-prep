@@ -12,9 +12,8 @@
 # page (sections 2.2 and 2.4 of site/brand/index.html), which print the token values as text.
 #
 # Usage: scripts/check-tokens.sh [copy.css ...]
-#   Each copy is a CSS file. With no argument it checks the known copies and skips one that is
-#   not in this tree (the e2e report arrives with its own pull request).
-#   Exit status: 0 all equal, 1 a difference, 2 the source is missing or unreadable.
+#   Each copy is a CSS file. With no argument it checks the known copies.
+#   Exit status: 0 all equal, 1 a difference or a missing copy, 2 the source is missing or unreadable.
 set -euo pipefail
 
 # copies given on the command line are relative to where the check was started
@@ -121,7 +120,8 @@ fi
 if (($#)); then copies=("${args[@]}"); else copies=("${KNOWN_COPIES[@]}"); fi
 for copy in "${copies[@]}"; do
     if [[ ! -e $copy ]]; then
-        if (($#)); then echo "check-tokens: $copy not found" >&2; rc=1; else echo "check-tokens: $copy not in this tree, skipped"; fi
+        echo "check-tokens: $copy not found" >&2
+        rc=1
         continue
     fi
     if out=$(diff <(echo "$src") <(tokens "$copy")); then

@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "os": "ubuntu-24.04",
+  "label": "Ubuntu 24.04 LTS",
+  "os_release": "Ubuntu 24.04.3 LTS",
+  "kernel": "6.8.0-86-generic",
+  "image": {"url": "https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img", "checksum": "sha256:9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d5e4f30211203f4e5d6c7b8a9"},
+  "accel": "tcg",
+  "cpus": 2,
+  "memory_mb": 4096,
+  "started": "2026-10-27T18:01:00Z",
+  "duration_s": 2405,
+  "status": "failed",
+  "reason": "",
+  "counts": {"passed": 1, "failed": 1, "skipped": 1},
+  "scenarios": [
+    {"id": "prep-run", "title": "Real run with the CI config (Coolify, SSH on 822)", "group": "server-prep", "status": "passed",
+     "duration_s": 640, "reason": "", "logs": ["prep-run.log"],
+     "assertions": [{"name": "server-prep exits 0", "ok": true, "detail": "exit 0"}]},
+    {"id": "prep-rerun", "title": "A second run changes nothing", "group": "server-prep", "status": "failed",
+     "duration_s": 95, "reason": "every step is OK (already) or SKIPPED: firewall CHANGED", "logs": ["prep-rerun.log", "reboot.log"],
+     "assertions": [{"name": "server-prep exits 0", "ok": true, "detail": "exit 0"},
+                    {"name": "every step is OK (already) or SKIPPED", "ok": false, "detail": "firewall CHANGED"}]},
+    {"id": "reboot", "title": "Reboot: the server comes back on port 822", "group": "reboot", "status": "skipped",
+     "duration_s": 0, "reason": "needs prep-rerun, which failed", "logs": [], "assertions": []}
+  ],
+  "audit": {
+    "fresh": {"pass": 18, "warn": 12, "fail": 5, "info": 4, "score": 68},
+    "prepared": {"pass": 45, "warn": 1, "fail": 1, "info": 5, "score": 96}
+  },
+  "steps": [
+    {"step": "update", "label": "System update", "first": "CHANGED", "second": "OK (already)"},
+    {"step": "firewall", "label": "Firewall (UFW)", "first": "CHANGED", "second": "CHANGED"},
+    {"step": "crowdsec", "label": "CrowdSec", "first": "FAILED", "second": ""}
+  ],
+  "files": [{"name": "serial.log", "title": "Serial console"}]
+}

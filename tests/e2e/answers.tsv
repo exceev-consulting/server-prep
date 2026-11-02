@@ -1,0 +1,16 @@
+# Answers for the interactive run (tests/e2e/lib/interact.sh), the same as ci.cfg.
+# Columns (tab separated): regex matched against the question text, answer typed.
+# {ADMIN_PUBKEY} and {PANEL_PUBKEY} become the keys of the run. Questions that match no
+# line get Enter (the default), and the log of the scenario lists them.
+^Continue\?$	y
+^Admin user$	admin
+^Admin SSH public key	{ADMIN_PUBKEY}
+^Panel \(	coolify
+SSH public key \(empty = skip\)$	{PANEL_PUBKEY}
+^Access methods$	tailscale,public
+server public IP$	198.51.100.2
+^New SSH port$	822
+^Allowed SSH sources$	198.51.100.2
+^Open 80/443	n
+^Timezone$	UTC
+^Proceed\?$	y
