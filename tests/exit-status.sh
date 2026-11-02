@@ -421,6 +421,8 @@ unset -f timeout
 # step_docker on a server without jq: a dry run only prints the jq install, so the step must
 # not read daemon.json with jq (it used to FAIL with "not valid JSON"). A real run where jq
 # is still missing fails with a clear note.
+pkg_install() { :; }               # the real one calls dpkg-query and apt-get through run
+run() { :; }
 have() { [[ "$1" == docker ]]; }   # Docker is installed, jq is not
 jq() { return 127; }               # hides a real jq on this host, like a missing command
 docker() { :; }                    # "docker compose version" must not reach a real Docker
