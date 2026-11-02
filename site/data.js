@@ -703,7 +703,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 56,
+    "checks": 59,
     "sections": [
       {
         "key": "system",
@@ -738,6 +738,13 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "PASS",
               "WARN"
+            ]
+          },
+          {
+            "id": "sys.laptop",
+            "title": "Laptop server mode",
+            "statuses": [
+              "INFO"
             ]
           }
         ]
@@ -1079,6 +1086,13 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "INFO"
             ]
+          },
+          {
+            "id": "mon.telegram",
+            "title": "Telegram alerts",
+            "statuses": [
+              "INFO"
+            ]
           }
         ]
       },
@@ -1230,6 +1244,13 @@ window.SERVER_PREP_DATA = {
           {
             "id": "panel.proxy",
             "title": "Panel proxy",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
+            "id": "panel.cloudflared",
+            "title": "Cloudflare Tunnel",
             "statuses": [
               "INFO"
             ]

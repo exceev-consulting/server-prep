@@ -5,6 +5,13 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `server-audit.sh` now has an INFO check for each of the three steps it did not cover. `sys.laptop` shows whether
+  closing the lid is ignored in the logind config and names any sleep target that is not masked. It runs only on a
+  machine with a battery or the laptop step's drop-in, because `server-preconfig.sh` masks sleep on every server.
+  `mon.telegram` shows whether `/etc/server-prep/telegram.env` has mode 600 and whether the SSH login hook is in
+  `/etc/pam.d/sshd`. It checks only the file's mode and never reads the file, which holds the bot token.
+  `panel.cloudflared` shows whether the `cloudflared` service is active or cloudflared runs as a panel service in a
+  container. INFO checks never change the score or the exit code.
 - The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
   file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
   (some filesystems), it writes the file with `dd` instead.

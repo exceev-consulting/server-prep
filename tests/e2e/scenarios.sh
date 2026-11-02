@@ -120,6 +120,11 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
         st="$(audit_status "$id")"
         check_eq "$id passes" "$st" PASS
     done
+    # the VM has no battery and server-preconfig.sh masks sleep on every server, so a sys.laptop line
+    # here would be the false positive its gate prevents; ci.cfg also has TELEGRAM_ENABLE=no and no cloudflared
+    for id in sys.laptop mon.telegram panel.cloudflared; do
+        check_eq "$id is absent (step not used in ci.cfg)" "$(audit_status "$id")" absent
+    done
 }
 
 check_regressions() {   # the "hard-won gotchas" of AGENTS.md that a reboot or a re-run can undo
