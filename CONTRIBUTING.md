@@ -40,8 +40,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
                                  # (audit "Docker vs firewall" matcher on sample iptables output),
                                  # tests/preconfig-json.sh (server-preconfig.sh --check --json with fake host
-                                 # commands, needs jq, skipped without it) and tests/audit-ufw-ports.sh (audit UFW
-                                 # port matcher on sample ufw status output); no system changes
+                                 # commands, needs jq, skipped without it), tests/validate-config.sh
+                                 # (--validate on a good config and broken ones) and tests/audit-ufw-ports.sh
+                                 # (audit UFW port matcher on sample ufw status output); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
@@ -70,6 +71,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 - **A new or changed step** also updates `server-prep.conf.example`, the step table in `README.md`,
   and adds a check to `server-audit.sh` (INFO when optional). Then run `scripts/gen-data.sh` so the
   setup console (`site/`) shows it.
+- **A new setting** also goes into `KNOWN_SETTINGS` in `server-prep.sh`, so `--validate` knows it, and into
+  `validate_values` when it has a format to check (a yes/no setting not named `INSTALL_*`, a port, a list...).
+  `tests/validate-config.sh` fails when a setting is missing from `KNOWN_SETTINGS` or a yes/no setting is not checked.
 - **No secrets and no real infrastructure** in the repo: tokens, keys, real IPs or hostnames.
   Use examples like `web-01` and `192.168.1.50`.
 - **Simple words** in messages and docs. Many users are not security experts.

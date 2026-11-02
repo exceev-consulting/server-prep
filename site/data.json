@@ -562,6 +562,11 @@
     },
     {
       "script": "server-prep.sh",
+      "flag": "--validate",
+      "help": "check the --config FILE and exit (no root, runs nothing, writes nothing)"
+    },
+    {
+      "script": "server-prep.sh",
       "flag": "--yes",
       "help": "non-interactive: use config/env values and defaults"
     },

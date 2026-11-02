@@ -13,6 +13,12 @@ Highlights of each release. The full list of merged pull requests is in each
   text. The object holds facts about the server (OS, VM or bare metal, network manager, Tailscale) and each check with
   an id, a status and, when the script knows it, how to fix it. The lines for people go to stderr, and the exit code
   does not change. WARN and FAIL lines now show their fix on a separate `fix:` line.
+- The SSH safety check now also prints the test command with the server's Tailscale IP when `PANEL_ACCESS` includes
+  `tailscale`. When `ADMIN_IPS` is empty and the firewall is on, it shows only that command, because the firewall blocks
+  SSH on the local IP. Before, it showed only the local IP, so with Tailscale-only access the test timed out and could
+  lead to a wrong answer. It also reminds you to keep the current terminal open. Without Tailscale, or when
+  `tailscale ip -4` gives no address, the test command is unchanged; with Tailscale-only access and the firewall on, a
+  second line warns that the firewall may block it and says to check `tailscale status` first.
 - The daily Telegram report now shows `rkhunter warnings: 0` for a clean log, without an extra `-` line.
 - **Security fix:** server-prep no longer writes secrets to a readable log or shows them on screen. The Cloudflare tunnel
   token shows as `***` in the log and in `--dry-run` output. `/var/log/server-prep/` is now readable by root only
@@ -104,6 +110,12 @@ Highlights of each release. The full list of merged pull requests is in each
   secrets from `/etc/default/telegraf`.
 - Releases also ship `telegraf.conf.example`, and the scripts' messages link to the guides on GitHub, so a
   release download (without the repo) has everything they mention.
+- New `./server-prep.sh --config FILE --validate` checks a config file before a run, without root and without running
+  it. It prints one line per problem with its line number and what to do (an unknown setting with a "did you mean", a
+  bad yes/no value, access method, port, IP, time or admin user name, a placeholder or private key, a secret left in the
+  file or pasted into the wrong setting, such as the Telegram bot token as the chat id, a line or value that would run a
+  command, even through escapes or invisible control characters) and exits 1 when there is an error. It never prints a
+  secret.
 
 ## [1.1.1] - 2026-10-19
 
