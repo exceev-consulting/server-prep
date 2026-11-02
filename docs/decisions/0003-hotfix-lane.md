@@ -58,7 +58,10 @@ The lane, from detection to the user:
 7. **Reaching users.** The audit check `upd.server_prep` compares the version on the server with the latest release.
    It is INFO, and WARN when a newer release fixes a security problem. The release notes mark these fixes with a
    "**Security fix:**" line (CHANGELOG). The "Security" group of the generated notes does not count: the `security`
-   label also marks new hardening, not only fixes.
+   label also marks new hardening, not only fixes. The operator updates with `server-prep.sh --upgrade`: it downloads
+   the latest release, checks every file against its `SHA256SUMS`, shows what changes, asks first and keeps the old
+   files. Third-party tools on the server (CrowdSec, cloudflared, Telegraf, Tailscale) get their own security fixes
+   through unattended-upgrades (`THIRD_PARTY_AUTO_UPDATE`).
 8. **Bad release.** The [maintainer handbook](https://github.com/exceev-consulting/server-prep/wiki/Maintainer-handbook)
    has a runbook: mark the release, tell users, publish the fix.
 
@@ -81,5 +84,7 @@ The lane, from detection to the user:
   can judge that the fix is complete.
 - **Release branches (`release/1.1.x`).** Not needed while `main` is always releasable and only the latest release is
   supported ([SECURITY.md](../../SECURITY.md#supported-versions)).
-- **A self-update in the scripts.** Not chosen: a script that downloads and runs a new version of itself as root is a
-  larger risk than the one it fixes. The audit tells the operator, who updates.
+- **An automatic self-update in the scripts.** Not chosen: a script that downloads and runs a new version of itself as
+  root, on its own schedule, is a larger risk than the one it fixes. `--upgrade` is the operator's choice instead: it
+  runs only when asked, checks every file against the release's `SHA256SUMS`, never runs the new code while
+  upgrading, and keeps the old files.

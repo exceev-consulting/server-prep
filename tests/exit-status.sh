@@ -55,8 +55,14 @@ expect_help() {   # expect_help LABEL WANT_SCRIPT_DIR COMMAND...
 }
 expect_help file "$SCRIPT_DIR" bash "$SCRIPT" --help
 expect_help stdin '' bash -s -- --help < "$SCRIPT"
-expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
-expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+# Linux limits one argument to 128 KiB (MAX_ARG_STRLEN), so a larger script cannot run as bash -c "$(cat ...)"
+# at all: nothing to test then. The other ways to run it (file, stdin, sourced) stay checked.
+if (( $(wc -c < "$SCRIPT") < 131072 )); then
+    expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
+    expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+else
+    printf 'skip: bash -c "$(cat server-prep.sh)" (the script is over the 128 KiB argument limit)\n'
+fi
 expect_help sourced "$SCRIPT_DIR" bash -c '. "$1" --help' _ "$SCRIPT"
 mkdir "$tmp/script dir"
 cp "$SCRIPT" "$tmp/script dir/server-prep.sh"
@@ -429,3 +435,5 @@ bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
 # ... and the audit's server-prep release check on sample release lists (hotfix lane, ADR 0003).
 bash "$SCRIPT_DIR/tests/audit-release.sh" || exit 1
+# ... and server-prep.sh --upgrade against a fake release (no network).
+bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1

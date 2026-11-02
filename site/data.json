@@ -567,6 +567,11 @@
     },
     {
       "script": "server-prep.sh",
+      "flag": "--upgrade",
+      "help": "replace these scripts with the latest release, after checking every file against the release's SHA256SUMS (asks first; --yes to skip the question, --dry-run to only show)"
+    },
+    {
+      "script": "server-prep.sh",
       "flag": "--yes",
       "help": "non-interactive: use config/env values and defaults"
     },

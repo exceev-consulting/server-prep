@@ -5,6 +5,11 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `server-prep.sh --upgrade` updates a downloaded copy to the latest release. It downloads the release files, checks
+  each one against the release's `SHA256SUMS`, shows the version change and asks first (`--yes` skips the question,
+  `--dry-run` only checks). The old files are kept in `.server-prep-old/`. Nothing is installed on the server: re-run
+  the steps the release notes name. In a git clone it tells you to use `git pull`. The audit's `upd.server_prep` hint
+  now gives this command.
 - New audit check `upd.server_prep`: it compares the server-prep version used on the server with the latest release
   on GitHub. It is INFO, and WARN only when a newer release fixes a security problem, with where to get it. It reads
   the version from `server-prep.sh` next to the audit, or from the last report. `--no-network` skips it.
