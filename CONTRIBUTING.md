@@ -41,8 +41,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
                                  # (audit "Docker vs firewall" matcher on sample iptables output),
                                  # tests/preconfig-json.sh (server-preconfig.sh --check --json with fake host
                                  # commands, needs jq, skipped without it), tests/validate-config.sh
-                                 # (--validate on a good config and broken ones) and tests/audit-ufw-ports.sh
-                                 # (audit UFW port matcher on sample ufw status output); no system changes
+                                 # (--validate on a good config and broken ones), tests/audit-ufw-ports.sh
+                                 # (audit UFW port matcher on sample ufw status output) and tests/skills-sync.sh
+                                 # (the .agents/skills link for Codex, SKILL.md frontmatter); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
@@ -80,7 +81,7 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 - Style: 4 spaces, `[[ ]]`, quote variables. `.editorconfig` has the basics.
 
 [AGENTS.md](AGENTS.md) has the full list of conventions and the bugs already fixed (don't bring them back).
-If you use [Claude Code](https://claude.com/claude-code), the `/add-step` skill walks through the checklist.
+If you use [Claude Code](https://claude.com/claude-code) or Codex, the `add-step` skill (`/add-step` or `$add-step`) walks through the checklist.
 
 ## The setup console (site/)
 

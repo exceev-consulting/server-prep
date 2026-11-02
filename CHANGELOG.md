@@ -119,6 +119,9 @@ Highlights of each release. The full list of merged pull requests is in each
   file or pasted into the wrong setting, such as the Telegram bot token as the chat id, a line or value that would run a
   command, even through escapes or invisible control characters) and exits 1 when there is an error. It never prints a
   secret.
+- Codex now finds the four skills (`new-server`, `audit-review`, `monitoring`, `add-step`): `.agents/skills` is a link
+  to `.claude/skills`, so Claude Code and Codex read the same files. In Codex, type `$new-server` or pick a skill from
+  `/skills`. On Windows, clone with symlinks turned on (see `AGENTS.md`).
 
 ## [1.1.1] - 2026-10-19
 

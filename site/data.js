@@ -1314,7 +1314,7 @@ window.SERVER_PREP_DATA = {
     {
       "title": "Working with AI agents",
       "path": "https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents",
-      "details": "Guided setups with Claude Code skills, and how Codex and other agents get the project rules"
+      "details": "Guided setups with the same skills in Claude Code and Codex, and the project rules every agent reads"
     }
   ]
 };
