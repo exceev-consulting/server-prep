@@ -453,3 +453,5 @@ bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
+# ... and the audit's UFW port matcher test (issue #78).
+bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
