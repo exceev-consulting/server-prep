@@ -18,7 +18,8 @@ We try to answer within 7 days and will credit you in the release notes, unless 
 
 ## Supported versions
 
-Only the latest release and `main` get fixes.
+Only the latest release and `main` get fixes. A security fix ships as a patch release, with the advisory published at
+the same time. `server-audit.sh` tells you when a newer release fixes a security problem (check `upd.server_prep`).
 
 ## Out of scope
 

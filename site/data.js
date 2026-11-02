@@ -703,7 +703,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 56,
+    "checks": 57,
     "sections": [
       {
         "key": "system",
@@ -762,6 +762,14 @@ window.SERVER_PREP_DATA = {
               "PASS",
               "WARN",
               "FAIL"
+            ]
+          },
+          {
+            "id": "upd.server_prep",
+            "title": "server-prep release",
+            "statuses": [
+              "INFO",
+              "WARN"
             ]
           }
         ]

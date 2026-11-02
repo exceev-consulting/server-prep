@@ -5,6 +5,9 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- New audit check `upd.server_prep`: it compares the server-prep version used on the server with the latest release
+  on GitHub. It is INFO, and WARN only when a newer release fixes a security problem, with where to get it. It reads
+  the version from `server-prep.sh` next to the audit, or from the last report. `--no-network` skips it.
 - The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
   file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
   (some filesystems), it writes the file with `dd` instead.

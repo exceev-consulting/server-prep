@@ -120,6 +120,8 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
         st="$(audit_status "$id")"
         check_eq "$id passes" "$st" PASS
     done
+    # run_audit passes --no-network: the release check must skip GitHub and stay INFO
+    check_eq "upd.server_prep is INFO without network" "$(audit_status upd.server_prep)" INFO
 }
 
 check_regressions() {   # the "hard-won gotchas" of AGENTS.md that a reboot or a re-run can undo

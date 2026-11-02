@@ -702,7 +702,7 @@
     }
   ],
   "audit": {
-    "checks": 56,
+    "checks": 57,
     "sections": [
       {
         "key": "system",
@@ -761,6 +761,14 @@
               "PASS",
               "WARN",
               "FAIL"
+            ]
+          },
+          {
+            "id": "upd.server_prep",
+            "title": "server-prep release",
+            "statuses": [
+              "INFO",
+              "WARN"
             ]
           }
         ]
