@@ -866,12 +866,14 @@ if [[ $TG_HOOK -eq 1 || -f /usr/local/sbin/server-prep-ssh-alert || -f /etc/syst
     tg_fix=""; tg_step=0
     if [[ $IS_ROOT -eq 1 ]]; then
         if [[ -f $TG_ENV ]]; then
-            tg_mode=$(stat -c %a "$TG_ENV" 2>/dev/null)
-            if [[ "$tg_mode" == "600" ]]; then
-                tg_msg="${TG_ENV} is 600"
+            # root sources telegram.env at every SSH login and for the daily report: only root may write it
+            tg_mode="" tg_owner=""
+            read -r tg_mode tg_owner <<<"$(stat -c '%a %U' "$TG_ENV" 2>/dev/null)"
+            if [[ "$tg_mode" == "600" && "$tg_owner" == root ]]; then
+                tg_msg="${TG_ENV} is 600, owned by root"
             else
-                tg_msg="${TG_ENV} is ${tg_mode:-unknown} (want 600)"
-                tg_fix="sudo chmod 600 ${TG_ENV}"
+                tg_msg="${TG_ENV} is ${tg_mode:-unknown}, owned by ${tg_owner:-unknown} (want 600, root)"
+                tg_fix="sudo chown root:root ${TG_ENV} && sudo chmod 600 ${TG_ENV}"
             fi
         else
             tg_msg="${TG_ENV} missing"; tg_step=1
