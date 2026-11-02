@@ -418,6 +418,32 @@ expect_hint 'without a local IP shows a placeholder' tailscale '' '' \
 eval "$real_have"
 unset -f timeout
 
+# step_docker on a server without jq: a dry run only prints the jq install, so the step must
+# not read daemon.json with jq (it used to FAIL with "not valid JSON"). A real run where jq
+# is still missing fails with a clear note.
+have() { [[ "$1" == docker ]]; }   # Docker is installed, jq is not
+jq() { return 127; }               # hides a real jq on this host, like a missing command
+docker() { :; }                    # "docker compose version" must not reach a real Docker
+INSTALL_DOCKER=yes
+expect_docker() {   # expect_docker LABEL DRY_RUN WANT_STATUS WANT_TEXT
+    local label="$1" status=0
+    DRY_RUN="$2"
+    STEP_NOTES=""
+    step_docker >"$tmp/docker-output" 2>&1 || status=$?
+    printf '%s\n' "$STEP_NOTES" >> "$tmp/docker-output"
+    if [[ $status -ne $3 ]] || ! grep -qF -- "$4" "$tmp/docker-output" || grep -q 'not valid JSON' "$tmp/docker-output"; then
+        printf 'not ok: docker %s (status %s, want %s)\n' "$label" "$status" "$3"
+        cat "$tmp/docker-output"
+        exit 1
+    fi
+    printf 'ok: docker %s\n' "$label"
+}
+expect_docker 'dry run without jq says what it would merge' 1 0 '[dry-run] merge log rotation (10m x 3) into /etc/docker/daemon.json'
+expect_docker 'real run without jq fails with a clear note' 0 1 'jq is missing - /etc/docker/daemon.json left untouched'
+eval "$real_have"
+unset -f jq docker
+DRY_RUN=0
+
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69) and the
 # server-preconfig.sh --check --json test (issue #13).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
