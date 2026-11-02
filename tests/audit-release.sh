@@ -51,7 +51,7 @@ L_DRAFT=$( { rel v1.3.0 "$SEC_LINE" true; rel v1.2.1-rc1 "$SEC_LINE" false true;
 expect "same version as the latest release" 1.2.0 "$L_UP" INFO "v1.2.0 is the latest release"
 expect "a newer release without a security fix" 1.1.1 "$L_UP" INFO "v1.2.0 is out. This server uses v1.1.1"
 expect "a newer release with a **Security fix:** line" 1.1.1 "$L_SEC" WARN "v1.1.2 (latest v1.2.0)"
-expect "a newer release with a Security heading" 1.1.1 "$L_HEAD" WARN "v1.1.2"
+expect "a Security heading alone (the security label) is not a fix" 1.1.1 "$L_HEAD" INFO "v1.1.2 is out"
 expect "a security fix this server already has" 1.1.1 "$L_OLD_SEC" INFO "v1.2.0 is out"
 expect "drafts and pre-releases are ignored" 1.2.0 "$L_DRAFT" INFO "v1.2.0 is the latest release"
 expect "a development copy newer than the latest release" 1.3.0 "$L_UP" INFO "a development copy"

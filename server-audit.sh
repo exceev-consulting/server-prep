@@ -152,7 +152,8 @@ prep_installed_version() {
 
 # release_status INSTALLED: reads GitHub's list of releases (JSON, newest first) on stdin and prints
 # STATUS, MESSAGE and FIX separated by a unit separator (\x1f). WARN only when a release newer than
-# INSTALLED fixes a security problem (a "Security" heading or a "**Security fix:**" line in its notes).
+# INSTALLED fixes a security problem (a "**Security fix:**" line in its notes, from CHANGELOG.md). The
+# "Security" group of the generated notes does not count: the security label also marks new hardening.
 release_status() {
     local installed="$1" json tag sec v latest="" fix
     local -a newer=() security=()
@@ -166,7 +167,7 @@ release_status() {
             [[ $sec == 1 ]] && security+=("v$v")
         fi
     done < <(jq -r '.[]? | select((.draft or .prerelease) | not)
-        | [.tag_name, (if ((.body // "") | test("(^|\\n)#{2,3} *security|\\*\\*security fix"; "i")) then 1 else 0 end)]
+        | [.tag_name, (if ((.body // "") | test("\\*\\*security fix"; "i")) then 1 else 0 end)]
         | @tsv' <<<"$json" 2>/dev/null)
     local us=$'\x1f'
     if [[ -z $latest ]]; then

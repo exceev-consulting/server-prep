@@ -56,8 +56,9 @@ The lane, from detection to the user:
    private fork (a remote exploit). The advisory is published with the release that fixes it.
 6. **Release.** A maintainer merges and runs the release workflow with `patch`. Releases stay a human decision.
 7. **Reaching users.** The audit check `upd.server_prep` compares the version on the server with the latest release.
-   It is INFO, and WARN when a newer release fixes a security problem. The release notes mark these fixes with
-   "**Security fix:**" (CHANGELOG) or the "Security" group (the `security` label).
+   It is INFO, and WARN when a newer release fixes a security problem. The release notes mark these fixes with a
+   "**Security fix:**" line (CHANGELOG). The "Security" group of the generated notes does not count: the `security`
+   label also marks new hardening, not only fixes.
 8. **Bad release.** The [maintainer handbook](https://github.com/exceev-consulting/server-prep/wiki/Maintainer-handbook)
    has a runbook: mark the release, tell users, publish the fix.
 
