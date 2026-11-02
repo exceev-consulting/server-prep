@@ -72,7 +72,7 @@ sudo ./server-prep.sh --dry-run
 | Telegram | can be done later with `--only telegram` |
 | Docker restart | yes, unless important containers are running |
 
-**SSH step:** before confirming, the user must open a **new** terminal and run `ssh -p 822 <user>@<server>`. If they don't confirm, the change rolls back after 10 minutes.
+**SSH step:** before confirming, the user must open a **new** terminal and run `ssh -p 822 <user>@<server>`. Pick the command the script prints by where the user is: the local-IP command only from a network listed in `ADMIN_IPS`, otherwise the Tailscale one (`ssh -p 822 <user>@100.x.y.z`). With Tailscale-only access (no `ADMIN_IPS`), the script prints only the Tailscale command, because the firewall blocks the local IP. If they don't confirm, the change rolls back after 10 minutes.
 
 ## 5. If a step fails
 Re-run only that step:
