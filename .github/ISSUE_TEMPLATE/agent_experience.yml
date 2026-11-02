@@ -4,7 +4,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames if you prefer.
+        Thanks for reporting. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames with examples such as web-01 or 203.0.113.10.
         A security problem (port left open, root login allowed, lockout...)? Use [Report a vulnerability](https://github.com/exceev-consulting/server-prep/security/advisories/new) instead.
         Agent sessions often show tokens, keys, IPs and host names. Read every line you paste.
   - type: dropdown
