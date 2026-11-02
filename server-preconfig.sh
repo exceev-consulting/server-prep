@@ -11,11 +11,12 @@
 set -uo pipefail
 
 HOSTNAME_NEW=""; STATIC_IP=""; GATEWAY=""; IFACE=""; ADMIN=""; GH_KEYS=""
-DO_TAILSCALE=""; CHECK_ONLY=0; DRY_RUN=0; ASSUME_YES=0
+DO_TAILSCALE=""; CHECK_ONLY=0; DRY_RUN=0; ASSUME_YES=0; JSON=0
 TS_AUTHKEY="${TS_AUTHKEY:-}"
 APT_OPTS=(-y -q -o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 BACKUP_DIR="/var/lib/server-prep/backups/preconfig-$(date +%Y%m%d_%H%M%S)"
 NETFILE=""; NET_TOUCHED=(); WARNS=0; FAILS=0
+P_ID=(); P_STATUS=(); P_MSG=(); P_FIX=()   # check results (chk), printed by --check --json
 
 usage() {
     sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
@@ -33,6 +34,7 @@ Options:
   --github-keys LOGIN  add the public SSH keys of github.com/LOGIN to that user
   --no-tailscale       do not install / log in Tailscale
   --check              only run the checks
+  --json               with --check: print the results as one JSON object on stdout (lines for people go to stderr)
   --dry-run            show what would change, change nothing
   --yes                no questions: given options + defaults
 Env: TS_AUTHKEY=tskey-...  log Tailscale in without opening the login URL
@@ -49,18 +51,73 @@ while [[ $# -gt 0 ]]; do
         --github-keys) GH_KEYS="$2"; shift 2 ;;
         --no-tailscale) DO_TAILSCALE=no; shift ;;
         --check) CHECK_ONLY=1; shift ;;
+        --json) JSON=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --yes|-y) ASSUME_YES=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
+if (( JSON && ! CHECK_ONLY )); then echo "--json works only with --check (see --help)" >&2; exit 2; fi
+# --json: stdout is for the JSON only. fd 3 keeps it, and every line for people goes to stderr.
+if (( JSON )); then exec 3>&1 1>&2; fi
 
 if [[ -t 1 ]]; then G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; C=$'\e[36m'; B=$'\e[1m'; N=$'\e[0m'; else G=""; Y=""; R=""; C=""; B=""; N=""; fi
 ok()    { printf '  %sOK%s    %s\n' "$G" "$N" "$*"; }
 warn()  { printf '  %sWARN%s  %s\n' "$Y" "$N" "$*"; WARNS=$((WARNS + 1)); }
 fail()  { printf '  %sFAIL%s  %s\n' "$R" "$N" "$*"; FAILS=$((FAILS + 1)); }
 info()  { printf '  %s->%s    %s\n' "$C" "$N" "$*"; }
+
+chk() {   # chk ID PASS|WARN|FAIL|INFO "message" ["fix"]: records the result for --json, prints it for people
+    local id=$1 st=$2 msg=$3 fix=${4:-}
+    P_ID+=("$id"); P_STATUS+=("$st"); P_MSG+=("$msg"); P_FIX+=("$fix")
+    case $st in
+        PASS) ok "$msg" ;;
+        WARN) warn "$msg" ;;
+        FAIL) fail "$msg" ;;
+        *)    info "$msg" ;;
+    esac
+    if [[ -n $fix && ( $st == WARN || $st == FAIL ) ]]; then printf '        fix: %s\n' "$fix"; fi
+}
+
+# Copied from server-audit.sh (this script stays standalone).
+json_esc() {
+    local s="$1"
+    s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}
+    printf '%s' "$s"
+}
+
+json_report() {   # one JSON object on fd 3 (the real stdout): facts, summary and every chk result
+    local i st n_pass=0 n_warn=0 n_fail=0 n_info=0 os virt admin
+    for st in "${P_STATUS[@]}"; do
+        case $st in
+            PASS) n_pass=$((n_pass + 1)) ;;
+            WARN) n_warn=$((n_warn + 1)) ;;
+            FAIL) n_fail=$((n_fail + 1)) ;;
+            *)    n_info=$((n_info + 1)) ;;
+        esac
+    done
+    os=$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-unknown}")
+    virt=$(systemd-detect-virt 2>/dev/null || true)   # "none" (exit 1) on bare metal
+    [[ -n $virt ]] || virt=unknown
+    admin=${ADMIN:-$(default_admin)}
+    {
+        printf '{"tool":"server-preconfig","schema_version":1,"date":"%s","root":%s,' \
+            "$(date -Is)" "$([[ $EUID -eq 0 ]] && echo true || echo false)"
+        printf '"facts":{"os":"%s","virt":"%s","net_manager":"%s","iface":"%s","cidr":"%s","gateway":"%s","tailscale_state":"%s","tailscale_ip":"%s","admin":"%s"},' \
+            "$(json_esc "$os")" "$(json_esc "$virt")" "$(json_esc "${NET_MANAGER:-}")" "$(json_esc "${IFACE:-}")" \
+            "$(json_esc "${CUR_CIDR:-}")" "$(json_esc "${DEF_GW:-}")" "$(json_esc "${TS_STATE:-}")" \
+            "$(json_esc "${TS_IP:-}")" "$(json_esc "$admin")"
+        printf '"summary":{"pass":%d,"warn":%d,"fail":%d,"info":%d},"checks":[' "$n_pass" "$n_warn" "$n_fail" "$n_info"
+        for i in "${!P_ID[@]}"; do
+            [[ $i -gt 0 ]] && printf ','
+            printf '{"id":"%s","status":"%s","message":"%s","fix":"%s"}' \
+                "$(json_esc "${P_ID[$i]}")" "$(json_esc "${P_STATUS[$i]}")" "$(json_esc "${P_MSG[$i]}")" "$(json_esc "${P_FIX[$i]}")"
+        done
+        printf ']}\n'
+    } >&3
+}
+
 title() { printf '\n%s== %s ==%s\n' "$B" "$*" "$N"; }
 die()   { printf '%sxx %s%s\n' "$R" "$*" "$N" >&2; exit 1; }
 have()  { command -v "$1" >/dev/null 2>&1; }
@@ -344,31 +401,46 @@ step_tailscale() {
 run_checks() {
     title "Checks: will it come back on its own after a reboot?"
     local h; h=$(hostname)
-    if grep -qE "^127\.0\.1\.1[[:space:]]+$h([[:space:]]|$)" /etc/hosts; then ok "hostname $h (in /etc/hosts)"
-    else warn "hostname $h missing from /etc/hosts: sudo will warn 'unable to resolve host'"; fi
+    if grep -qE "^127\.0\.1\.1[[:space:]]+$h([[:space:]]|$)" /etc/hosts; then chk pre.hostname PASS "hostname $h (in /etc/hosts)"
+    else
+        chk pre.hostname WARN "hostname $h missing from /etc/hosts: sudo will warn 'unable to resolve host'" \
+            "sudo ./server-preconfig.sh --hostname $h"
+    fi
 
     if [[ $NET_MANAGER == ifupdown ]]; then
         local mode saved; mode=$(iface_mode)
-        if [[ -z $mode ]]; then fail "$IFACE is not saved in /etc/network/interfaces*: no network after reboot (fix: --static-ip current or dhcp)"
-        elif ! ifquery "$IFACE" >/dev/null 2>&1; then fail "ifupdown rejects the $IFACE config: ifquery $IFACE"
+        if [[ -z $mode ]]; then
+            chk pre.net_saved FAIL "$IFACE is not saved in /etc/network/interfaces*: no network after reboot" \
+                "sudo ./server-preconfig.sh --static-ip current (or dhcp)"
+        elif ! ifquery "$IFACE" >/dev/null 2>&1; then
+            chk pre.net_valid FAIL "ifupdown rejects the $IFACE config" "ifquery $IFACE (shows the error)"
         else
             saved=$(iface_static_ip)
-            ok "$IFACE saved as $mode${saved:+ ($saved)}"
-            [[ $mode == static && -n $saved && $saved != "${CUR_CIDR}" && $saved != "${CUR_CIDR%/*}" ]] && warn "$IFACE now has $CUR_CIDR but $saved is saved: it changes at reboot"
+            chk pre.net_saved PASS "$IFACE saved as $mode${saved:+ ($saved)}"
+            if [[ $mode == static && -n $saved && $saved != "${CUR_CIDR}" && $saved != "${CUR_CIDR%/*}" ]]; then
+                chk pre.net_ip_match WARN "$IFACE now has $CUR_CIDR but $saved is saved: it changes at reboot"
+            fi
         fi
-        sources_dir || [[ $(grep -cE "^[[:space:]]*iface[[:space:]]+${IFACE}[[:space:]]" /etc/network/interfaces) -gt 0 ]] || fail "/etc/network/interfaces does not include interfaces.d"
-        [[ "$(systemctl is-enabled networking 2>/dev/null)" == enabled ]] && ok "networking enabled at boot" || fail "networking not enabled: systemctl enable networking"
+        if ! { sources_dir || [[ $(grep -cE "^[[:space:]]*iface[[:space:]]+${IFACE}[[:space:]]" /etc/network/interfaces) -gt 0 ]]; }; then
+            chk pre.net_source FAIL "/etc/network/interfaces does not include interfaces.d" \
+                "echo 'source /etc/network/interfaces.d/*' | sudo tee -a /etc/network/interfaces"
+        fi
+        if [[ "$(systemctl is-enabled networking 2>/dev/null)" == enabled ]]; then chk pre.net_boot PASS "networking enabled at boot"
+        else chk pre.net_boot FAIL "networking not enabled" "sudo systemctl enable networking"; fi
     else
-        ok "network managed by $NET_MANAGER"
+        chk pre.net_saved PASS "network managed by $NET_MANAGER"
     fi
 
-    if [[ -n $DEF_GW ]] && ping -c1 -W2 "$DEF_GW" >/dev/null 2>&1; then ok "gateway $DEF_GW reachable"; else warn "gateway ${DEF_GW:-none} does not answer ping"; fi
-    if ping -c1 -W3 1.1.1.1 >/dev/null 2>&1; then ok "internet reachable"; else fail "no internet (ping 1.1.1.1)"; fi
-    if getent hosts debian.org >/dev/null 2>&1; then ok "DNS works"
-    else fail "DNS does not resolve: check 'nameserver' in /etc/resolv.conf"; fi
+    if [[ -n $DEF_GW ]] && ping -c1 -W2 "$DEF_GW" >/dev/null 2>&1; then chk pre.gateway PASS "gateway $DEF_GW reachable"
+    else chk pre.gateway WARN "gateway ${DEF_GW:-none} does not answer ping"; fi
+    if ping -c1 -W3 1.1.1.1 >/dev/null 2>&1; then chk pre.internet PASS "internet reachable"
+    else chk pre.internet FAIL "no internet (ping 1.1.1.1)"; fi
+    if getent hosts debian.org >/dev/null 2>&1; then chk pre.dns PASS "DNS works"
+    else chk pre.dns FAIL "DNS does not resolve" "check 'nameserver' in /etc/resolv.conf"; fi
     if grep -q "generated by tailscale" /etc/resolv.conf 2>/dev/null; then
         local up; up=$(awk '/^nameserver/ {printf "%s ", $2}' /etc/resolv.pre-tailscale-backup.conf 2>/dev/null)
-        [[ -n $up ]] && ok "DNS via Tailscale, upstream: $up" || warn "DNS via Tailscale but no upstream in /etc/resolv.pre-tailscale-backup.conf"
+        if [[ -n $up ]]; then chk pre.dns_upstream PASS "DNS via Tailscale, upstream: ${up% }"
+        else chk pre.dns_upstream WARN "DNS via Tailscale but no upstream in /etc/resolv.pre-tailscale-backup.conf"; fi
     fi
 
     local s st
@@ -377,41 +449,50 @@ run_checks() {
     for s in "$ssh_unit" tailscaled; do
         [[ $s == tailscaled ]] && ! have tailscale && continue
         st=$(systemctl is-enabled "$s" 2>/dev/null)
-        [[ $st == enabled ]] && ok "$s enabled at boot" || fail "$s not enabled at boot ($st): systemctl enable --now $s"
+        if [[ $st == enabled ]]; then chk "pre.${s}_boot" PASS "$s enabled at boot"
+        else chk "pre.${s}_boot" FAIL "$s not enabled at boot ($st)" "sudo systemctl enable --now $s"; fi
     done
 
     local t bad=""
     for t in sleep.target suspend.target hibernate.target hybrid-sleep.target; do
         [[ "$(systemctl is-enabled "$t" 2>/dev/null)" == masked ]] || bad+="$t "
     done
-    [[ -z $bad ]] && ok "sleep/suspend/hibernate masked" || warn "not masked: $bad"
+    if [[ -z $bad ]]; then chk pre.sleep PASS "sleep/suspend/hibernate masked"
+    else chk pre.sleep WARN "not masked: ${bad% }" "sudo systemctl mask ${bad% }"; fi
 
     if have tailscale; then
         if [[ $TS_STATE == Running ]]; then
             local exp; exp=$(tailscale status --json 2>/dev/null | jq -r '.Self.KeyExpiry // "none"' 2>/dev/null)
-            ok "Tailscale connected: $TS_IP ($(tailscale status --json 2>/dev/null | jq -r '.Self.HostName' 2>/dev/null))"
-            if [[ $exp == none ]]; then ok "Tailscale key expiry disabled"
-            else warn "Tailscale key expires ${exp%%T*}: admin console -> Machines -> $(hostname) -> ... -> Disable key expiry"; fi
+            chk pre.tailscale PASS "Tailscale connected: $TS_IP ($(tailscale status --json 2>/dev/null | jq -r '.Self.HostName' 2>/dev/null))"
+            if [[ $exp == none ]]; then chk pre.tailscale_expiry PASS "Tailscale key expiry disabled"
+            else
+                chk pre.tailscale_expiry WARN "Tailscale key expires ${exp%%T*}" \
+                    "Tailscale admin console -> Machines -> $(hostname) -> ... -> Disable key expiry"
+            fi
         else
-            fail "Tailscale not connected (state: ${TS_STATE:-unknown}): sudo tailscale up"
+            chk pre.tailscale FAIL "Tailscale not connected (state: ${TS_STATE:-unknown})" "sudo tailscale up"
         fi
     else
-        warn "Tailscale not installed"
+        chk pre.tailscale WARN "Tailscale not installed" "sudo ./server-preconfig.sh (answer yes to Tailscale)"
     fi
 
     local admin=${ADMIN:-$(default_admin)} home n
     if [[ -n $admin ]] && id "$admin" >/dev/null 2>&1; then
-        id -nG "$admin" | tr ' ' '\n' | grep -qx sudo && ok "$admin in the sudo group" || fail "$admin not in the sudo group: usermod -aG sudo $admin"
+        if id -nG "$admin" | tr ' ' '\n' | grep -qx sudo; then chk pre.admin_sudo PASS "$admin in the sudo group"
+        else chk pre.admin_sudo FAIL "$admin not in the sudo group" "sudo usermod -aG sudo $admin"; fi
         home=$(getent passwd "$admin" | cut -d: -f6)
         if [[ -r $home/.ssh/authorized_keys ]]; then
             n=$(grep -cE '^(ssh-|ecdsa-|sk-)' "$home/.ssh/authorized_keys" 2>/dev/null)
-            (( n > 0 )) && ok "$admin has $n SSH key(s)" || warn "$admin has no SSH key: from your workstation run ssh-copy-id $admin@${TS_IP:-<ip>}"
-        elif [[ $EUID -ne 0 ]]; then info "run as root to check $admin's SSH keys"
-        else warn "$admin has no SSH key: from your workstation run ssh-copy-id $admin@${TS_IP:-<ip>}"; fi
+            if (( n > 0 )); then chk pre.admin_keys PASS "$admin has $n SSH key(s)"
+            else chk pre.admin_keys WARN "$admin has no SSH key" "from your workstation: ssh-copy-id $admin@${TS_IP:-<ip>}"; fi
+        elif [[ $EUID -ne 0 ]]; then chk pre.admin_keys INFO "run as root to check $admin's SSH keys"
+        else chk pre.admin_keys WARN "$admin has no SSH key" "from your workstation: ssh-copy-id $admin@${TS_IP:-<ip>}"; fi
     fi
 
-    info "BIOS (cannot be checked from Linux): 'Restore on AC Power Loss' = Power On"
-    [[ $NET_MANAGER == ifupdown && $(iface_mode) == static ]] && info "router: the fixed IP must be outside the DHCP range (or reserved)"
+    chk pre.bios INFO "BIOS (cannot be checked from Linux): 'Restore on AC Power Loss' = Power On"
+    if [[ $NET_MANAGER == ifupdown && $(iface_mode) == static ]]; then
+        chk pre.router INFO "router: the fixed IP must be outside the DHCP range (or reserved)"
+    fi
 
     title "Result"
     printf '  %s FAIL, %s WARN\n' "$FAILS" "$WARNS"
@@ -435,7 +516,11 @@ fi
 have ip || die "'ip' command missing (package iproute2)"
 detect
 
-if (( CHECK_ONLY )); then run_checks; exit $(( FAILS > 0 )); fi
+if (( CHECK_ONLY )); then
+    run_checks
+    if (( JSON )); then json_report; fi
+    exit $(( FAILS > 0 ))
+fi
 
 (( DRY_RUN )) && info "dry-run: nothing will be changed"
 questions
