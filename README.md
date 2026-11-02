@@ -81,13 +81,13 @@ means `--config` is missing or the file cannot be read.
 | [Concepts](https://github.com/exceev-consulting/server-prep/wiki/Concepts) | SSH keys, the firewall, Docker and UFW, Tailscale, tunnels, the audit score |
 | [VPS or dedicated](https://github.com/exceev-consulting/server-prep/wiki/VPS-or-dedicated) | What changes between a cloud VPS, a dedicated server and a laptop |
 | [Panels](https://github.com/exceev-consulting/server-prep/wiki/Panels) | Connect the server to Coolify, Dokploy or Openship |
-| [First boot](server-preconfig.md) | `server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale |
+| [First boot](server-preconfig.md) | `server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale, and `--check --json` for agents |
 | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) | Publish apps with no open port, from Coolify, with a Zero Trust login |
 | [Monitoring](docs/monitoring.md) | Server and Docker metrics: Telegraf, InfluxDB and Grafana |
 | [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
-| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and what is planned for Codex |
+| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and how Codex and other agents get the project rules |
 
 ## Supported systems
 

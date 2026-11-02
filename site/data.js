@@ -688,6 +688,11 @@ window.SERVER_PREP_DATA = {
     },
     {
       "script": "server-preconfig.sh",
+      "flag": "--json",
+      "help": "with --check: print the results as one JSON object on stdout (lines for people go to stderr)"
+    },
+    {
+      "script": "server-preconfig.sh",
       "flag": "--dry-run",
       "help": "show what would change, change nothing"
     },
@@ -1279,7 +1284,7 @@ window.SERVER_PREP_DATA = {
     {
       "title": "First boot",
       "path": "server-preconfig.md",
-      "details": "`server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale"
+      "details": "`server-preconfig.sh`: SSH, hostname, a network that survives reboots, Tailscale, and `--check --json` for agents"
     },
     {
       "title": "Cloudflare Tunnel",
@@ -1309,7 +1314,7 @@ window.SERVER_PREP_DATA = {
     {
       "title": "Working with AI agents",
       "path": "https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents",
-      "details": "Guided setups with Claude Code skills, and what is planned for Codex"
+      "details": "Guided setups with Claude Code skills, and how Codex and other agents get the project rules"
     }
   ]
 };
