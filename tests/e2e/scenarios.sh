@@ -129,7 +129,7 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
     check_eq "the audit exits 0" "$1" 0
     for id in ssh.root_login ssh.password_auth ssh.port ssh.max_auth ssh.allow_users fw.status \
         fw.docker_bypass net.exposure ips.fail2ban ips.crowdsec ips.crowdsec_bouncer ips.f2b_sshd_jail \
-        upd.unattended acc.sudo_log acc.password_policy acc.password_dict kern.sysctl mon.auditd \
+        upd.unattended upd.third_party acc.sudo_log acc.password_policy acc.password_dict kern.sysctl mon.auditd \
         dock.log_rotation res.swap panel.root_key; do
         st="$(audit_status "$id")"
         check_eq "$id passes" "$st" PASS

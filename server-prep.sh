@@ -57,6 +57,7 @@ CROWDSEC_ENROLL_KEY="${CROWDSEC_ENROLL_KEY:-}"
 CROWDSEC_LAPI_PORT="${CROWDSEC_LAPI_PORT:-8091}"   # 8080 is used by Traefik dashboards (Coolify, Dokploy)
 INSTALL_DOCKER="${INSTALL_DOCKER:-yes}"
 DOCKER_AUTO_UPDATE="${DOCKER_AUTO_UPDATE:-yes}"
+THIRD_PARTY_AUTO_UPDATE="${THIRD_PARTY_AUTO_UPDATE:-yes}"   # CrowdSec, cloudflared, Telegraf, Tailscale in unattended-upgrades
 AUTO_REBOOT="${AUTO_REBOOT:-no}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-04:00}"
 DISABLE_SERVICES="${DISABLE_SERVICES:-}"      # filled interactively; default = all candidates
@@ -83,7 +84,7 @@ PROJECT_URL="https://github.com/exceev-consulting/server-prep"   # guides linked
 # into validate_values (tests/validate-config.sh fails on a yes/no setting it does not check).
 KNOWN_SETTINGS="ADMIN_USER ADMIN_PUBKEY PANEL PANEL_PUBKEY PANEL_ACCESS PANEL_IP CLOUDFLARED_TOKEN SSH_PORT ADMIN_IPS \
 EXPOSE_WEB EXTRA_PORTS TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_ENROLL_KEY CROWDSEC_LAPI_PORT INSTALL_DOCKER \
-DOCKER_AUTO_UPDATE AUTO_REBOOT AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER \
+DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER \
 INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF TELEGRAM_ENABLE TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS \
 SWAP_SIZE PTRACE_SCOPE AUDIT_SCRIPT AUDIT_URL ONLY SKIP COOLIFY_PUBKEY COOLIFY_ACCESS COOLIFY_IP"
 
@@ -401,7 +402,7 @@ validate_config() {
 # lists are split with read (no globbing) and ${!k} only reads fixed setting names.
 validate_values() {
     local k v l item bad has_public=0 has_tunnel=0 unchecked=0 secret=0 mode
-    local yesno="DOCKER_AUTO_UPDATE AUTO_REBOOT HEADLESS TELEGRAM_ENABLE EXPOSE_WEB"
+    local yesno="DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT HEADLESS TELEGRAM_ENABLE EXPOSE_WEB"
     local -a access=() list=() bad_list=()
 
     for k in $KNOWN_SETTINGS; do [[ $k == INSTALL_* ]] && yesno+=" $k"; done   # every INSTALL_* is yes/no
@@ -1020,6 +1021,10 @@ questions() {
     explain "Security updates are installed automatically every night. Including Docker means the" \
             "Docker engine is updated too; containers restart briefly when that happens."
     ask_yn DOCKER_AUTO_UPDATE "Include Docker in automatic updates" "$DOCKER_AUTO_UPDATE"
+    explain "CrowdSec, cloudflared, Telegraf and Tailscale come from their own repositories, which automatic" \
+            "security updates skip by default. Including them installs their security fixes the same night" \
+            "(each restarts its service for a moment). 'no' = you update them yourself."
+    ask_yn THIRD_PARTY_AUTO_UPDATE "Include CrowdSec, cloudflared, Telegraf and Tailscale in automatic updates" "$THIRD_PARTY_AUTO_UPDATE"
     explain "Some updates (kernel) only apply after a reboot. 'yes' reboots automatically at ${AUTO_REBOOT_TIME}" \
             "when needed (apps go down ~1 min). 'no' = you reboot yourself; the audit/report tells you when."
     ask_yn AUTO_REBOOT "Automatic reboot when required" "$AUTO_REBOOT"
@@ -1107,6 +1112,7 @@ summary_and_confirm() {
   Web 80/443 ........ $([[ $EXPOSE_WEB == yes ]] && echo "open to the internet" || echo "closed (tunnel/localhost only)") ${EXTRA_PORTS:+| extra: $EXTRA_PORTS}
   IPS ............... fail2ban: ${INSTALL_FAIL2BAN} | CrowdSec: ${INSTALL_CROWDSEC} (LAPI 127.0.0.1:${CROWDSEC_LAPI_PORT})
   Docker ............ ${INSTALL_DOCKER} | auto-update: ${DOCKER_AUTO_UPDATE} | auto-reboot: ${AUTO_REBOOT}
+  Tools auto-update . ${THIRD_PARTY_AUTO_UPDATE} (CrowdSec, cloudflared, Telegraf, Tailscale)
   Disable services .. ${DISABLE_SERVICES:-none}
   Laptop mode ....... $([[ $IS_LAPTOP == 1 ]] && echo "yes (lid/sleep off) | headless: ${HEADLESS}" || echo no)
   Extras ............ auditd: ${INSTALL_AUDITD} | rkhunter: ${INSTALL_RKHUNTER} | AIDE: ${INSTALL_AIDE} | endlessh: ${INSTALL_ENDLESSH} | telegraf: ${INSTALL_TELEGRAF} | telegram: ${TELEGRAM_ENABLE}
@@ -1123,7 +1129,7 @@ save_answers() {
         echo "# server-prep answers - ${TS} - reuse with: --config $f --yes"
         local v
         for v in ADMIN_USER ADMIN_PUBKEY PANEL PANEL_PUBKEY PANEL_ACCESS PANEL_IP SSH_PORT ADMIN_IPS EXPOSE_WEB EXTRA_PORTS \
-                 TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE AUTO_REBOOT \
+                 TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT \
                  AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS INSTALL_AUDITD INSTALL_RKHUNTER INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF \
                  TELEGRAM_ENABLE TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS SWAP_SIZE PTRACE_SCOPE; do
             printf '%s=%q\n' "$v" "${!v}"
@@ -1784,10 +1790,18 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
+    # Third-party repositories (origin and label of their Release files). The list is added to the
+    # distro's own origins; only installed packages are upgraded, and apt pins (crowdsec at 900) still apply.
+    local -a origins=()
+    yes_ "$DOCKER_AUTO_UPDATE" && origins+=('"origin=Docker,label=Docker CE";')
+    if yes_ "$THIRD_PARTY_AUTO_UPDATE"; then
+        origins+=('"origin=packagecloud.io/crowdsec/crowdsec,label=crowdsec";' '"origin=cloudflared,label=cloudflared";'
+                  '"origin=InfluxDB,label=InfluxDB";' '"origin=Tailscale,label=Tailscale";')
+    fi
     {
         echo "// Managed by server-prep.sh"
-        if yes_ "$DOCKER_AUTO_UPDATE"; then
-            echo 'Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };'
+        if (( ${#origins[@]} )); then
+            echo "Unattended-Upgrade::Origins-Pattern { ${origins[*]} };"
         fi
         echo 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";'
         echo 'Unattended-Upgrade::Remove-Unused-Dependencies "true";'
@@ -1799,7 +1813,7 @@ EOF
         fi
     } | write_file /etc/apt/apt.conf.d/52server-prep-unattended 644
     run systemctl enable --now unattended-upgrades
-    note "security updates daily$(yes_ "$DOCKER_AUTO_UPDATE" && echo ', Docker CE included')$(yes_ "$AUTO_REBOOT" && echo ", auto-reboot ${AUTO_REBOOT_TIME}")"
+    note "security updates daily$(yes_ "$DOCKER_AUTO_UPDATE" && echo ', Docker CE included')$(yes_ "$THIRD_PARTY_AUTO_UPDATE" && echo ', CrowdSec/cloudflared/Telegraf/Tailscale included')$(yes_ "$AUTO_REBOOT" && echo ", auto-reboot ${AUTO_REBOOT_TIME}")"
     return 0
 }
 

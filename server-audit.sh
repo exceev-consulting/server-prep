@@ -131,6 +131,26 @@ result() {
 have() { command -v "$1" >/dev/null 2>&1; }
 need_root_note() { [[ $IS_ROOT -eq 1 ]] || echo " (run as root for an exact result)"; }
 
+# third_party_uncovered PKG...: reads `apt-config dump` on stdin and prints the PKGs (crowdsec,
+# cloudflared, telegraf, tailscale) whose repository is not in unattended-upgrades' Origins-Pattern,
+# so their security fixes are never installed by themselves. Unknown names are ignored.
+third_party_uncovered() {
+    local dump pkg origin
+    local -a out=()
+    dump=$(grep -E '^Unattended-Upgrade::Origins-Pattern' || true)
+    for pkg in "$@"; do
+        case $pkg in
+            crowdsec) origin='packagecloud\.io/crowdsec/crowdsec' ;;
+            cloudflared) origin='cloudflared' ;;
+            telegraf) origin='InfluxDB' ;;
+            tailscale) origin='Tailscale' ;;
+            *) continue ;;
+        esac
+        grep -qiE "\"(o|origin)=${origin}(,|\")" <<<"$dump" || out+=("$pkg")
+    done
+    printf '%s' "${out[*]}"
+}
+
 # ----------------------------------------------------------------------------
 # Header / system info
 # ----------------------------------------------------------------------------
@@ -206,6 +226,26 @@ if have apt-get; then
         fi
     else
         result upd.unattended FAIL "Automatic security updates" "unattended-upgrades is not installed" "sudo apt install unattended-upgrades"
+    fi
+
+    # Tools from third-party repositories: their fixes come only if their origin is listed.
+    TP_INSTALLED=()
+    for p in crowdsec cloudflared telegraf tailscale; do
+        dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "ok installed" && TP_INSTALLED+=("$p")
+    done
+    if [[ ${#TP_INSTALLED[@]} -eq 0 ]]; then
+        result upd.third_party INFO "Third-party tool updates" "None of CrowdSec, cloudflared, Telegraf, Tailscale is installed"
+    else
+        TP_MISSING=$(apt-config dump 2>/dev/null | third_party_uncovered "${TP_INSTALLED[@]}")
+        if [[ -z "$TP_MISSING" ]]; then
+            result upd.third_party PASS "Third-party tool updates" "${TP_INSTALLED[*]}: security fixes installed automatically"
+        elif grep -qs '^THIRD_PARTY_AUTO_UPDATE=no' /etc/server-prep/server-prep.conf; then
+            result upd.third_party INFO "Third-party tool updates" "Turned off (THIRD_PARTY_AUTO_UPDATE=no): update ${TP_MISSING} yourself" \
+                "sudo apt update && sudo apt install --only-upgrade ${TP_MISSING}"
+        else
+            result upd.third_party WARN "Third-party tool updates" "${TP_MISSING}: security fixes are not installed automatically (repository not in unattended-upgrades)" \
+                "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes"
+        fi
     fi
 fi
 

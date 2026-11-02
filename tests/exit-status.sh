@@ -455,6 +455,8 @@ bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
 # ... and the audit's UFW port matcher test (issue #78).
 bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
+# ... and the audit's third-party update matcher (issue #155).
+bash "$SCRIPT_DIR/tests/audit-third-party.sh" || exit 1
 
 # ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
