@@ -158,7 +158,7 @@ jobs:
         with:
           name: e2e-vm-${{ matrix.os }}
           path: e2e-out/${{ matrix.os }}
-          retention-days: 30
+          retention-days: 90
           if-no-files-found: warn
 
       # Only a complete image: run.sh deletes one that fails its checksum, and a cancelled
@@ -277,7 +277,7 @@ jobs:
         with:
           name: e2e-report
           path: report
-          retention-days: 30
+          retention-days: 90
           if-no-files-found: warn
 
       - name: Result
