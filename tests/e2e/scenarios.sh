@@ -39,6 +39,14 @@ wait_apt_idle() {   # boot-time apt runs make package lists move under a dry run
     done; exit 1'
 }
 
+settle_listchanges() {   # run apt-listchanges' one-time job before a dry run's first snapshot
+    # Debian 13's apt-listchanges.timer fires on the hour, and its service disables the timer
+    # once it has filled its database. When the hour falls inside a dry run, the unit list
+    # moves and the "nothing changed" check fails. Systems without the timer skip this.
+    SSH_LIMIT=300 as_root 'systemctl is-enabled -q apt-listchanges.timer 2>/dev/null || exit 0
+        systemctl start apt-listchanges.service' 2>&1 | log_to > /dev/null
+}
+
 snapshot() {   # what a dry run must not change: files under /etc, packages, enabled units
     as_root 'find /etc -xdev -type f ! -name "*.cache" -print0 | sort -z | xargs -0 sha256sum
         dpkg-query -W -f "pkg \${Package} \${Version}\n"
@@ -258,6 +266,7 @@ sc_prep_dry_run() {
     begin prep-dry-run
     local rc
     wait_apt_idle
+    settle_listchanges
     snapshot > "$WORK/snap-before"
     run_prep dry-run --config "$VM_CFG" --yes --dry-run; rc=$?
     check_eq "the dry run exits 0" "$rc" 0
@@ -270,6 +279,7 @@ sc_prep_interactive() {
     begin prep-interactive
     local rc unanswered
     wait_apt_idle
+    settle_listchanges
     snapshot > "$WORK/snap-before"
     interact "$OUT/prep-interactive-screen.log" ops ops "$P22" "cd $VM_REPO && sudo ./server-prep.sh --dry-run"
     rc=$?
