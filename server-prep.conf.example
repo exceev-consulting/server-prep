@@ -1,5 +1,6 @@
 # server-prep.conf - settings for a non-interactive run:
 #   sudo ./server-prep.sh --config server-prep.conf --yes
+# Check it first (no root needed): ./server-prep.sh --config server-prep.conf --validate
 # Copy this file, fill it in, and NEVER commit the filled copy (it is in .gitignore).
 # Every value is optional; the interactive mode asks for each of them.
 # Older configs with COOLIFY_PUBKEY / COOLIFY_ACCESS / COOLIFY_IP still work.
