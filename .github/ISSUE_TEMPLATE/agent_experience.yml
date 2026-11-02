@@ -1,0 +1,59 @@
+name: Agent experience
+description: Claude Code or Codex did something wrong or confusing with server-prep
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames if you prefer.
+        A security problem (port left open, root login allowed, lockout...)? Use [Report a vulnerability](https://github.com/exceev-consulting/server-prep/security/advisories/new) instead.
+        Agent sessions often show tokens, keys, IPs and host names. Read every line you paste.
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options:
+        - Claude Code
+        - Codex
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: agent_version
+    attributes:
+      label: Agent version
+      description: "Output of `claude --version` or `codex --version`"
+    validations:
+      required: true
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Skill used
+      options:
+        - /new-server
+        - /audit-review
+        - /monitoring
+        - /add-step
+        - No skill
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What went wrong
+      description: What you asked, what the agent did, and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: transcript
+    attributes:
+      label: Transcript excerpt
+      description: "A short part of the session: only the lines that show the problem."
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I removed tokens, keys, passwords and real IPs
+          required: true

@@ -80,12 +80,13 @@ Every report fills a cell in the matrix. A short "it works" is as useful as a bu
 
 **Where to post today:**
 
-- It works, or works after some manual steps: [Discussions → Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- It works, or works after some manual steps: the [Compatibility report](https://github.com/exceev-consulting/server-prep/issues/new?template=compatibility_report.yml) issue form. It asks for the fields below.
+- You want to show your whole setup: [Discussions → Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
 - You have a question: [Discussions → Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a).
 - Something is broken: open an [issue](https://github.com/exceev-consulting/server-prep/issues/new/choose).
 - A security problem: report it privately, as [SECURITY.md](https://github.com/exceev-consulting/server-prep/blob/main/SECURITY.md) explains. Never in public.
 
-**Planned:** a "Compatibility reports" category with a form ([#26](https://github.com/exceev-consulting/server-prep/issues/26)), a matching issue form ([#42](https://github.com/exceev-consulting/server-prep/issues/42)) and a `/compat-report` skill that turns a report into a matrix row ([#44](https://github.com/exceev-consulting/server-prep/issues/44)).
+**Planned:** a "Compatibility reports" category with a form in Discussions ([#26](https://github.com/exceev-consulting/server-prep/issues/26)) and a `/compat-report` skill that turns a report into a matrix row ([#44](https://github.com/exceev-consulting/server-prep/issues/44)).
 
 ### What to include
 
@@ -93,7 +94,7 @@ Every report fills a cell in the matrix. A short "it works" is as useful as a bu
 |---|---|
 | OS and version | Debian 13 |
 | Server type | VPS, dedicated, laptop or old PC, VM |
-| Provider or hardware, in generic words | "VPS 2 vCPU / 4 GB at <provider>", "mini PC", "rack server" |
+| Provider and plan, or the hardware | "VPS 2 vCPU / 4 GB at <provider>", "mini PC", "rack server" |
 | Panel and `PANEL_ACCESS` | Coolify, `tailscale` |
 | server-prep version | `v1.1.1` |
 | Audit summary | the output of the command below |
@@ -120,22 +121,22 @@ The line starts with `server-prep.sh v` and the version number.
 Write the audit as JSON. This changes nothing on the server:
 
 ```bash
-sudo ./server-audit.sh --quiet --no-txt --json audit.json
+sudo ./server-audit.sh --quiet --no-txt --no-network --json audit.json
 ```
 
-Print the summary without your host name and public IP:
+`--no-network` skips the public IP lookup. Print the summary without your host name and public IP:
 
 ```bash
-jq '{version, os, score, summary, problems: [.checks[] | select(.status == "FAIL" or .status == "WARN") | {id, status, message}]}' audit.json
+jq '{score, summary, fails: [.checks[] | select(.status == "FAIL") | .id]}' audit.json
 ```
 
-You get the audit version, the OS, the score, the PASS / WARN / FAIL / INFO counts, and one line per WARN or FAIL. A prepared server usually shows 0 FAIL.
+You get the score, the PASS / WARN / FAIL / INFO counts, and the id of each FAIL check. A prepared server usually shows 0 FAIL. Paste this output in the form's *Audit summary* field, never the whole `audit.json`: that file holds the host name and the public IP.
 
 ### Before you post
 
 - **No secrets.** Remove every token, key and password: tunnel tokens, CrowdSec enroll keys, Tailscale keys, InfluxDB tokens, Telegram bot tokens.
-- **Read every message line.** Some contain IPs, host names or user names. Replace them with examples such as `web-01`, `example.com` or `203.0.113.10`.
+- **Read everything you add by hand.** Audit messages, log lines and notes can contain IPs, host names or user names. Replace them with examples such as `web-01`, `example.com` or `203.0.113.10`.
 - **Don't paste the whole log** from `/var/log/server-prep/`. It lists IPs and host names, and logs from version 1.1.1 and older can contain the tunnel token ([#64](https://github.com/exceev-consulting/server-prep/issues/64)).
-- **Never name a client or a site.** Describe the machine in generic words.
+- **Never name a client or a site.** Name the provider if you like, and describe the machine in generic words.
 
 Thank you: each report helps the next person pick a setup that works.

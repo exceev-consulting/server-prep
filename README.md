@@ -165,7 +165,8 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 
 ## Community
 
-- **Questions:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a). **Ideas:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas). **Your setup or a compatibility report:** [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- **Questions:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a). **Ideas:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas). **Your setup:** [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- **A compatibility report:** the [compatibility form](https://github.com/exceev-consulting/server-prep/issues/new?template=compatibility_report.yml). **Another panel:** the [panel request form](https://github.com/exceev-consulting/server-prep/issues/new?template=panel_request.yml).
 - **Bugs:** [Issues](https://github.com/exceev-consulting/server-prep/issues). **What is next:** the [roadmap board](https://github.com/orgs/exceev-consulting/projects/7).
 - Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 

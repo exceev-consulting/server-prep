@@ -91,6 +91,8 @@ A typical flow today:
 5. Run any `sudo` test yourself, on a throwaway VM, never on a server you care about.
 6. Open the PR and fill in the template, including what you tested.
 
+An agent did something wrong or confusing with server-prep? Tell us with the [agent experience form](https://github.com/exceev-consulting/server-prep/issues/new?template=agent_experience.yml). Remove tokens, keys, passwords and real IPs from the transcript first.
+
 Planned: a `/pick-issue` skill that does steps 2 to 6 ([#44](https://github.com/exceev-consulting/server-prep/issues/44)), one local check script ([#34](https://github.com/exceev-consulting/server-prep/issues/34)), and a "contribute with Claude Code or Codex" section in CONTRIBUTING ([#43](https://github.com/exceev-consulting/server-prep/issues/43)).
 
 ## Safety rules for agents

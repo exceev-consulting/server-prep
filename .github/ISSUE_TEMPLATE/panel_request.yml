@@ -1,0 +1,52 @@
+name: Panel request
+description: Support for another self-hosted panel, like Coolify, Dokploy or Openship
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames if you prefer.
+        A security problem (port left open, root login allowed, lockout...)? Use [Report a vulnerability](https://github.com/exceev-consulting/server-prep/security/advisories/new) instead.
+        Read [Panels](https://github.com/exceev-consulting/server-prep/wiki/Panels) first: a panel that logs in over SSH as root with a key may already work with `PANEL=yourpanel`.
+  - type: input
+    id: panel
+    attributes:
+      label: Panel name
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link
+      description: Website or source repository
+      placeholder: "https://example.com"
+    validations:
+      required: true
+  - type: textarea
+    id: connect
+    attributes:
+      label: How it connects to the server
+      description: SSH user (root or another user), the key and where it comes from, the ports it needs.
+      placeholder: |
+        SSH as root with an ed25519 key made by the panel, port 22.
+        The panel host connects from 203.0.113.10.
+    validations:
+      required: true
+  - type: textarea
+    id: installs
+    attributes:
+      label: What it installs on the server
+      description: Docker (Docker CE or docker.io), reverse proxy, ports it opens, agents or services.
+      placeholder: Docker CE, Traefik on 80 and 443, a dashboard on 8080.
+    validations:
+      required: true
+  - type: dropdown
+    id: test
+    attributes:
+      label: Can you test it?
+      options:
+        - "Yes, on a test server"
+        - "Yes, with some help"
+        - "No"
+    validations:
+      required: true
