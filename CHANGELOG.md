@@ -5,6 +5,9 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
+  step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
+  now says it would check that file and merge the log rotation if it is missing.
 - `server-prep.sh --upgrade` updates a downloaded copy to the latest release. It downloads the release files, checks
   each one against the release's `SHA256SUMS`, shows the version change and asks first (`--yes` skips the question,
   `--dry-run` only checks). The old files are kept in `.server-prep-old/`. Nothing is installed on the server: re-run
@@ -124,6 +127,9 @@ Highlights of each release. The full list of merged pull requests is in each
   file or pasted into the wrong setting, such as the Telegram bot token as the chat id, a line or value that would run a
   command, even through escapes or invisible control characters) and exits 1 when there is an error. It never prints a
   secret.
+- Codex now finds the four skills (`new-server`, `audit-review`, `monitoring`, `add-step`): `.agents/skills` is a link
+  to `.claude/skills`, so Claude Code and Codex read the same files. In Codex, type `$new-server` or pick a skill from
+  `/skills`. On Windows, clone with symlinks turned on (see `AGENTS.md`).
 
 ## [1.1.1] - 2026-10-19
 

@@ -89,7 +89,7 @@ means `--config` is missing or the file cannot be read.
 | [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
-| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and how Codex and other agents get the project rules |
+| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with the same skills in Claude Code and Codex, and the project rules every agent reads |
 
 ## Supported systems
 
