@@ -90,7 +90,15 @@ upgrade --yes; rc=$?
 new_install; new_release
 printf '%s  ../../evil.sh\n' "$(sha256sum < "$tmp/release/server-audit.sh" | cut -d' ' -f1)" >> "$tmp/release/SHA256SUMS"
 cp "$tmp/release/server-audit.sh" "$tmp/release/evil.sh"
-upgrade --yes; [[ ! -e "$tmp/evil.sh" && ! -e "$tmp/install/evil.sh" ]] && ok "only known file names are downloaded" || bad "unknown file name"
+upgrade --yes; rc=$?
+[[ $rc == 0 && ! -e "$tmp/evil.sh" && ! -e "$tmp/install/evil.sh" ]] && grep -q 'new audit' "$tmp/install/server-audit.sh" \
+    && ok "only known file names are downloaded, the upgrade still goes on" || bad "unknown file name (rc $rc)"
+
+new_install; new_release
+printf '%064d  server-audit.sh\n' 0 >> "$tmp/release/SHA256SUMS"
+upgrade --yes; rc=$?
+[[ $rc == 1 ]] && unchanged && grep -q 'does not match' "$tmp/out" \
+    && ok "a file listed twice with two checksums stops the upgrade" || bad "duplicate line (rc $rc)"
 
 if [[ $EUID -ne 0 ]]; then   # root reads a mode 000 file anyway
     new_install; new_release
@@ -117,6 +125,11 @@ upgrade --yes; rc=$?
 new_install; new_release
 printf '{"tag_name": "v1.0.0"}\n' > "$FAKE_LATEST"
 upgrade --yes; [[ $? == 0 ]] && unchanged && grep -q 'is the latest release' "$tmp/out" && ok "up to date: nothing to do" || bad "up to date"
+
+new_install; new_release
+printf '{"tag_name": "v0.9.0"}\n' > "$FAKE_LATEST"
+upgrade --yes; [[ $? == 0 ]] && unchanged && grep -q 'is newer than the latest release' "$tmp/out" \
+    && ok "a copy newer than the release: nothing to do" || bad "newer copy"
 
 new_install; new_release
 printf '{"tag_name": "nightly"}\n' > "$FAKE_LATEST"
