@@ -55,6 +55,8 @@ expect_help() {   # expect_help LABEL WANT_SCRIPT_DIR COMMAND...
 }
 expect_help file "$SCRIPT_DIR" bash "$SCRIPT" --help
 expect_help stdin '' bash -s -- --help < "$SCRIPT"
+# stdin again, with the script file itself as $0: a header that trusts $0 would pick its folder
+expect_help 'stdin with a file as $0' '' bash -c 'exec -a "$1" bash -s -- --help' _ "$SCRIPT" < "$SCRIPT"
 # Linux limits one argument to 128 KiB (MAX_ARG_STRLEN), so a larger script cannot run as bash -c "$(cat ...)"
 # at all: nothing to test then. The other ways to run it (file, stdin, sourced) stay checked.
 if (( $(wc -c < "$SCRIPT") < 131072 )); then
