@@ -9,7 +9,8 @@ Highlights of each release. The full list of merged pull requests is in each
   (`server-prep-report-<host>-<date>.json`, root only, with a copy in your home). An agent or a script can read from it
   which steps changed or failed, the audit before and after, the files changed and what is still to do. Step results use
   stable values (`changed`, `already_ok`, `skipped`, `failed`, `would_change`). The file holds no token and no full
-  public key. Both report copies in your home are now written as your user, mode 600.
+  public key. Both report copies in your home are now written as your user, mode 600. The Markdown report's "Root SSH
+  allowed from" row now lists the sources on a run without the users and ssh steps too, as the JSON does.
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
   now says it would check that file and merge the log rotation if it is missing.
