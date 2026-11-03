@@ -560,6 +560,7 @@ validate_values() {
 UPGRADE_FILES="server-prep.sh server-preconfig.sh server-audit.sh server-prep.conf.example telegraf.conf.example"
 
 version_newer() {   # version_newer A B: true when A is a newer version than B
+    # sort -V is GNU; --upgrade also needs GNU sha256sum and stops earlier on systems without them
     [[ $1 != "$2" && $(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1) == "$1" ]]
 }
 
