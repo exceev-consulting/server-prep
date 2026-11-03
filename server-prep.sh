@@ -639,7 +639,9 @@ upgrade_scripts() {
     backup="$dir/.server-prep-old/v${PREP_VERSION}-${stamp}"
     mkdir -p "$backup" || { echo "Cannot create $backup" >&2; return 1; }
     for f in "${files[@]}"; do
-        [[ -e "$dir/$f" ]] && cp -p "$dir/$f" "$backup/$f"
+        if [[ -e "$dir/$f" ]]; then
+            cp -p "$dir/$f" "$backup/$f" || { echo "Cannot back up $f to $backup: nothing was changed." >&2; return 1; }
+        fi
     done
     for f in "${files[@]}"; do
         if [[ -e "$dir/$f" ]]; then

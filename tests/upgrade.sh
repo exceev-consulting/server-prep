@@ -91,6 +91,17 @@ printf '%s  ../../evil.sh\n' "$(sha256sum < "$tmp/release/server-audit.sh" | cut
 cp "$tmp/release/server-audit.sh" "$tmp/release/evil.sh"
 upgrade --yes; [[ ! -e "$tmp/evil.sh" && ! -e "$tmp/install/evil.sh" ]] && ok "only known file names are downloaded" || bad "unknown file name"
 
+if [[ $EUID -ne 0 ]]; then   # root reads a mode 000 file anyway
+    new_install; new_release
+    chmod 000 "$tmp/install/server-preconfig.sh"
+    upgrade --yes; rc=$?
+    chmod 755 "$tmp/install/server-preconfig.sh"
+    [[ $rc == 1 ]] && unchanged && grep -q 'Cannot back up server-preconfig.sh' "$tmp/out" \
+        && ok "a backup that fails stops the upgrade" || bad "backup failure (rc $rc)"
+else
+    printf 'skip: backup failure (root can read every file)\n'
+fi
+
 new_install; new_release
 printf 'if then fi\n' > "$tmp/release/server-preconfig.sh"
 (cd "$tmp/release" && sha256sum -- server-prep.sh server-audit.sh server-preconfig.sh server-prep.conf.example > SHA256SUMS)
