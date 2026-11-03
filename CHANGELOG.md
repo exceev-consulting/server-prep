@@ -5,6 +5,10 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The SSH safety check now warns when `ADMIN_IPS` is empty, the firewall is on and SSH is allowed only from the panel's
+  IP (`PANEL_ACCESS=public` with `PANEL_IP`) or only through the Cloudflare tunnel (`PANEL_ACCESS=cloudflared`). The
+  firewall then blocks the test command with the local IP from your machine, so it says to test from the panel's host or
+  through the tunnel instead, or to add your IP to `ADMIN_IPS`. The test command itself is unchanged.
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
   now says it would check that file and merge the log rotation if it is missing.
