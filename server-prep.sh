@@ -599,7 +599,7 @@ upgrade_scripts() {
     tmp=$(mktemp -d) || return 1
     # EXIT, not RETURN: it also runs on Ctrl-C, and the script exits right after upgrade_scripts
     # shellcheck disable=SC2064   # expand now: tmp is local
-    trap "rm -rf '$tmp'" EXIT
+    trap "rm -rf $(printf '%q' "$tmp")" EXIT
     local base="https://github.com/${repo}/releases/download/${latest}"
     "${get[@]}" -m 60 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" \
         || { echo "Could not download SHA256SUMS of ${latest}." >&2; return 1; }
