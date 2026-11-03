@@ -147,6 +147,11 @@ expect 'panel access, admin IPs and extra ports are arrays' \
     '.settings.panel_access == ["tailscale","public"] and .settings.admin_ips == ["203.0.113.10","192.168.1.0/24"]
      and .settings.extra_ports == ["8000/tcp","6001/tcp"]'
 expect 'root SSH sources' '.settings.root_ssh_from == ["100.64.0.0/10","fd7a:115c:a1e0::/48","203.0.113.10"]'
+# The Markdown report shows the same sources, also when users and ssh did not run (no home copy here).
+( unset SUDO_USER; ROOT_SOURCES=(); write_report ) > "$tmp/out" 2>&1 || fail "write_report failed: $(cat "$tmp/out")"
+grep -qxF '| Root SSH allowed from | 100.64.0.0/10 fd7a:115c:a1e0::/48 203.0.113.10 |' "$REPORT_FILE" ||
+    fail "the Markdown report's root SSH sources differ from the JSON: $(grep 'Root SSH' "$REPORT_FILE")"
+printf 'ok: the Markdown report lists the same root SSH sources\n'
 expect 'yes/no settings are booleans' \
     '.settings.expose_web == false and .settings.fail2ban == true and .settings.crowdsec == false and .settings.telegram == true'
 

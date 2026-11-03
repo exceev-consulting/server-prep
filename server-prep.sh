@@ -2342,6 +2342,7 @@ copy_to_sudo_home() {   # copy_to_sudo_home FILE, mode 600; a failure only warns
 
 write_report() {
     local i
+    compute_root_sources   # users and ssh may not have run; the JSON report shows the same
     {
         echo "# Server preparation report - ${HOST_SHORT}"
         echo
