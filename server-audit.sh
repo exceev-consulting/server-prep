@@ -240,11 +240,12 @@ if have apt-get; then
         TP_MISSING=$(apt-config dump 2>/dev/null | third_party_uncovered "${TP_INSTALLED[@]}")
         if [[ -z "$TP_MISSING" ]]; then
             result upd.third_party PASS "Third-party tool updates" "${TP_INSTALLED[*]}: security fixes installed automatically"
-        elif grep -qs '^THIRD_PARTY_AUTO_UPDATE=no' /etc/server-prep/server-prep.conf; then
+        # the saved answers are root only (600): without root a turned-off setting looks like a WARN
+        elif grep -qsE "^THIRD_PARTY_AUTO_UPDATE=(no|\"no\"|'no')\$" /etc/server-prep/server-prep.conf; then
             result upd.third_party INFO "Third-party tool updates" "Turned off (THIRD_PARTY_AUTO_UPDATE=no): update ${TP_MISSING} yourself" \
                 "sudo apt update && sudo apt install --only-upgrade ${TP_MISSING}"
         else
-            result upd.third_party WARN "Third-party tool updates" "${TP_MISSING}: security fixes are not installed automatically (repository not in unattended-upgrades)" \
+            result upd.third_party WARN "Third-party tool updates" "${TP_MISSING}: security fixes are not installed automatically (repository not in unattended-upgrades)$(need_root_note)" \
                 "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes"
         fi
     fi
