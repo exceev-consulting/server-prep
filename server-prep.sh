@@ -564,7 +564,7 @@ version_newer() {   # version_newer A B: true when A is a newer version than B
 }
 
 upgrade_scripts() {
-    local repo=${PROJECT_URL#https://github.com/} dir=$SCRIPT_DIR json latest tmp f answer backup stamp n=0
+    local repo=${PROJECT_URL#https://github.com/} dir=$SCRIPT_DIR json latest tmp f answer backup stamp new n=0
     local -a files=()
     # HTTPS only, redirects included, and no answer over 4 MiB
     local -a get=(curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 4194304)
@@ -653,9 +653,10 @@ upgrade_scripts() {
         else
             if [[ $f == *.sh ]]; then chmod 755 "$tmp/$f"; else chmod 644 "$tmp/$f"; fi
         fi
-        # same folder, then rename: atomic, and the running script keeps its old copy
-        cp -p "$tmp/$f" "$dir/.$f.upgrade" && mv -f "$dir/.$f.upgrade" "$dir/$f" \
-            || { echo "Could not replace $f. The old files are in $backup." >&2; return 1; }
+        # a new name in the same folder (mktemp: no file or link can be there first), then rename:
+        # atomic, and the running script keeps its old copy
+        new=$(mktemp "$dir/.$f.XXXXXX") && cp -p "$tmp/$f" "$new" && mv -f "$new" "$dir/$f" \
+            || { [[ -n $new ]] && rm -f "$new"; echo "Could not replace $f. The old files are in $backup." >&2; return 1; }
         n=$((n + 1))
     done
     echo "Upgraded to ${latest}: ${n} files replaced. Old files: $backup"

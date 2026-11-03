@@ -72,7 +72,8 @@ b=$(ls -d "$tmp/install/.server-prep-old/v1.0.0-"* 2>/dev/null | head -1)
     && ok "the old files are kept in .server-prep-old/v1.0.0-<date>" || bad "backup"
 grep -q 'Upgraded to v9.9.9: 4 files replaced' "$tmp/out" && grep -q -- '--only <step>' "$tmp/out" \
     && ok "it says what changed and what to run next" || bad "messages"
-ls "$tmp/install"/.*.upgrade >/dev/null 2>&1 && bad "temporary files left behind" || ok "no temporary file left behind"
+[[ -z $(find "$tmp/install" -mindepth 1 -maxdepth 1 -name '.*' ! -name .server-prep-old) ]] \
+    && ok "no temporary file left behind" || bad "temporary files left behind"
 
 new_install; new_release
 upgrade --dry-run; unchanged && grep -q '\[dry-run\] nothing replaced' "$tmp/out" && ok "--dry-run checks but changes nothing" || bad "dry-run"
