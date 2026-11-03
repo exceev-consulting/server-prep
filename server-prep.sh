@@ -566,6 +566,8 @@ version_newer() {   # version_newer A B: true when A is a newer version than B
 upgrade_scripts() {
     local repo=${PROJECT_URL#https://github.com/} dir=$SCRIPT_DIR json latest tmp f answer backup stamp n=0
     local -a files=()
+    # HTTPS only, redirects included, and no answer over 4 MiB
+    local -a get=(curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 4194304)
     if [[ -z "$dir" || ! -f "$dir/server-prep.sh" ]]; then
         echo "Cannot find the folder of server-prep.sh: run the file itself (./server-prep.sh --upgrade)." >&2
         return 1
@@ -577,7 +579,7 @@ upgrade_scripts() {
     for f in curl sha256sum; do
         command -v "$f" >/dev/null || { echo "--upgrade needs $f" >&2; return 1; }
     done
-    json=$(curl -fsSL -m 20 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${repo}/releases/latest") \
+    json=$("${get[@]}" -m 20 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${repo}/releases/latest") \
         || { echo "Could not reach GitHub to read the latest release. Try again later." >&2; return 1; }
     latest=$(sed -n 's/.*"tag_name":[[:space:]]*"\(v[0-9][0-9.]*\)".*/\1/p' <<<"$json" | head -1)
     if [[ ! $latest =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -598,7 +600,7 @@ upgrade_scripts() {
     # shellcheck disable=SC2064   # expand now: tmp is local
     trap "rm -rf '$tmp'" EXIT
     local base="https://github.com/${repo}/releases/download/${latest}"
-    curl -fsSL -m 60 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" \
+    "${get[@]}" -m 60 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" \
         || { echo "Could not download SHA256SUMS of ${latest}." >&2; return 1; }
     # only the known file names, each listed once with a 64-hex checksum
     for f in $UPGRADE_FILES; do
@@ -611,7 +613,7 @@ upgrade_scripts() {
         return 1
     fi
     for f in "${files[@]}"; do
-        curl -fsSL -m 120 -o "$tmp/$f" "$base/$f" || { echo "Could not download $f of ${latest}." >&2; return 1; }
+        "${get[@]}" -m 120 -o "$tmp/$f" "$base/$f" || { echo "Could not download $f of ${latest}." >&2; return 1; }
     done
     if ! (cd "$tmp" && grep -E "  ($(IFS='|'; echo "${files[*]//./\\.}"))\$" SHA256SUMS | sha256sum -c --strict --quiet); then
         echo "A downloaded file does not match the release's SHA256SUMS: refusing to upgrade. Nothing was changed." >&2
