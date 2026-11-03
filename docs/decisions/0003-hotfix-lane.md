@@ -87,4 +87,5 @@ The lane, from detection to the user:
 - **An automatic self-update in the scripts.** Not chosen: a script that downloads and runs a new version of itself as
   root, on its own schedule, is a larger risk than the one it fixes. `--upgrade` is the operator's choice instead: it
   runs only when asked, checks every file against the release's `SHA256SUMS`, never runs the new code while
-  upgrading, and keeps the old files.
+  upgrading, and keeps the old files. That check catches a broken download, not a compromised GitHub account:
+  `SHA256SUMS` comes from the same release, and releases are not signed yet.

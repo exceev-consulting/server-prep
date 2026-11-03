@@ -60,8 +60,8 @@ New to servers? Follow **[Start here](https://github.com/exceev-consulting/serve
 
 Prefer a download? Get the scripts from the [latest release](https://github.com/exceev-consulting/server-prep/releases/latest)
 and check them with `sha256sum -c SHA256SUMS`. Later, `./server-prep.sh --upgrade` brings a downloaded copy to the newest
-release: it checks every file against the release's `SHA256SUMS`, shows what changes and asks first (in a git clone,
-use `git pull`). The audit tells you when a newer release fixes a security problem. To prepare many servers the same way, fill a copy of
+release: it checks every file against the release's `SHA256SUMS` (a broken download, not a compromised GitHub account:
+see [SECURITY.md](SECURITY.md#supported-versions)), shows what changes and asks first (in a git clone, use `git pull`). The audit tells you when a newer release fixes a security problem. To prepare many servers the same way, fill a copy of
 [server-prep.conf.example](server-prep.conf.example) and run `sudo ./server-prep.sh --config web-01.conf --yes`.
 Check the file first, no root needed: `./server-prep.sh --config web-01.conf --validate` reads it without running it
 and prints one line per problem, with its line number and what to do. It runs on Linux, or on any machine with bash 4
