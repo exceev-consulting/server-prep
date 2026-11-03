@@ -264,3 +264,17 @@ if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         fail ".gitignore does not ignore server-prep-report-*.json"
     printf 'ok: .gitignore ignores the JSON report of a dry run in the repo folder\n'
 fi
+
+# --- Case 5: the write fails half way (a full disk) ----------------------------------------------------
+# A 1-block file size limit and a long to-do item stop the write after the first lines reached the
+# file, as a full disk would (SIGXFSZ ignored, so the write fails instead of killing the shell).
+REPORT_FILE="$tmp/dry/server-prep-report-web-01-20260101_000001-dryrun.md"
+json="$tmp/dry/server-prep-report-web-01-20260101_000001-dryrun.json"
+MANUAL_TODO=("$(printf '%04096d' 0)")
+status=0
+( ulimit -f 1; trap '' XFSZ; write_report_json ) > "$tmp/out" 2>&1 || status=$?
+MANUAL_TODO=()
+[[ $status -eq 0 ]] || fail "a write that fails half way makes write_report_json exit $status, want 0"
+grep -qF 'JSON report not written' "$tmp/out" || fail "a write that fails half way gives no warning: $(cat "$tmp/out")"
+[[ -e "$json" ]] && fail "a write that fails half way leaves a partial JSON report: $(head -c 300 "$json")"
+printf 'ok: a write that fails half way leaves no partial JSON report\n'

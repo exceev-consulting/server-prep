@@ -2484,7 +2484,7 @@ audit_counts() {   # null without an audit
     awk -F'\t' '{n[$2]++} END {printf "{\"pass\":%d,\"warn\":%d,\"fail\":%d}", n["PASS"], n["WARN"], n["FAIL"]}' "$1"
 }
 
-# The report for scripts and agents: no token, no key. A failed write only warns.
+# The report for scripts and agents: no token, no key. A failed write only warns and leaves no partial file.
 write_report_json() {
     local json="${REPORT_FILE%.md}.json" i d id b a t m p=null ports="" steps="" chk="" mod="" bak=null rb=null w
     read -r -d '' -a w <<<"${CURRENT_SSH_PORTS:-}"
@@ -2523,7 +2523,7 @@ write_report_json() {
         "$(jlist "${NEW_FILES[@]}")" "$(jlist "${MANUAL_TODO[@]}")"
         printf '"paths":{"report":%s,"log":%s,"backups":%s,"rollback":%s}}\n' \
         "$(jstr "$REPORT_FILE")" "$(jstr "$LOG_FILE")" "$bak" "$rb"
-      } > "$json" ) 2>/dev/null || { warn "JSON report not written: $json"; return 0; }
+      } > "$json" ) 2>/dev/null || { rm -f -- "$json" 2>/dev/null; warn "JSON report not written: $json"; return 0; }
     chmod 600 "$json"
     copy_to_sudo_home "$json"
     return 0
