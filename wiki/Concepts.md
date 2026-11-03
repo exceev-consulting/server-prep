@@ -132,7 +132,7 @@ You should see `permitrootlogin no`: a random internet address cannot log in as 
 
 ## Automatic security updates
 
-The `unattended` step turns on *unattended-upgrades*: every day, the server installs security updates by itself. With `DOCKER_AUTO_UPDATE=yes`, Docker CE updates are included. With `THIRD_PARTY_AUTO_UPDATE=yes` (the default), so are CrowdSec, cloudflared, Telegraf and Tailscale: they come from their own repositories, which automatic updates skip otherwise, so their security fixes would wait for you. Old kernels and unused packages are removed.
+The `unattended` step turns on *unattended-upgrades*: every day, the server installs security updates by itself. With `DOCKER_AUTO_UPDATE=yes`, Docker CE updates are included. With `THIRD_PARTY_AUTO_UPDATE=yes` (the default), so are CrowdSec, cloudflared, Telegraf and Tailscale: they come from their own repositories, which automatic updates skip otherwise, so their security fixes would wait for you. Each update restarts that tool for a moment: SSH over Tailscale pauses a few seconds. Old kernels and unused packages are removed.
 
 Some updates (like a new kernel) need a reboot. `AUTO_REBOOT=yes` reboots by itself at `AUTO_REBOOT_TIME` (04:00). It is `no` by default, because a reboot restarts your apps.
 

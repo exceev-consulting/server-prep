@@ -1022,8 +1022,9 @@ questions() {
             "Docker engine is updated too; containers restart briefly when that happens."
     ask_yn DOCKER_AUTO_UPDATE "Include Docker in automatic updates" "$DOCKER_AUTO_UPDATE"
     explain "CrowdSec, cloudflared, Telegraf and Tailscale come from their own repositories, which automatic" \
-            "security updates skip by default. Including them installs their security fixes the same night" \
-            "(each restarts its service for a moment). 'no' = you update them yourself."
+            "security updates skip by default. Including them installs their security fixes with the daily" \
+            "update run (each restarts its service for a moment; SSH over Tailscale pauses a few seconds)." \
+            "'no' = you update them yourself."
     ask_yn THIRD_PARTY_AUTO_UPDATE "Include CrowdSec, cloudflared, Telegraf and Tailscale in automatic updates" "$THIRD_PARTY_AUTO_UPDATE"
     explain "Some updates (kernel) only apply after a reboot. 'yes' reboots automatically at ${AUTO_REBOOT_TIME}" \
             "when needed (apps go down ~1 min). 'no' = you reboot yourself; the audit/report tells you when."
