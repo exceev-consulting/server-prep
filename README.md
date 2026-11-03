@@ -134,7 +134,8 @@ Both work the same way. Only a few details change:
 | `cloudflared` | install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) |
 | `suid` | list SUID binaries outside standard paths (review only) |
 
-Where things go (root only): the report in `/root/server-prep-reports/` (with a copy in your home), the log in
+Where things go (root only): the report in `/root/server-prep-reports/` as Markdown and as JSON for scripts and agents
+(with a copy of both in your home), the log in
 `/var/log/server-prep/`, backups and `rollback.sh` in `/var/lib/server-prep/backups/<date>/`, and your answers
 (no secrets) in `/etc/server-prep/server-prep.conf`.
 

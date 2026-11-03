@@ -91,6 +91,7 @@ All outputs are readable by root only.
 | What | Where |
 |---|---|
 | Report (Markdown) | `/root/server-prep-reports/server-prep-report-<host>-<date>.md`, plus a copy in the home of the user who ran `sudo` |
+| Report (JSON) | the same path ending in `.json` (same facts for scripts and agents, no secrets), plus a copy in the home of the user who ran `sudo` |
 | Log | `/var/log/server-prep/run-<date>.log` |
 | Backups and `rollback.sh` | `/var/lib/server-prep/backups/<date>/` |
 | Audit results before and after | `/var/lib/server-prep/audit-<date>-before.*` and `...-after.*` |
