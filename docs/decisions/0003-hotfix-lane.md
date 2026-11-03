@@ -60,8 +60,8 @@ The lane, from detection to the user:
    "**Security fix:**" line (CHANGELOG). The "Security" group of the generated notes does not count: the `security`
    label also marks new hardening, not only fixes. The operator updates with `server-prep.sh --upgrade`: it downloads
    the latest release, checks every file against its `SHA256SUMS`, shows what changes, asks first and keeps the old
-   files. Third-party tools on the server (CrowdSec, cloudflared, Telegraf, Tailscale) get their own security fixes
-   through unattended-upgrades (`THIRD_PARTY_AUTO_UPDATE`).
+   files. Third-party tools on the server (CrowdSec, cloudflared, Telegraf, Tailscale) are outside this lane: their
+   security fixes come from their own apt repositories.
 8. **Bad release.** The [maintainer handbook](https://github.com/exceev-consulting/server-prep/wiki/Maintainer-handbook)
    has a runbook: mark the release, tell users, publish the fix.
 
