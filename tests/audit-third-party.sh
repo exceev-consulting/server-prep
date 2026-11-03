@@ -40,13 +40,20 @@ SHORT='Unattended-Upgrade::Origins-Pattern:: "o=Tailscale";
 Unattended-Upgrade::Origins-Pattern:: "o=packagecloud.io/crowdsec/crowdsec,l=crowdsec";'
 LOOKALIKE='Unattended-Upgrade::Origins-Pattern:: "origin=Tailscale-Unstable";
 Unattended-Upgrade::Origins-Pattern:: "origin=packagecloudXio/crowdsec/crowdsec";
-Unattended-Upgrade::Allowed-Origins:: "cloudflared:any";'
+Unattended-Upgrade::Allowed-Origins:: "cloudflared-beta:any";'
+ALLOWED='Unattended-Upgrade::Allowed-Origins "";
+Unattended-Upgrade::Allowed-Origins:: "${distro_id}:${distro_codename}-security";
+Unattended-Upgrade::Allowed-Origins:: "cloudflared:any";
+Unattended-Upgrade::Allowed-Origins:: "Tailscale:stable";'
+LOWERCASE='Unattended-Upgrade::Origins-Pattern:: "origin=tailscale,label=tailscale";'
 
 expect "every tool covered" "" "$ALL" crowdsec cloudflared telegraf tailscale
 expect "distro and Docker only: every tool uncovered" "crowdsec cloudflared telegraf tailscale" "$DISTRO_ONLY" crowdsec cloudflared telegraf tailscale
 expect "only installed tools are checked" "telegraf" "$DISTRO_ONLY" telegraf
 expect "short o= form counts" "" "$SHORT" tailscale crowdsec
 expect "a look-alike origin does not count" "crowdsec tailscale cloudflared" "$LOOKALIKE" crowdsec tailscale cloudflared
+expect "Allowed-Origins form counts" "crowdsec" "$ALLOWED" cloudflared tailscale crowdsec
+expect "origin case matters, as in unattended-upgrades" "tailscale" "$LOWERCASE" tailscale
 expect "no Origins-Pattern at all" "crowdsec" "" crowdsec
 expect "unknown names are ignored" "" "$ALL" docker-ce nginx
 exit "$fail"

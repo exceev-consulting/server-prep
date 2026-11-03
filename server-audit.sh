@@ -132,12 +132,13 @@ have() { command -v "$1" >/dev/null 2>&1; }
 need_root_note() { [[ $IS_ROOT -eq 1 ]] || echo " (run as root for an exact result)"; }
 
 # third_party_uncovered PKG...: reads `apt-config dump` on stdin and prints the PKGs (crowdsec,
-# cloudflared, telegraf, tailscale) whose repository is not in unattended-upgrades' Origins-Pattern,
-# so their security fixes are never installed by themselves. Unknown names are ignored.
+# cloudflared, telegraf, tailscale) whose repository is not in unattended-upgrades' Origins-Pattern
+# or Allowed-Origins, so their security fixes are never installed by themselves. Unknown names are
+# ignored. Origins are compared with their case, as unattended-upgrades does.
 third_party_uncovered() {
     local dump pkg origin
     local -a out=()
-    dump=$(grep -E '^Unattended-Upgrade::Origins-Pattern' || true)
+    dump=$(grep -E '^Unattended-Upgrade::(Origins-Pattern|Allowed-Origins)' || true)
     for pkg in "$@"; do
         case $pkg in
             crowdsec) origin='packagecloud\.io/crowdsec/crowdsec' ;;
@@ -146,7 +147,7 @@ third_party_uncovered() {
             tailscale) origin='Tailscale' ;;
             *) continue ;;
         esac
-        grep -qiE "\"(o|origin)=${origin}(,|\")" <<<"$dump" || out+=("$pkg")
+        grep -qE "\"(o|origin)=${origin}(,|\")|Allowed-Origins:: \"${origin}:" <<<"$dump" || out+=("$pkg")
     done
     printf '%s' "${out[*]}"
 }
