@@ -651,7 +651,7 @@ upgrade_scripts() {
             chmod --reference="$dir/$f" "$tmp/$f" 2>/dev/null
             chown --reference="$dir/$f" "$tmp/$f" 2>/dev/null
         else
-            [[ $f == *.sh ]] && chmod 755 "$tmp/$f" || chmod 644 "$tmp/$f"
+            if [[ $f == *.sh ]]; then chmod 755 "$tmp/$f"; else chmod 644 "$tmp/$f"; fi
         fi
         # same folder, then rename: atomic, and the running script keeps its old copy
         cp -p "$tmp/$f" "$dir/.$f.upgrade" && mv -f "$dir/.$f.upgrade" "$dir/$f" \
