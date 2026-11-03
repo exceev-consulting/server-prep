@@ -2507,7 +2507,9 @@ write_report_json() {
     for i in "${CHANGED_FILES[@]}"; do mod+=",{\"path\":$(jstr "$i"),\"backup\":$(jstr "$BACKUP_DIR$i")}"; done
     [[ -d "$BACKUP_DIR" ]] && bak="$(jstr "$BACKUP_DIR")"   # none in a dry run
     [[ -f "$BACKUP_DIR/rollback.sh" ]] && rb="$(jstr "$BACKUP_DIR/rollback.sh")"
-    ( umask 077
+    # a link planted at the name (non-root dry run in a shared folder) is removed, and noclobber
+    # makes the write fail rather than follow one put back in between
+    ( umask 077; rm -f -- "$json"; set -C
       { printf '{"tool":"server-prep","schema_version":1,"version":%s,"mode":"%s","date":%s,"host":%s,"os":%s,"kernel":%s,"local_ip":%s,' \
         "$(jstr "$PREP_VERSION")" "$([[ $DRY_RUN -eq 1 ]] && echo dry-run || echo applied)" "$(jstr "$(date -Is)")" \
         "$(jstr "$(hostname)")" "$(jstr "${OS_PRETTY:-}")" "$(jstr "$(uname -r)")" "$(jstr "${LOCAL_IP:-}")"

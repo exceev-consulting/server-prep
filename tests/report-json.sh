@@ -240,6 +240,16 @@ write_report_json > "$tmp/out" 2>&1 || fail "dry run with only the before audit:
 expect 'only the before audit: before counts, after null, changed empty' \
     '.audit == {"before":{"pass":1,"warn":1,"fail":1},"after":null,"changed":[]}'
 
+# A link planted at the JSON's own name (a non-root dry run writes into the current folder) is replaced.
+printf 'untouched\n' > "$tmp/link-target"
+rm -f "$json"
+ln -s "$tmp/link-target" "$json"
+write_report_json > "$tmp/out" 2>&1 || fail "dry run: write_report_json failed with a link at the JSON's name"
+[[ "$(cat "$tmp/link-target")" == untouched ]] || fail "the JSON report wrote through a link at its name"
+[[ -f "$json" && ! -L "$json" ]] || fail "the JSON report is still a link"
+jq -e . "$json" >/dev/null 2>&1 || fail "dry run: no valid JSON after replacing a link at its name"
+printf 'ok: a link at the JSON report name is replaced, its target stays unchanged\n'
+
 # --- Case 3: the report folder cannot be written ------------------------------------------------------
 REPORT_FILE="$tmp/missing-dir/server-prep-report-web-01-20260101_000000.md"
 status=0
