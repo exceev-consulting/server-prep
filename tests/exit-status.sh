@@ -55,8 +55,16 @@ expect_help() {   # expect_help LABEL WANT_SCRIPT_DIR COMMAND...
 }
 expect_help file "$SCRIPT_DIR" bash "$SCRIPT" --help
 expect_help stdin '' bash -s -- --help < "$SCRIPT"
-expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
-expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+# stdin again, with the script file itself as $0: a header that trusts $0 would pick its folder
+expect_help 'stdin with a file as $0' '' bash -c 'exec -a "$1" bash -s -- --help' _ "$SCRIPT" < "$SCRIPT"
+# Linux limits one argument to 128 KiB (MAX_ARG_STRLEN), so a larger script cannot run as bash -c "$(cat ...)"
+# at all: nothing to test then. The other ways to run it (file, stdin, sourced) stay checked.
+if (( $(wc -c < "$SCRIPT") < 131072 )); then
+    expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
+    expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+else
+    printf 'skip: bash -c "$(cat server-prep.sh)" (the script is over the 128 KiB argument limit)\n'
+fi
 expect_help sourced "$SCRIPT_DIR" bash -c '. "$1" --help' _ "$SCRIPT"
 mkdir "$tmp/script dir"
 cp "$SCRIPT" "$tmp/script dir/server-prep.sh"
