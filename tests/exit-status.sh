@@ -150,7 +150,9 @@ save_answers() { :; }
 run_audit() { :; }
 write_rollback() { :; }
 write_report() { :; }
-write_report_json() { :; }   # it would write under /root/server-prep-reports and into a home
+# the real one would write under /root/server-prep-reports and into a home
+REPORT_FILE="$tmp/server-prep-report-test.md"
+write_report_json() { : > "${REPORT_FILE%.md}.json"; }
 title() { :; }
 
 # Fake steps only record their result. main() and its final result loop are real.
@@ -189,6 +191,16 @@ if ! grep -qE '^  JSON: +[^ ]+\.json$' "$tmp/main-output"; then
     exit 1
 fi
 printf 'ok: the Done block prints the JSON report path\n'
+# A JSON report that was not written (write_report_json only warned) is not named.
+REPORT_FILE="$tmp/unwritten/server-prep-report-test.md"
+write_report_json() { :; }
+expect_main_status none SKIPPED 0
+if grep -q '^  JSON:' "$tmp/main-output"; then
+    printf 'not ok: the Done block names a JSON report that was not written\n'
+    cat "$tmp/main-output" >&2
+    exit 1
+fi
+printf 'ok: the Done block leaves out a JSON report that was not written\n'
 
 # run_secret shows a token as *** in the log and in dry-run output, but runs the
 # command with the real value. Glob characters in the token must match literally.

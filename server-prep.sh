@@ -2572,7 +2572,7 @@ main() {
     done
     echo
     echo "  Report:  ${REPORT_FILE}"
-    echo "  JSON:    ${REPORT_FILE%.md}.json"
+    [[ -f ${REPORT_FILE%.md}.json ]] && echo "  JSON:    ${REPORT_FILE%.md}.json"
     [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]] && echo "           (copies in ~${SUDO_USER}/)"
     echo "  Log:     ${LOG_FILE}"
     if [[ ${#MANUAL_TODO[@]} -gt 0 ]]; then
