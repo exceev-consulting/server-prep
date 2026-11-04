@@ -174,7 +174,7 @@ release_status() {
         printf 'INFO%sCould not read the list of releases%s\n' "$us" "$us"
         return
     fi
-    fix="get v${latest} from ${PROJECT_URL}/releases/latest (or git pull), check it with sha256sum -c SHA256SUMS, then follow its release notes"
+    fix="sudo ./server-prep.sh --upgrade (it checks every file against the release's SHA256SUMS and asks first; in a git clone: git pull), then follow the release notes of v${latest}"
     if [[ -z $installed ]]; then
         printf 'INFO%sLatest release is v%s. The server-prep version used here is unknown (no server-prep.sh next to the audit, no report)%s\n' \
             "$us" "$latest" "$us"

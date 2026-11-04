@@ -22,8 +22,8 @@ expect() {   # expect LABEL INSTALLED JSON STATUS MESSAGE-SUBSTRING
         fail=1
         return
     fi
-    if [[ $st == WARN && $fix != *"/releases/latest"* ]]; then
-        printf 'not ok: %s: a WARN must say where to get the release\n' "$label"
+    if [[ $st == WARN && $fix != *"server-prep.sh --upgrade"* ]]; then
+        printf 'not ok: %s: a WARN must give the upgrade command\n' "$label"
         fail=1
         return
     fi

@@ -96,6 +96,7 @@ ONLY=""
 SKIP=""
 CONFIG_FILE=""
 VALIDATE=0
+UPGRADE=0
 
 usage() {
     cat <<EOF
@@ -105,6 +106,8 @@ Usage: sudo $0 [options]
 
   --config FILE        read settings from FILE (see server-prep.conf.example)
   --validate           check the --config FILE and exit (no root, runs nothing, writes nothing)
+  --upgrade            replace these scripts with the latest release, after checking every file against
+                       the release's SHA256SUMS (asks first; --yes to skip the question, --dry-run to only show)
   --yes                non-interactive: use config/env values and defaults
   --dry-run            show what would change, change nothing
   --only a,b,c         run only these steps
@@ -113,9 +116,10 @@ Usage: sudo $0 [options]
   -h, --help           this help
 
 Exit codes:
-  0  every selected step completed (or was skipped); with --validate: the config has no error (warnings allowed)
+  0  every selected step completed (or was skipped); with --validate: the config has no error (warnings allowed);
+     with --upgrade: upgraded, already up to date, or nothing to do
   1  a step failed, or the run stopped early (not root, unsupported OS, aborted, invalid settings);
-     with --validate: the config has at least one error
+     with --validate: the config has at least one error; with --upgrade: download, check or replace failed
   2  command-line usage error, including an unknown --only or --skip name, or --validate without --config
 
 Steps: ${ALL_STEPS}
@@ -135,6 +139,7 @@ while [[ $# -gt 0 ]]; do
         --yes|-y) ASSUME_YES=1; INTERACTIVE=0; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --validate) VALIDATE=1; shift ;;
+        --upgrade) UPGRADE=1; shift ;;
         --only) [[ $# -ge 2 ]] || { echo "--only needs a value" >&2; exit 2; }; ONLY="${2//,/ }"; shift 2 ;;
         --skip) [[ $# -ge 2 ]] || { echo "--skip needs a value" >&2; exit 2; }; SKIP="${2//,/ }"; shift 2 ;;
         --list-steps) echo "$ALL_STEPS"; exit 0 ;;
@@ -545,6 +550,127 @@ validate_values() {
     fi
     return 0
 }
+
+# ----------------------------------------------------------------------------
+# --upgrade: replace the scripts with the latest release. Only the operator starts it (never a timer),
+# it never runs the downloaded code (bash -n only parses it), and every file must match the release's
+# SHA256SUMS, downloaded over HTTPS from the same release. Old files go to .server-prep-old/ first.
+# Each file is renamed into place, so the running script keeps reading its old copy.
+# ----------------------------------------------------------------------------
+UPGRADE_FILES="server-prep.sh server-preconfig.sh server-audit.sh server-prep.conf.example telegraf.conf.example"
+
+version_newer() {   # version_newer A B: true when A is a newer version than B
+    # sort -V is GNU; --upgrade also needs GNU sha256sum and stops earlier on systems without them
+    [[ $1 != "$2" && $(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1) == "$1" ]]
+}
+
+upgrade_scripts() {
+    local repo=${PROJECT_URL#https://github.com/} dir=$SCRIPT_DIR json latest tmp f answer backup stamp new n=0
+    local -a files=()
+    # HTTPS only, redirects included, and no answer over 4 MiB
+    local -a get=(curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 4194304)
+    if [[ -z "$dir" || ! -f "$dir/server-prep.sh" ]]; then
+        echo "Cannot find the folder of server-prep.sh: run the file itself (./server-prep.sh --upgrade)." >&2
+        return 1
+    fi
+    if [[ -e "$dir/.git" ]]; then
+        echo "This copy is a git checkout. Update it with: git -C $dir pull"
+        return 0
+    fi
+    for f in curl sha256sum; do
+        command -v "$f" >/dev/null || { echo "--upgrade needs $f" >&2; return 1; }
+    done
+    json=$("${get[@]}" -m 20 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${repo}/releases/latest") \
+        || { echo "Could not reach GitHub to read the latest release. Try again later." >&2; return 1; }
+    latest=$(sed -n 's/.*"tag_name":[[:space:]]*"\(v[0-9][0-9.]*\)".*/\1/p' <<<"$json" | head -1)
+    if [[ ! $latest =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Could not read the latest release's version from GitHub." >&2
+        return 1
+    fi
+    if [[ ${latest#v} == "$PREP_VERSION" ]]; then
+        echo "server-prep v${PREP_VERSION} is the latest release. Nothing to do."
+        return 0
+    fi
+    if version_newer "$PREP_VERSION" "${latest#v}"; then
+        echo "This copy (v${PREP_VERSION}) is newer than the latest release (${latest}). Nothing to do."
+        return 0
+    fi
+
+    tmp=$(mktemp -d) || return 1
+    # EXIT, not RETURN: it also runs on Ctrl-C, and the script exits right after upgrade_scripts
+    # shellcheck disable=SC2064   # expand now: tmp is local
+    trap "rm -rf $(printf '%q' "$tmp")" EXIT
+    local base="https://github.com/${repo}/releases/download/${latest}"
+    "${get[@]}" -m 60 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" \
+        || { echo "Could not download SHA256SUMS of ${latest}." >&2; return 1; }
+    # only the known file names, each listed once with a 64-hex checksum
+    for f in $UPGRADE_FILES; do
+        if grep -qE "^[0-9a-f]{64}  ${f//./\\.}\$" "$tmp/SHA256SUMS"; then
+            files+=("$f")
+        fi
+    done
+    if [[ ${#files[@]} -eq 0 || " ${files[*]} " != *" server-prep.sh "* ]]; then
+        echo "The SHA256SUMS of ${latest} does not list server-prep.sh: refusing to upgrade." >&2
+        return 1
+    fi
+    for f in "${files[@]}"; do
+        "${get[@]}" -m 120 -o "$tmp/$f" "$base/$f" || { echo "Could not download $f of ${latest}." >&2; return 1; }
+    done
+    if ! (cd "$tmp" && grep -E "  ($(IFS='|'; echo "${files[*]//./\\.}"))\$" SHA256SUMS | sha256sum -c --strict --quiet); then
+        echo "A downloaded file does not match the release's SHA256SUMS: refusing to upgrade. Nothing was changed." >&2
+        return 1
+    fi
+    for f in "${files[@]}"; do
+        if [[ $f == *.sh ]] && ! bash -n "$tmp/$f" 2>/dev/null; then
+            echo "$f of ${latest} does not parse: refusing to upgrade. Nothing was changed." >&2
+            return 1
+        fi
+    done
+
+    echo "server-prep v${PREP_VERSION} -> ${latest}: ${#files[@]} files checked against the release's SHA256SUMS."
+    echo "Release notes: ${PROJECT_URL}/releases/tag/${latest}"
+    echo "Files: ${files[*]}"
+    echo "Folder: $dir"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[dry-run] nothing replaced."
+        return 0
+    fi
+    if [[ $ASSUME_YES -ne 1 ]]; then
+        read -rp "Replace them now? The old files are kept in $dir/.server-prep-old/. [y/N] " answer || answer=""
+        [[ ${answer,,} == y || ${answer,,} == yes ]] || { echo "Nothing changed."; return 0; }
+    fi
+    stamp=$(date +%Y%m%d-%H%M%S)
+    backup="$dir/.server-prep-old/v${PREP_VERSION}-${stamp}"
+    mkdir -p "$backup" || { echo "Cannot create $backup" >&2; return 1; }
+    for f in "${files[@]}"; do
+        if [[ -e "$dir/$f" ]]; then
+            cp -p "$dir/$f" "$backup/$f" || { echo "Cannot back up $f to $backup: nothing was changed." >&2; return 1; }
+        fi
+    done
+    for f in "${files[@]}"; do
+        if [[ -e "$dir/$f" ]]; then
+            chmod --reference="$dir/$f" "$tmp/$f" 2>/dev/null
+            chown --reference="$dir/$f" "$tmp/$f" 2>/dev/null
+        else
+            if [[ $f == *.sh ]]; then chmod 755 "$tmp/$f"; else chmod 644 "$tmp/$f"; fi
+        fi
+        # a new name in the same folder (mktemp: no file or link can be there first), then rename:
+        # atomic, and the running script keeps its old copy
+        new=$(mktemp "$dir/.$f.XXXXXX") && cp -p "$tmp/$f" "$new" && mv -f "$new" "$dir/$f" \
+            || { [[ -n $new ]] && rm -f "$new"; echo "Could not replace $f. The old files are in $backup." >&2; return 1; }
+        n=$((n + 1))
+    done
+    echo "Upgraded to ${latest}: ${n} files replaced. Old files: $backup"
+    echo "Next: read the release notes, re-run the steps they name with"
+    echo "  sudo $dir/server-prep.sh --config /etc/server-prep/server-prep.conf --only <step> --yes"
+    echo "then check with: sudo $dir/server-audit.sh"
+    return 0
+}
+
+if [[ $UPGRADE -eq 1 ]]; then
+    upgrade_scripts
+    exit $?
+fi
 
 if [[ $VALIDATE -eq 1 ]]; then
     [[ -n "$CONFIG_FILE" ]] || { echo "--validate needs --config FILE" >&2; exit 2; }

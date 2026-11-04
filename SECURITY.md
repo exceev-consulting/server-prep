@@ -19,7 +19,10 @@ We try to answer within 7 days and will credit you in the release notes, unless 
 ## Supported versions
 
 Only the latest release and `main` get fixes. A security fix ships as a patch release, with the advisory published at
-the same time. `server-audit.sh` tells you when a newer release fixes a security problem (check `upd.server_prep`).
+the same time. `server-audit.sh` tells you when a newer release fixes a security problem (check `upd.server_prep`), and
+`./server-prep.sh --upgrade` installs it after checking every file against the release's `SHA256SUMS`.
+`SHA256SUMS` comes from the same release over HTTPS: it catches a broken download, not a compromised GitHub account.
+Releases are not signed yet.
 
 ## Out of scope
 
