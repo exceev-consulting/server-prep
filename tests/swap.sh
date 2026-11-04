@@ -48,7 +48,7 @@ ran() { local c; for c in "${CMDS[@]}"; do [[ "$c" == "$1"* ]] && return 0; done
 # expect_swap LABEL WANT_RESULT WANT_CREATED [WANT_DETAIL_SUBSTR]   (set fake return codes first)
 expect_swap() {
     local label="$1" want_res="$2" want_created="$3" want_detail="${4:-}" fstab=0 created=0
-    CMDS=(); WRITTEN=(); STEP_NAMES=(); STEP_RESULTS=(); STEP_DETAILS=(); MANUAL_TODO=()
+    CMDS=(); WRITTEN=(); STEP_IDS=(); STEP_NAMES=(); STEP_RESULTS=(); STEP_DETAILS=(); MANUAL_TODO=()
     run_step logging "Journald & swap" step_logging > "$tmp/out" 2>&1
     [[ " ${WRITTEN[*]} " == *" /etc/fstab "* ]] && fstab=1
     [[ "${STEP_DETAILS[0]}" == *"swap ${SWAP_SIZE} created"* ]] && created=1

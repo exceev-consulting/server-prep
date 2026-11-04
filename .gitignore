@@ -6,6 +6,7 @@ audit.md
 audit.json
 audit.tsv
 server-prep-report-*.md
+server-prep-report-*.json
 *.log
 
 # Filled configs may contain keys and tokens

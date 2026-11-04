@@ -194,6 +194,56 @@ if have timedatectl; then
     fi
 fi
 
+# lid_ignored: reads logind config text on stdin, in `systemd-analyze cat-config` order, and succeeds
+# only when closing the lid is ignored on battery and on external power. The last assignment wins,
+# HandleLidSwitch defaults to suspend, HandleLidSwitchExternalPower falls back to HandleLidSwitch
+# when unset or empty, and commented lines (# or ;) never match. Test: tests/audit-logind-lid.sh.
+lid_ignored() {
+    awk '
+        { sub(/\r$/, ""); sub(/[[:space:]]+$/, "") }
+        /^[[:space:]]*HandleLidSwitch[[:space:]]*=/ { v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); lid = v }
+        /^[[:space:]]*HandleLidSwitchExternalPower[[:space:]]*=/ { v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); ext = v }
+        END {
+            if (lid == "") lid = "suspend"
+            if (ext == "") ext = lid
+            exit !(lid == "ignore" && ext == "ignore")
+        }
+    '
+}
+
+# Laptop server mode (the laptop step). server-preconfig.sh masks the same sleep targets and sets
+# HandleLidSwitch=ignore on every server, so the check runs only on a machine with a battery or with
+# the laptop step's own drop-in (LAPTOP_MODE=yes), never as a "laptop" line on a VPS.
+HAS_BAT=0; ls /sys/class/power_supply/BAT* >/dev/null 2>&1 && HAS_BAT=1
+if [[ $HAS_BAT -eq 1 || -f /etc/systemd/logind.conf.d/50-server-prep-lid.conf ]]; then
+    # the configured files, not the running logind: the laptop step applies the lid setting at the next reboot
+    LOGIND_CFG=$(systemd-analyze cat-config systemd/logind.conf 2>/dev/null) ||
+        LOGIND_CFG=$(cat /etc/systemd/logind.conf /etc/systemd/logind.conf.d/*.conf 2>/dev/null)
+    LAPTOP_BAD=()
+    for lt in sleep.target suspend.target hibernate.target hybrid-sleep.target; do
+        [[ "$(systemctl is-enabled "$lt" 2>/dev/null)" == "masked" ]] || LAPTOP_BAD+=("$lt")
+    done
+    LID_OK=0
+    lid_ignored <<<"$LOGIND_CFG" && LID_OK=1
+    if [[ $LID_OK -eq 1 ]]; then
+        laptop_msg="Lid close ignored in the logind config"
+    else
+        laptop_msg="Lid close not ignored in the logind config (HandleLidSwitch / HandleLidSwitchExternalPower)"
+    fi
+    if [[ ${#LAPTOP_BAD[@]} -eq 0 ]]; then
+        laptop_msg+="; sleep, suspend, hibernate and hybrid-sleep masked"
+    else
+        laptop_msg+="; not masked: ${LAPTOP_BAD[*]}"
+    fi
+    if [[ $LID_OK -eq 1 && ${#LAPTOP_BAD[@]} -eq 0 ]]; then
+        result sys.laptop INFO "Laptop server mode" "$laptop_msg"
+    else
+        # without a battery the step runs only with LAPTOP_MODE=yes, and the saved answers do not keep it
+        laptop_env=""; [[ $HAS_BAT -eq 1 ]] || laptop_env="env LAPTOP_MODE=yes "
+        result sys.laptop INFO "Laptop server mode" "$laptop_msg" "sudo ${laptop_env}./server-prep.sh --config /etc/server-prep/server-prep.conf --only laptop --yes"
+    fi
+fi
+
 # ----------------------------------------------------------------------------
 # Updates
 # ----------------------------------------------------------------------------
@@ -924,6 +974,53 @@ if have telegraf; then
     fi
 fi
 
+# Telegram alerts (the telegram step): informational only. /etc/server-prep is root only (mode 700),
+# so the step is found by its world-readable traces. telegram.env holds the bot token: stat it, never
+# read or source it.
+TG_ENV=/etc/server-prep/telegram.env TG_HOOK=0
+grep -qsE '^[[:space:]]*-?session[[:space:]].*pam_exec\.so.*server-prep-ssh-alert' /etc/pam.d/sshd && TG_HOOK=1
+if [[ $TG_HOOK -eq 1 || -f /usr/local/sbin/server-prep-ssh-alert || -f /etc/systemd/system/server-prep-daily-report.timer || -f $TG_ENV ]]; then
+    tg_fix=""; tg_step=0
+    if [[ $IS_ROOT -eq 1 ]]; then
+        if [[ -f $TG_ENV ]]; then
+            # root sources telegram.env at every SSH login and for the daily report: only root may write it
+            tg_mode="" tg_owner=""
+            read -r tg_mode tg_owner <<<"$(stat -c '%a %U' "$TG_ENV" 2>/dev/null)"
+            if [[ "$tg_mode" == "600" && "$tg_owner" == root ]]; then
+                tg_msg="${TG_ENV} is 600, owned by root"
+            else
+                tg_msg="${TG_ENV} is ${tg_mode:-unknown}, owned by ${tg_owner:-unknown} (want 600, root)"
+                tg_fix="sudo chown root:root ${TG_ENV} && sudo chmod 600 ${TG_ENV}"
+            fi
+        else
+            tg_msg="${TG_ENV} missing"; tg_step=1
+        fi
+    else
+        tg_msg="${TG_ENV} not checked"
+    fi
+    if [[ $TG_HOOK -eq 1 ]]; then
+        tg_msg+=", SSH login hook in /etc/pam.d/sshd"
+    elif grep -qsE '^[[:space:]]*#.*server-prep-ssh-alert' /etc/pam.d/sshd; then
+        # the telegram step sees the commented line and does not add the hook again
+        tg_msg+=", SSH login hook commented out in /etc/pam.d/sshd"
+        tg_fix+="${tg_fix:+; }uncomment the server-prep-ssh-alert line in /etc/pam.d/sshd"
+    else
+        tg_msg+=", no SSH login hook in /etc/pam.d/sshd"; tg_step=1
+    fi
+    if [[ $tg_step -eq 1 ]]; then
+        # the answers file never holds the token: an empty answer keeps only the one in telegram.env
+        if [[ $IS_ROOT -ne 1 ]]; then
+            tg_tok="type the bot token at the hidden prompt, or leave it empty to keep the installed one"
+        elif [[ -f $TG_ENV ]]; then
+            tg_tok="leave the token empty to keep the installed one"
+        else
+            tg_tok="type the bot token at the hidden prompt: no token is installed"
+        fi
+        tg_fix+="${tg_fix:+; }sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegram (${tg_tok})"
+    fi
+    result mon.telegram INFO "Telegram alerts" "${tg_msg}$(need_root_note)" "$tg_fix"
+fi
+
 # ----------------------------------------------------------------------------
 # Services
 # ----------------------------------------------------------------------------
@@ -1062,6 +1159,36 @@ fi
 if [[ $DOCKER_ACTIVE -eq 1 && $IS_ROOT -eq 1 ]]; then
     PROXY=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -m1 -E '^(coolify-proxy|dokploy-traefik)$')
     [[ -n "$PROXY" ]] && result panel.proxy INFO "Panel proxy" "${PROXY} container is running"
+fi
+
+# Cloudflare Tunnel (the cloudflared step): informational only. For apps, cloudflared usually runs as
+# a panel Service, a container that Coolify gives a generated name, so match the image
+# (cloudflare/cloudflared, any tag or digest) or a name that contains cloudflared.
+CF_SVC=0 CF_CTR=""
+systemctl is-active --quiet cloudflared 2>/dev/null && CF_SVC=1
+if [[ $DOCKER_ACTIVE -eq 1 && $IS_ROOT -eq 1 ]]; then
+    CF_CTR=$(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null | awk 'index(tolower($0), "cloudflared") {print $1; exit}')
+fi
+if [[ $CF_SVC -eq 1 || -n "$CF_CTR" ]] || have cloudflared || [[ -f /etc/systemd/system/cloudflared.service ]]; then
+    if [[ $CF_SVC -eq 1 && -n "$CF_CTR" ]]; then
+        result panel.cloudflared INFO "Cloudflare Tunnel" "cloudflared service active; the ${CF_CTR} container also runs as a panel service"
+    elif [[ $CF_SVC -eq 1 ]]; then
+        result panel.cloudflared INFO "Cloudflare Tunnel" "cloudflared service active"
+    elif [[ -n "$CF_CTR" ]]; then
+        result panel.cloudflared INFO "Cloudflare Tunnel" "cloudflared runs as a panel service (${CF_CTR} container)"
+    else
+        # without root the container probe does not run
+        cf_note=""; [[ $DOCKER_ACTIVE -eq 1 ]] && cf_note=$(need_root_note)
+        # never hint at 'cloudflared service install <TOKEN>': sudo, the journal and the shell history keep
+        # the whole command line, token included. The cloudflared step takes it at a hidden prompt instead.
+        if [[ -f /etc/systemd/system/cloudflared.service || "$(systemctl show -p LoadState --value cloudflared 2>/dev/null)" == loaded ]]; then
+            cf_fix="sudo systemctl enable --now cloudflared"
+        else
+            cf_fix="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only cloudflared (keep cloudflared in the access methods and type the tunnel token at the hidden prompt)"
+        fi
+        result panel.cloudflared INFO "Cloudflare Tunnel" "cloudflared installed but not running${cf_note}" \
+            "${cf_fix}; for apps, run cloudflared as a panel Service: ${PROJECT_URL}/blob/main/docs/cloudflare-tunnel.md"
+    fi
 fi
 
 # ----------------------------------------------------------------------------

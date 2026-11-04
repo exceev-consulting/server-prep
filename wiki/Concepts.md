@@ -158,7 +158,7 @@ You should see the rules, each ending with a key such as `-k identity` or `-k ss
 
 ## What the audit score means
 
-`server-audit.sh` runs about 55 checks and gives each one a status:
+`server-audit.sh` has 59 checks (some run only where they apply) and gives each one a status:
 
 - **PASS**: good.
 - **WARN**: worth a look, not always a problem.

@@ -39,7 +39,7 @@ An audit runs before and after, so you see exactly what changed.
 - **A firewall that also covers Docker.** UFW denies by default, and published container ports obey it too.
 - **Intrusion blocking and updates.** fail2ban, CrowdSec and automatic security updates.
 - **Ready for your panel.** Root logs in only with the panel's key, and only from its route: Tailscale, a Cloudflare Tunnel or its IP.
-- **Proof, not promises.** A read-only audit with 56 checks, a score, and an exit code for CI or cron.
+- **Proof, not promises.** A read-only audit with 59 checks, a score, and an exit code for CI or cron.
 - **Safe to run.** A dry run, a backup of every file it changes, a rollback script and a Markdown report. Every step can run twice.
 
 ## Quick start
@@ -134,7 +134,8 @@ Both work the same way. Only a few details change:
 | `cloudflared` | install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) |
 | `suid` | list SUID binaries outside standard paths (review only) |
 
-Where things go (root only): the report in `/root/server-prep-reports/` (with a copy in your home), the log in
+Where things go (root only): the report in `/root/server-prep-reports/` as Markdown and as JSON for scripts and agents
+(with a copy of both in your home), the log in
 `/var/log/server-prep/`, backups and `rollback.sh` in `/var/lib/server-prep/backups/<date>/`, and your answers
 (no secrets) in `/etc/server-prep/server-prep.conf`.
 
@@ -165,7 +166,8 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 
 ## Community
 
-- **Questions:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a). **Ideas:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas). **Your setup or a compatibility report:** [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- **Questions:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a). **Ideas:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas). **Your setup:** [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- **A compatibility report:** the [compatibility form](https://github.com/exceev-consulting/server-prep/issues/new?template=compatibility_report.yml). **Another panel:** the [panel request form](https://github.com/exceev-consulting/server-prep/issues/new?template=panel_request.yml).
 - **Bugs:** [Issues](https://github.com/exceev-consulting/server-prep/issues). **What is next:** the [roadmap board](https://github.com/orgs/exceev-consulting/projects/7).
 - Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 

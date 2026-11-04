@@ -5,6 +5,12 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Each `server-prep.sh` run, applied or dry run, also writes the report as JSON next to the Markdown one
+  (`server-prep-report-<host>-<date>.json`, root only, with a copy in your home). An agent or a script can read from it
+  which steps changed or failed, the audit before and after, the files changed and what is still to do. Step results use
+  stable values (`changed`, `already_ok`, `skipped`, `failed`, `would_change`). The file holds no token and no full
+  public key. Both report copies in your home are now written as your user, mode 600. The Markdown report's "Root SSH
+  allowed from" row now lists the sources on a run without the users and ssh steps too, as the JSON does.
 - **Security:** CrowdSec, cloudflared, Telegraf and Tailscale now get their security fixes automatically. They come from
   their own repositories, which unattended-upgrades skipped, so a fix waited until someone upgraded by hand. The
   `unattended` step adds their repositories (new setting `THIRD_PARTY_AUTO_UPDATE`, `yes` by default), and the new audit
@@ -14,6 +20,13 @@ Highlights of each release. The full list of merged pull requests is in each
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
   now says it would check that file and merge the log rotation if it is missing.
+- `server-audit.sh` now has an INFO check for each of the three steps it did not cover. `sys.laptop` shows whether
+  closing the lid is ignored in the logind config and names any sleep target that is not masked. It runs only on a
+  machine with a battery or the laptop step's drop-in, because `server-preconfig.sh` masks sleep on every server.
+  `mon.telegram` shows whether `/etc/server-prep/telegram.env` is owned by root with mode 600 and whether the SSH
+  login hook is in `/etc/pam.d/sshd`, and never reads that file, which holds the bot token.
+  `panel.cloudflared` shows whether the `cloudflared` service is active or cloudflared runs as a panel service in a
+  container. INFO checks never change the score or the exit code.
 - The `logging` step no longer adds `/swapfile` to `/etc/fstab` or reports "swap created" when creating the swap
   file fails: it removes the partial file and the step shows FAILED. When `swapon` refuses a `fallocate` swap file
   (some filesystems), it writes the file with `dd` instead.
