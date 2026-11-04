@@ -1,0 +1,84 @@
+name: Compatibility report
+description: How server-prep went on your OS, provider or hardware
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames with examples such as web-01 or 203.0.113.10.
+        A security problem (port left open, root login allowed, lockout...)? Use [Report a vulnerability](https://github.com/exceev-consulting/server-prep/security/advisories/new) instead.
+        Reports feed the [Providers and hardware](https://github.com/exceev-consulting/server-prep/wiki/Providers-and-hardware) table. Something broken? Use the bug form instead.
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: Ubuntu 24.04, Debian 13...
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server type
+      options:
+        - VPS
+        - Dedicated / bare-metal (rented)
+        - Own server (office, home)
+        - Laptop or desktop used as a server
+        - VM for testing
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Provider or hardware
+      description: The provider's name and plan, or the hardware. No account name, hostname or IP.
+      placeholder: VPS 2 vCPU / 4 GB at <provider>, a mini PC in the office, a rented dedicated server...
+    validations:
+      required: true
+  - type: input
+    id: panel
+    attributes:
+      label: Panel and access route
+      placeholder: Coolify over Tailscale, Dokploy over public IP, none...
+  - type: input
+    id: version
+    attributes:
+      label: server-prep version
+      description: First line of `./server-prep.sh --help`
+      placeholder: v1.1.1
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        **Audit summary.** Run these two commands on the server. They change nothing.
+
+        ```bash
+        sudo ./server-audit.sh --quiet --no-txt --no-network --json audit.json
+        jq '{score, summary, fails: [.checks[] | select(.status == "FAIL") | .id]}' audit.json
+        ```
+
+        Paste only the `jq` output below, never the whole `audit.json`: that file holds the host name and the public IP.
+        No `jq` on the server? Install it with `sudo apt install jq`, or copy `audit.json` to your computer and run `jq` there.
+  - type: textarea
+    id: audit
+    attributes:
+      label: Audit summary
+      description: The output of the `jq` command above. Never the whole audit.json.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: manual
+    attributes:
+      label: What needed manual work
+      placeholder: "Opened the SSH port in the provider firewall. Or: nothing."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I pasted only the jq summary, not the whole audit.json
+          required: true
+        - label: I removed tokens, keys and passwords
+          required: true

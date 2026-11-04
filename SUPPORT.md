@@ -5,11 +5,17 @@ Support is best effort. The maintainers and the community answer when they can. 
 ## Where to ask
 
 - **A question:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a) in Discussions.
-- **A working setup or a compatibility report:**
+- **A compatibility report** (how it went on your OS, provider or hardware): the
+  [compatibility form](https://github.com/exceev-consulting/server-prep/issues/new?template=compatibility_report.yml).
+  It asks for a shorter audit summary than the one below.
+- **A working setup to show:**
   [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
   A *Compatibility reports* category is planned in [#26](https://github.com/exceev-consulting/server-prep/issues/26).
 - **An idea:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas) in Discussions.
+- **Support for another panel:** the [panel request form](https://github.com/exceev-consulting/server-prep/issues/new?template=panel_request.yml).
 - **A bug:** the [bug form](https://github.com/exceev-consulting/server-prep/issues/new?template=bug_report.yml).
+- **A docs page that is unclear or wrong:** the [docs form](https://github.com/exceev-consulting/server-prep/issues/new?template=docs_improvement.yml).
+- **Claude Code or Codex went wrong with server-prep:** the [agent experience form](https://github.com/exceev-consulting/server-prep/issues/new?template=agent_experience.yml).
 - **A security problem:** a [private advisory](https://github.com/exceev-consulting/server-prep/security/advisories/new).
   See [SECURITY.md](SECURITY.md). Never a public issue or discussion.
 
