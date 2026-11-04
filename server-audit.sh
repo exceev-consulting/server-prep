@@ -62,7 +62,7 @@ Usage: sudo $0 [options]
   --no-txt         do not write the text report
   --quiet          no console output (reports only)
   --no-color       disable colors
-  --no-network     do not query the public IP
+  --no-network     no public IP lookup, no GitHub release check
   -h, --help       this help
 
 Run as root for complete results (sshd -T, firewall, shadow, docker...).
@@ -130,6 +130,65 @@ result() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 need_root_note() { [[ $IS_ROOT -eq 1 ]] || echo " (run as root for an exact result)"; }
+
+# ver_gt A B: true when version A is newer than version B (1.10.0 > 1.9.2).
+ver_gt() { [[ $1 != "$2" && $(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1) == "$1" ]]; }
+
+# The server-prep version used on this server: server-prep.sh next to this audit, else the
+# newest report of a real run. Prints nothing when neither exists.
+prep_installed_version() {
+    local dir="" v="" f=""
+    dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)
+    if [[ -n $dir && -r $dir/server-prep.sh ]]; then
+        v=$(sed -n 's/^PREP_VERSION="\([0-9][0-9.]*\)"$/\1/p' "$dir/server-prep.sh" | head -1)
+    fi
+    if [[ -z $v ]]; then
+        f=$(find /root/server-prep-reports -maxdepth 1 -name 'server-prep-report-*.md' ! -name '*-dryrun.md' \
+              -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+        [[ -n $f ]] && v=$(sed -n 's/^| server-prep | v\([0-9][0-9.]*\) |$/\1/p' "$f" | head -1)
+    fi
+    printf '%s' "$v"
+}
+
+# release_status INSTALLED: reads GitHub's list of releases (JSON, newest first) on stdin and prints
+# STATUS, MESSAGE and FIX separated by a unit separator (\x1f). WARN only when a release newer than
+# INSTALLED fixes a security problem (a "**Security fix:**" line in its notes, from CHANGELOG.md). The
+# "Security" group of the generated notes does not count: the security label also marks new hardening.
+release_status() {
+    local installed="$1" json tag sec v latest="" fix
+    local -a newer=() security=()
+    json=$(cat)
+    while IFS=$'\t' read -r tag sec; do
+        v=${tag#v}
+        [[ $v =~ ^[0-9]+(\.[0-9]+)*$ ]] || continue
+        [[ -n $latest ]] || latest=$v
+        if [[ -n $installed ]] && ver_gt "$v" "$installed"; then
+            newer+=("$v")
+            [[ $sec == 1 ]] && security+=("v$v")
+        fi
+    done < <(jq -r '.[]? | select((.draft or .prerelease) | not)
+        | [.tag_name, (if ((.body // "") | test("\\*\\*security fix"; "i")) then 1 else 0 end)]
+        | @tsv' <<<"$json" 2>/dev/null)
+    local us=$'\x1f'
+    if [[ -z $latest ]]; then
+        printf 'INFO%sCould not read the list of releases%s\n' "$us" "$us"
+        return
+    fi
+    fix="sudo ./server-prep.sh --upgrade (it checks every file against the release's SHA256SUMS and asks first; in a git clone: git pull), then follow the release notes of v${latest}"
+    if [[ -z $installed ]]; then
+        printf 'INFO%sLatest release is v%s. The server-prep version used here is unknown (no server-prep.sh next to the audit, no report)%s\n' \
+            "$us" "$latest" "$us"
+    elif (( ${#security[@]} > 0 )); then
+        printf 'WARN%sThis server uses v%s. Newer releases fix a security problem: %s (latest v%s)%s%s\n' \
+            "$us" "$installed" "${security[*]}" "$latest" "$us" "$fix"
+    elif (( ${#newer[@]} > 0 )); then
+        printf 'INFO%sv%s is out. This server uses v%s%s%s\n' "$us" "$latest" "$installed" "$us" "$fix"
+    elif ver_gt "$installed" "$latest"; then
+        printf 'INFO%sv%s is newer than the latest release v%s (a development copy)%s\n' "$us" "$installed" "$latest" "$us"
+    else
+        printf 'INFO%sv%s is the latest release%s\n' "$us" "$installed" "$us"
+    fi
+}
 
 # ----------------------------------------------------------------------------
 # Header / system info
@@ -257,6 +316,23 @@ if have apt-get; then
     else
         result upd.unattended FAIL "Automatic security updates" "unattended-upgrades is not installed" "sudo apt install unattended-upgrades"
     fi
+fi
+
+# server-prep itself: a newer release, and whether it fixes a security problem. INFO unless it does.
+PREP_INSTALLED=$(prep_installed_version)
+if [[ $NETWORK -eq 0 ]]; then
+    result upd.server_prep INFO "server-prep release" "Release check skipped (--no-network)${PREP_INSTALLED:+. This server uses v$PREP_INSTALLED}"
+elif ! have curl || ! have jq; then
+    result upd.server_prep INFO "server-prep release" "Release check needs curl and jq"
+elif RELEASES=$(curl -fsS -m 8 -H 'Accept: application/vnd.github+json' \
+        "https://api.github.com/repos/${PROJECT_URL#https://github.com/}/releases?per_page=20" 2>/dev/null); then
+    IFS=$'\x1f' read -r rel_st rel_msg rel_fix < <(release_status "$PREP_INSTALLED" <<<"$RELEASES")
+    case "${rel_st:-}" in
+        WARN) result upd.server_prep WARN "server-prep release" "$rel_msg" "$rel_fix" ;;
+        *)    result upd.server_prep INFO "server-prep release" "${rel_msg:-Could not read the list of releases}" "${rel_fix:-}" ;;
+    esac
+else
+    result upd.server_prep INFO "server-prep release" "Could not reach GitHub to check for a newer release"
 fi
 
 # ----------------------------------------------------------------------------

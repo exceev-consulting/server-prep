@@ -176,6 +176,8 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
     for id in sys.laptop mon.telegram panel.cloudflared; do
         check_eq "$id is absent (step not used in ci.cfg)" "$(audit_status "$id")" absent
     done
+    # run_audit passes --no-network: the release check must skip GitHub and stay INFO
+    check_eq "upd.server_prep is INFO without network" "$(audit_status upd.server_prep)" INFO
 }
 
 check_regressions() {   # the "hard-won gotchas" of AGENTS.md that a reboot or a re-run can undo
