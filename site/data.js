@@ -703,7 +703,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 56,
+    "checks": 59,
     "sections": [
       {
         "key": "system",
@@ -738,6 +738,13 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "PASS",
               "WARN"
+            ]
+          },
+          {
+            "id": "sys.laptop",
+            "title": "Laptop server mode",
+            "statuses": [
+              "INFO"
             ]
           }
         ]
@@ -1079,6 +1086,13 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "INFO"
             ]
+          },
+          {
+            "id": "mon.telegram",
+            "title": "Telegram alerts",
+            "statuses": [
+              "INFO"
+            ]
           }
         ]
       },
@@ -1233,6 +1247,13 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "INFO"
             ]
+          },
+          {
+            "id": "panel.cloudflared",
+            "title": "Cloudflare Tunnel",
+            "statuses": [
+              "INFO"
+            ]
           }
         ]
       }
@@ -1314,7 +1335,7 @@ window.SERVER_PREP_DATA = {
     {
       "title": "Working with AI agents",
       "path": "https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents",
-      "details": "Guided setups with Claude Code skills, and how Codex and other agents get the project rules"
+      "details": "Guided setups with the same skills in Claude Code and Codex, and the project rules every agent reads"
     }
   ]
 };

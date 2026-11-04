@@ -39,7 +39,7 @@ An audit runs before and after, so you see exactly what changed.
 - **A firewall that also covers Docker.** UFW denies by default, and published container ports obey it too.
 - **Intrusion blocking and updates.** fail2ban, CrowdSec and automatic security updates.
 - **Ready for your panel.** Root logs in only with the panel's key, and only from its route: Tailscale, a Cloudflare Tunnel or its IP.
-- **Proof, not promises.** A read-only audit with 56 checks, a score, and an exit code for CI or cron.
+- **Proof, not promises.** A read-only audit with 59 checks, a score, and an exit code for CI or cron.
 - **Safe to run.** A dry run, a backup of every file it changes, a rollback script and a Markdown report. Every step can run twice.
 
 ## Quick start
@@ -87,7 +87,7 @@ means `--config` is missing or the file cannot be read.
 | [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
-| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with Claude Code skills, and how Codex and other agents get the project rules |
+| [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with the same skills in Claude Code and Codex, and the project rules every agent reads |
 
 ## Supported systems
 

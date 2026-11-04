@@ -7,6 +7,8 @@ description: Connect a server's Telegraf to InfluxDB v2 and show it in the share
 
 server-prep installs Telegraf **stopped**. This skill connects it. The user-facing guide is `docs/monitoring.md` (InfluxDB 2.8 on Coolify, Cloudflare Access service token, Docker metrics): follow it and keep both in sync.
 
+Never ask for a token or key (the InfluxDB token, the Cloudflare Access service token): the user types it in the editor on the server, never in the chat.
+
 ## 1. Output config (token kept out of the main config)
 The user needs:
 - an InfluxDB bucket for this server (convention: **one bucket per server, named after it**);
