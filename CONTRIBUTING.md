@@ -39,13 +39,16 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
                                  # (audit "Docker vs firewall" matcher on sample iptables output),
-                                 # tests/preconfig-json.sh (server-preconfig.sh --check --json with fake host
-                                 # commands, needs jq, skipped without it), tests/validate-config.sh
+                                 # tests/audit-logind-lid.sh (audit lid-switch parser on sample
+                                 # systemd-analyze cat-config output), tests/preconfig-json.sh
+                                 # (server-preconfig.sh --check --json with fake host commands, needs jq,
+                                 # skipped without it), tests/validate-config.sh
                                  # (--validate on a good config and broken ones), tests/audit-ufw-ports.sh
                                  # (audit UFW port matcher on sample ufw status output), tests/upgrade.sh
-                                 # (--upgrade against a fake release served by a fake curl, no network) and
-                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md
-                                 # frontmatter); no system changes
+                                 # (--upgrade against a fake release served by a fake curl, no network),
+                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter)
+                                 # and tests/report-json.sh (the JSON report next to the Markdown one, on fake
+                                 # run data, needs jq, skipped without it); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```

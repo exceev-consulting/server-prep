@@ -1,0 +1,48 @@
+name: Agent-ready task (maintainers)
+description: For maintainers. One scoped task with acceptance criteria and verification commands
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames if you prefer.
+        A security problem (port left open, root login allowed, lockout...)? Use [Report a vulnerability](https://github.com/exceev-consulting/server-prep/security/advisories/new) instead.
+        **For maintainers.** One task that Claude Code, Codex or a person can finish alone. This form adds no label: a maintainer adds `agent-ready` only after checking that the issue has acceptance criteria and verification commands ([Maintainer handbook](https://github.com/exceev-consulting/server-prep/wiki/Maintainer-handbook)).
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why the change is needed, with links to related issues.
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files to touch
+      description: One path per line, with what changes in it.
+      placeholder: |
+        server-audit.sh: new check
+        README.md: step table row
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: Statements someone can check, one per line.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: verify
+    attributes:
+      label: Verification commands
+      description: Commands that prove the work is done, with the output to expect. Mark the ones that need sudo.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: Related work this task must not do.

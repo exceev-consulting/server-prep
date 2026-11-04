@@ -150,6 +150,9 @@ save_answers() { :; }
 run_audit() { :; }
 write_rollback() { :; }
 write_report() { :; }
+# the real one would write under /root/server-prep-reports and into a home
+REPORT_FILE="$tmp/server-prep-report-test.md"
+write_report_json() { : > "${REPORT_FILE%.md}.json"; }
 title() { :; }
 
 # Fake steps only record their result. main() and its final result loop are real.
@@ -181,6 +184,23 @@ expect_main_status firewall 'OK (already)' 1   # failure before the final step
 expect_main_status suid 'OK (already)' 1       # failure in the final step
 expect_main_status none 'OK (already)' 0       # a missing return 0 must fail this
 expect_main_status none SKIPPED 0             # no selected step failed
+# The Done block names the JSON report next to the Markdown one (issue #15).
+if ! grep -qE '^  JSON: +[^ ]+\.json$' "$tmp/main-output"; then
+    printf 'not ok: the Done block does not print the JSON report path\n'
+    cat "$tmp/main-output" >&2
+    exit 1
+fi
+printf 'ok: the Done block prints the JSON report path\n'
+# A JSON report that was not written (write_report_json only warned) is not named.
+REPORT_FILE="$tmp/unwritten/server-prep-report-test.md"
+write_report_json() { :; }
+expect_main_status none SKIPPED 0
+if grep -q '^  JSON:' "$tmp/main-output"; then
+    printf 'not ok: the Done block names a JSON report that was not written\n'
+    cat "$tmp/main-output" >&2
+    exit 1
+fi
+printf 'ok: the Done block leaves out a JSON report that was not written\n'
 
 # run_secret shows a token as *** in the log and in dry-run output, but runs the
 # command with the real value. Glob characters in the token must match literally.
@@ -454,9 +474,10 @@ eval "$real_have"
 unset -f jq docker
 DRY_RUN=0
 
-# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69) and the
-# server-preconfig.sh --check --json test (issue #13).
+# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69), the
+# audit's lid-switch parser test (issue #80) and the server-preconfig.sh --check --json test (issue #13).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
+bash "$SCRIPT_DIR/tests/audit-logind-lid.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
@@ -470,3 +491,5 @@ bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1
 
 # ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
+# ... and the JSON report test (issue #15).
+bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1

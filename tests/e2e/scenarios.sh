@@ -85,7 +85,7 @@ report_steps() {   # report_steps FILE: the "What was done" table of a prep repo
 }
 
 run_prep() {   # run_prep NAME ARGS...: run server-prep.sh as the operator would, keep its report
-    local name="$1" rc report
+    local name="$1" rc report b via="$CHANNEL"
     shift
     SSH_LIMIT=2400 as_root "cd $VM_REPO && ./server-prep.sh $*" < /dev/null 2>&1 | log_to > /dev/null
     rc=${PIPESTATUS[0]}
@@ -97,7 +97,44 @@ run_prep() {   # run_prep NAME ARGS...: run server-prep.sh as the operator would
         PREP_REPORT="$OUT/$name-report.md"
         attach "$name-report.md"
     fi
+    # the JSON copy of the report, same name ending in .json (issue #15)
+    PREP_JSON="" PREP_JSON_MODE=""
+    if [[ -n "$report" ]] && fetch_file "${report%.md}.json" "$name-report.json"; then
+        PREP_JSON="$OUT/$name-report.json"
+        PREP_JSON_MODE="$(as_root "stat -c %a $(printf '%q' "${report%.md}.json")" 2>/dev/null)"
+        attach "$name-report.json"
+    fi
+    # through sudo, both copies also go to the operator's home, written as ops
+    PREP_VIA="$via" PREP_HOME=""
+    if [[ $via == ops && -n "$report" ]]; then
+        b="$(printf '%q' "${report##*/}")"; b="${b%.md}"
+        PREP_HOME="$(as_root "stat -c '%U %a' ~ops/$b.md ~ops/$b.json &&
+            cmp -s $(printf '%q' "${report%.md}.json") ~ops/$b.json && echo same" 2>/dev/null | paste -sd' ')"
+    fi
     return "$rc"
+}
+
+check_prep_json() {   # check_prep_json MODE: the JSON report of the last run_prep, MODE applied or dry-run
+    local mode="$1" want got
+    [[ -n "$PREP_JSON" ]]; check "the JSON report is written next to the Markdown one" $?
+    [[ -n "$PREP_JSON" ]] || return
+    check_eq "the JSON report is root only (mode 600)" "$PREP_JSON_MODE" 600
+    if [[ $PREP_VIA == ops ]]; then
+        check_eq "the report copies in ~ops belong to ops, mode 600, and the JSON one matches" \
+            "$PREP_HOME" "ops 600 ops 600 same"
+    fi
+    jq -e . "$PREP_JSON" > /dev/null 2>&1; check "the JSON report is valid JSON" $?
+    check_eq "the JSON report's mode is $mode" "$(jq -r .mode "$PREP_JSON" 2>/dev/null)" "$mode"
+    jq -e '(.steps | length > 0)
+        and all(.steps[].result; IN("changed", "already_ok", "skipped", "failed", "would_change"))' \
+        "$PREP_JSON" > /dev/null 2>&1
+    check "every step result in the JSON report is a stable value" $? \
+        "$(jq -r '[.steps[].result] | unique | join(", ")' "$PREP_JSON" 2>/dev/null)"
+    if [[ -n "$PREP_REPORT" ]]; then
+        want="$(report_steps "$PREP_REPORT" | jq -r '[.[].step] | join(" ")')"
+        got="$(jq -r '[.steps[].name] | join(" ")' "$PREP_JSON" 2>/dev/null)"
+        check_eq "the JSON report lists the same steps as the Markdown one" "$got" "$want"
+    fi
 }
 
 run_audit() {   # run_audit NAME: server-audit.sh as root, JSON kept as audit-NAME.json
@@ -133,6 +170,11 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
         dock.log_rotation res.swap panel.root_key; do
         st="$(audit_status "$id")"
         check_eq "$id passes" "$st" PASS
+    done
+    # the VM has no battery and server-preconfig.sh masks sleep on every server, so a sys.laptop line
+    # here would be the false positive its gate prevents; ci.cfg also has TELEGRAM_ENABLE=no and no cloudflared
+    for id in sys.laptop mon.telegram panel.cloudflared; do
+        check_eq "$id is absent (step not used in ci.cfg)" "$(audit_status "$id")" absent
     done
     # run_audit passes --no-network: the release check must skip GitHub and stay INFO
     check_eq "upd.server_prep is INFO without network" "$(audit_status upd.server_prep)" INFO
@@ -279,6 +321,7 @@ sc_prep_dry_run() {
     run_prep dry-run --config "$VM_CFG" --yes --dry-run; rc=$?
     check_eq "the dry run exits 0" "$rc" 0
     grep -q 'WOULD CHANGE' "$OUT/$SC_ID.log"; check "the plan lists steps that would change" $?
+    check_prep_json dry-run
     check_unchanged "$WORK/snap-before"
     finish
 }
@@ -313,6 +356,7 @@ sc_prep_run() {
         failed="$(jq -r '[.[] | select(.result == "FAILED") | .step] | join(", ")' "$WORK/steps-first.json")"
         [[ -z "$failed" ]]; check "no step FAILED" $? "$failed"
     fi
+    check_prep_json applied
     [[ $CHANNEL == root ]] && PREP_DONE=1
     [[ $PREP_DONE -eq 1 ]]; check "the panel key logs in as root on port 822" $?
     finish

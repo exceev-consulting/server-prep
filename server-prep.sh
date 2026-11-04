@@ -805,7 +805,7 @@ confirm() {   # confirm "question" -> 0 yes / 1 no
 # ----------------------------------------------------------------------------
 # Step bookkeeping & file helpers
 # ----------------------------------------------------------------------------
-STEP_NAMES=(); STEP_RESULTS=(); STEP_DETAILS=()
+STEP_IDS=(); STEP_NAMES=(); STEP_RESULTS=(); STEP_DETAILS=()
 CHANGED_FILES=(); NEW_FILES=(); MANUAL_TODO=()
 STEP_CHANGED=0
 STEP_NOTES=""
@@ -903,7 +903,7 @@ run_step() {
         *)  res="FAILED" ;;
     esac
     [[ $DRY_RUN -eq 1 && "$res" == "CHANGED" ]] && res="WOULD CHANGE"
-    STEP_NAMES+=("$label"); STEP_RESULTS+=("$res"); STEP_DETAILS+=("${STEP_NOTES:--}")
+    STEP_IDS+=("$name"); STEP_NAMES+=("$label"); STEP_RESULTS+=("$res"); STEP_DETAILS+=("${STEP_NOTES:--}")
     case "$res" in
         FAILED) err "$label: FAILED - ${STEP_NOTES}" ;;
         SKIPPED) warn "$label: skipped${STEP_NOTES:+ - $STEP_NOTES}" ;;
@@ -2458,8 +2458,17 @@ write_rollback() {
     chmod 700 "$rb"
 }
 
+# Written by the sudo user, never root, with an empty environment (no exported token).
+copy_to_sudo_home() {   # copy_to_sudo_home FILE, mode 600; a failure only warns
+    local d; [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] && d="$(getent passwd "$SUDO_USER" | cut -d: -f6)" &&
+        [[ -d $d ]] || return 0
+    env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin runuser -u "$SUDO_USER" -- sh -c 'rm -f -- "$1" && umask 077 && cat > "$1"' sh "$d/${1##*/}" < "$1" ||
+        warn "No copy in ~$SUDO_USER/"
+}
+
 write_report() {
     local i
+    compute_root_sources   # users and ssh may not have run; the JSON report shows the same
     {
         echo "# Server preparation report - ${HOST_SHORT}"
         echo
@@ -2578,12 +2587,72 @@ write_report() {
         echo '```'
     } > "$REPORT_FILE"
     chmod 600 "$REPORT_FILE"
-    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]]; then
-        local dest; dest="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-        if [[ -d "$dest" ]]; then
-            cp "$REPORT_FILE" "$dest/" && chown "$SUDO_USER": "$dest/$(basename "$REPORT_FILE")"
-        fi
+    copy_to_sudo_home "$REPORT_FILE"
+}
+
+# Copied from server-audit.sh (this script stays standalone).
+json_esc() {
+    local s="$1"
+    s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}
+    printf '%s' "$s"
+}
+# JSON helpers. jstr also drops the control characters json_esc leaves.
+jstr() { local s; s="$(json_esc "$1")"; printf '"%s"' "${s//[[:cntrl:]]/}"; }
+jlist() { local i s=""; for i in "$@"; do s+=,$(jstr "$i"); done; printf '[%s]' "${s#,}"; }
+jwords() { local w; read -r -d '' -a w <<<"${1//,/ }"; jlist "${w[@]}"; }
+jbool() { yes_ "$1" && printf true || printf false; }
+result_id() {   # the only map from run_step results to stable values
+    case "$1" in CHANGED) printf changed ;; "OK (already)") printf already_ok ;; SKIPPED) printf skipped ;;
+        "WOULD CHANGE") printf would_change ;; *) printf failed ;; esac
+}
+audit_counts() {   # null without an audit
+    [[ -s "$1" ]] || { printf null; return 0; }
+    awk -F'\t' '{n[$2]++} END {printf "{\"pass\":%d,\"warn\":%d,\"fail\":%d}", n["PASS"], n["WARN"], n["FAIL"]}' "$1"
+}
+
+# The report for scripts and agents: no token, no key. A failed write only warns and leaves no partial file.
+write_report_json() {
+    local json="${REPORT_FILE%.md}.json" i d id b a t m p=null ports="" steps="" chk="" mod="" bak=null rb=null w
+    read -r -d '' -a w <<<"${CURRENT_SSH_PORTS:-}"
+    for i in "${w[@]}"; do [[ $i =~ ^[0-9]{1,5}$ ]] && ports+=",$((10#$i))"; done
+    [[ $SSH_PORT =~ ^[0-9]{1,5}$ ]] && p=$((10#$SSH_PORT))
+    compute_root_sources   # users and ssh may not have run
+    for i in "${!STEP_NAMES[@]}"; do
+        d="${STEP_DETAILS[$i]}"; [[ $d == - ]] && d=""
+        steps+=",{\"name\":$(jstr "${STEP_IDS[$i]:-}"),\"title\":$(jstr "${STEP_NAMES[$i]}")"
+        steps+=",\"result\":\"$(result_id "${STEP_RESULTS[$i]}")\",\"details\":$(jstr "$d")}"
+    done
+    # as in the Markdown; \037 is not IFS whitespace, so empty fields stay
+    if [[ -s "$AUDIT_BEFORE" && -s "$AUDIT_AFTER" ]]; then
+        while IFS=$'\037' read -r id b a t m; do
+            [[ -n $b ]] && b="$(jstr "$b")" || b=null
+            chk+=",{\"id\":$(jstr "$id"),\"title\":$(jstr "$t"),\"before\":$b,\"after\":$(jstr "$a"),\"message\":$(jstr "$m")}"
+        done < <(awk -F'\t' -v OFS=$'\037' 'NR==FNR {b[$1]=$2; next} {p=($1 in b)?b[$1]:""} $2!="INFO" && p!=$2 {print $1,p,$2,$3,$4}' \
+            "$AUDIT_BEFORE" "$AUDIT_AFTER")
     fi
+    for i in "${CHANGED_FILES[@]}"; do mod+=",{\"path\":$(jstr "$i"),\"backup\":$(jstr "$BACKUP_DIR$i")}"; done
+    [[ -d "$BACKUP_DIR" ]] && bak="$(jstr "$BACKUP_DIR")"   # none in a dry run
+    [[ -f "$BACKUP_DIR/rollback.sh" ]] && rb="$(jstr "$BACKUP_DIR/rollback.sh")"
+    # a link planted at the name (non-root dry run in a shared folder) is removed, and noclobber
+    # makes the write fail rather than follow one put back in between
+    ( umask 077; rm -f -- "$json"; set -C
+      { printf '{"tool":"server-prep","schema_version":1,"version":%s,"mode":"%s","date":%s,"host":%s,"os":%s,"kernel":%s,"local_ip":%s,' \
+        "$(jstr "$PREP_VERSION")" "$([[ $DRY_RUN -eq 1 ]] && echo dry-run || echo applied)" "$(jstr "$(date -Is)")" \
+        "$(jstr "$(hostname)")" "$(jstr "${OS_PRETTY:-}")" "$(jstr "$(uname -r)")" "$(jstr "${LOCAL_IP:-}")"
+        printf '"settings":{"admin_user":%s,"ssh_port":%s,"ssh_port_before":[%s],"panel":%s,"panel_access":%s,"panel_ip":%s,' \
+        "$(jstr "$ADMIN_USER")" "$p" "${ports#,}" "$(jstr "$PANEL")" "$(jwords "$PANEL_ACCESS")" "$(jstr "$PANEL_IP")"
+        printf '"root_ssh_from":%s,"admin_ips":%s,"expose_web":%s,"extra_ports":%s,"fail2ban":%s,"crowdsec":%s,"telegram":%s},' \
+        "$(jlist "${ROOT_SOURCES[@]}")" "$(jwords "$ADMIN_IPS")" "$(jbool "$EXPOSE_WEB")" "$(jwords "$EXTRA_PORTS")" \
+        "$(jbool "$INSTALL_FAIL2BAN")" "$(jbool "$INSTALL_CROWDSEC")" "$(jbool "$TELEGRAM_ENABLE")"
+        printf '"steps":[%s],"audit":{"before":%s,"after":%s,"changed":[%s]},"files":{"modified":[%s],"created":%s},"todo":%s,' \
+        "${steps#,}" "$(audit_counts "$AUDIT_BEFORE")" "$(audit_counts "$AUDIT_AFTER")" "${chk#,}" "${mod#,}" \
+        "$(jlist "${NEW_FILES[@]}")" "$(jlist "${MANUAL_TODO[@]}")"
+        printf '"paths":{"report":%s,"log":%s,"backups":%s,"rollback":%s}}\n' \
+        "$(jstr "$REPORT_FILE")" "$(jstr "$LOG_FILE")" "$bak" "$rb"
+      } > "$json" ) 2>/dev/null || { rm -f -- "$json" 2>/dev/null; warn "JSON report not written: $json"; return 0; }
+    chmod 600 "$json"
+    copy_to_sudo_home "$json"
+    return 0
 }
 
 # ============================================================================
@@ -2623,6 +2692,7 @@ main() {
     run_audit after
     write_rollback
     write_report
+    write_report_json
 
     title "Done"
     local i result
@@ -2631,7 +2701,8 @@ main() {
     done
     echo
     echo "  Report:  ${REPORT_FILE}"
-    [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]] && echo "           (copy in ~${SUDO_USER}/)"
+    [[ -f ${REPORT_FILE%.md}.json ]] && echo "  JSON:    ${REPORT_FILE%.md}.json"
+    [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]] && echo "           (copies in ~${SUDO_USER}/)"
     echo "  Log:     ${LOG_FILE}"
     if [[ ${#MANUAL_TODO[@]} -gt 0 ]]; then
         echo; echo "${C_Y}  To do by hand:${C_0}"

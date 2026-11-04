@@ -707,7 +707,7 @@
     }
   ],
   "audit": {
-    "checks": 57,
+    "checks": 60,
     "sections": [
       {
         "key": "system",
@@ -742,6 +742,13 @@
             "statuses": [
               "PASS",
               "WARN"
+            ]
+          },
+          {
+            "id": "sys.laptop",
+            "title": "Laptop server mode",
+            "statuses": [
+              "INFO"
             ]
           }
         ]
@@ -1091,6 +1098,13 @@
             "statuses": [
               "INFO"
             ]
+          },
+          {
+            "id": "mon.telegram",
+            "title": "Telegram alerts",
+            "statuses": [
+              "INFO"
+            ]
           }
         ]
       },
@@ -1242,6 +1256,13 @@
           {
             "id": "panel.proxy",
             "title": "Panel proxy",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
+            "id": "panel.cloudflared",
+            "title": "Cloudflare Tunnel",
             "statuses": [
               "INFO"
             ]
