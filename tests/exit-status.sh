@@ -55,8 +55,16 @@ expect_help() {   # expect_help LABEL WANT_SCRIPT_DIR COMMAND...
 }
 expect_help file "$SCRIPT_DIR" bash "$SCRIPT" --help
 expect_help stdin '' bash -s -- --help < "$SCRIPT"
-expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
-expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+# stdin again, with the script file itself as $0: a header that trusts $0 would pick its folder
+expect_help 'stdin with a file as $0' '' bash -c 'exec -a "$1" bash -s -- --help' _ "$SCRIPT" < "$SCRIPT"
+# Linux limits one argument to 128 KiB (MAX_ARG_STRLEN), so a larger script cannot run as bash -c "$(cat ...)"
+# at all: nothing to test then. The other ways to run it (file, stdin, sourced) stay checked.
+if (( $(wc -c < "$SCRIPT") < 131072 )); then
+    expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
+    expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+else
+    printf 'skip: bash -c "$(cat server-prep.sh)" (the script is over the 128 KiB argument limit)\n'
+fi
 expect_help sourced "$SCRIPT_DIR" bash -c '. "$1" --help' _ "$SCRIPT"
 mkdir "$tmp/script dir"
 cp "$SCRIPT" "$tmp/script dir/server-prep.sh"
@@ -142,6 +150,9 @@ save_answers() { :; }
 run_audit() { :; }
 write_rollback() { :; }
 write_report() { :; }
+# the real one would write under /root/server-prep-reports and into a home
+REPORT_FILE="$tmp/server-prep-report-test.md"
+write_report_json() { : > "${REPORT_FILE%.md}.json"; }
 title() { :; }
 
 # Fake steps only record their result. main() and its final result loop are real.
@@ -173,6 +184,23 @@ expect_main_status firewall 'OK (already)' 1   # failure before the final step
 expect_main_status suid 'OK (already)' 1       # failure in the final step
 expect_main_status none 'OK (already)' 0       # a missing return 0 must fail this
 expect_main_status none SKIPPED 0             # no selected step failed
+# The Done block names the JSON report next to the Markdown one (issue #15).
+if ! grep -qE '^  JSON: +[^ ]+\.json$' "$tmp/main-output"; then
+    printf 'not ok: the Done block does not print the JSON report path\n'
+    cat "$tmp/main-output" >&2
+    exit 1
+fi
+printf 'ok: the Done block prints the JSON report path\n'
+# A JSON report that was not written (write_report_json only warned) is not named.
+REPORT_FILE="$tmp/unwritten/server-prep-report-test.md"
+write_report_json() { :; }
+expect_main_status none SKIPPED 0
+if grep -q '^  JSON:' "$tmp/main-output"; then
+    printf 'not ok: the Done block names a JSON report that was not written\n'
+    cat "$tmp/main-output" >&2
+    exit 1
+fi
+printf 'ok: the Done block leaves out a JSON report that was not written\n'
 
 # run_secret shows a token as *** in the log and in dry-run output, but runs the
 # command with the real value. Glob characters in the token must match literally.
@@ -459,3 +487,5 @@ bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
 
 # ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
+# ... and the JSON report test (issue #15).
+bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1

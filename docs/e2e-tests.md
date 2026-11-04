@@ -33,9 +33,9 @@ Each system (Debian 12 and 13, Ubuntu 22.04, 24.04 and 26.04) goes through these
 | `boot` | The cloud image matches its published checksum, boots, and the provider-style user logs in over SSH. |
 | `audit-fresh` | The audit exits 1 on a fresh server and FAILs the firewall, intrusion prevention, password policy, kernel settings and password login. |
 | `preconfig` | `server-preconfig.sh --check`, a run without Tailscale, then `--check` again, with no FAIL. |
-| `prep-dry-run` | `server-prep.sh --dry-run` with [tests/e2e/ci.cfg](../tests/e2e/ci.cfg) changes no file in `/etc`, no package and no unit. |
+| `prep-dry-run` | `server-prep.sh --dry-run` with [tests/e2e/ci.cfg](../tests/e2e/ci.cfg) changes no file in `/etc`, no package and no unit, its JSON report (mode 600) lists the steps with stable results, and both report copies in `~ops` belong to `ops` with mode 600. |
 | `prep-interactive` | The same dry run, answering every question at a terminal like a person. |
-| `prep-run` | The real run exits 0, no step FAILs, and the panel's key logs in as root on port 822. |
+| `prep-run` | The real run exits 0, no step FAILs, the panel's key logs in as root on port 822, and the JSON report lists the same steps as the Markdown one. |
 | `ssh-access` | The admin logs in with a key and can use sudo, the provider user and root with the admin key are refused, password login is off, root is refused from an address that is not the panel's, and port 22 gives no login: the Endlessh tarpit really listens there. |
 | `docker-firewall` | A container published with `-p` answers inside the server but not from outside. With a `ufw route allow` rule it does answer, which proves the test goes through the firewall. |
 | `audit-prepared` | The audit exits 0 with 0 FAIL, the checks a prepared server must pass are PASS, the checks of steps the test config leaves out (`sys.laptop`, `mon.telegram`, `panel.cloudflared`) are absent, and the "hard-won gotchas" of `AGENTS.md` hold. |

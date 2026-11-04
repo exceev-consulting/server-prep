@@ -23,6 +23,7 @@ Each run writes a log and a report. Both are readable by root only.
 |---|---|
 | Log of every command | `/var/log/server-prep/run-<date>.log` |
 | Report (Markdown) | `/root/server-prep-reports/server-prep-report-<host>-<date>.md`, plus a copy in your home |
+| Report (JSON) | the same path ending in `.json`, plus a copy in your home |
 | Backups and `rollback.sh` | `/var/lib/server-prep/backups/<date>/` |
 | Saved answers | `/etc/server-prep/server-prep.conf` |
 
