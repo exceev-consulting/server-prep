@@ -578,6 +578,11 @@ window.SERVER_PREP_DATA = {
     },
     {
       "script": "server-prep.sh",
+      "flag": "--upgrade",
+      "help": "replace these scripts with the latest release, after checking every file against the release's SHA256SUMS (asks first; --yes to skip the question, --dry-run to only show)"
+    },
+    {
+      "script": "server-prep.sh",
       "flag": "--yes",
       "help": "non-interactive: use config/env values and defaults"
     },
@@ -649,7 +654,7 @@ window.SERVER_PREP_DATA = {
     {
       "script": "server-audit.sh",
       "flag": "--no-network",
-      "help": "do not query the public IP"
+      "help": "no public IP lookup, no GitHub release check"
     },
     {
       "script": "server-audit.sh",
@@ -713,7 +718,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 60,
+    "checks": 61,
     "sections": [
       {
         "key": "system",
@@ -787,6 +792,14 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "INFO",
               "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "upd.server_prep",
+            "title": "server-prep release",
+            "statuses": [
+              "INFO",
               "WARN"
             ]
           }

@@ -44,10 +44,11 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
                                  # (server-preconfig.sh --check --json with fake host commands, needs jq,
                                  # skipped without it), tests/validate-config.sh
                                  # (--validate on a good config and broken ones), tests/audit-ufw-ports.sh
-                                 # (audit UFW port matcher on sample ufw status output), tests/skills-sync.sh
-                                 # (the .agents/skills link for Codex, SKILL.md frontmatter) and tests/report-json.sh
-                                 # (the JSON report next to the Markdown one, on fake run data, needs jq, skipped
-                                 # without it); no system changes
+                                 # (audit UFW port matcher on sample ufw status output), tests/upgrade.sh
+                                 # (--upgrade against a fake release served by a fake curl, no network),
+                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter)
+                                 # and tests/report-json.sh (the JSON report next to the Markdown one, on fake
+                                 # run data, needs jq, skipped without it); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
