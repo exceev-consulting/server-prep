@@ -39,7 +39,7 @@ An audit runs before and after, so you see exactly what changed.
 - **A firewall that also covers Docker.** UFW denies by default, and published container ports obey it too.
 - **Intrusion blocking and updates.** fail2ban, CrowdSec and automatic security updates.
 - **Ready for your panel.** Root logs in only with the panel's key, and only from its route: Tailscale, a Cloudflare Tunnel or its IP.
-- **Proof, not promises.** A read-only audit with 56 checks, a score, and an exit code for CI or cron.
+- **Proof, not promises.** A read-only audit with 59 checks, a score, and an exit code for CI or cron.
 - **Safe to run.** A dry run, a backup of every file it changes, a rollback script and a Markdown report. Every step can run twice.
 
 ## Quick start
@@ -166,7 +166,8 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 
 ## Community
 
-- **Questions:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a). **Ideas:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas). **Your setup or a compatibility report:** [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- **Questions:** [Q&A](https://github.com/exceev-consulting/server-prep/discussions/categories/q-a). **Ideas:** [Ideas](https://github.com/exceev-consulting/server-prep/discussions/categories/ideas). **Your setup:** [Show and tell](https://github.com/exceev-consulting/server-prep/discussions/categories/show-and-tell).
+- **A compatibility report:** the [compatibility form](https://github.com/exceev-consulting/server-prep/issues/new?template=compatibility_report.yml). **Another panel:** the [panel request form](https://github.com/exceev-consulting/server-prep/issues/new?template=panel_request.yml).
 - **Bugs:** [Issues](https://github.com/exceev-consulting/server-prep/issues). **What is next:** the [roadmap board](https://github.com/orgs/exceev-consulting/projects/7).
 - Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 

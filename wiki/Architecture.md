@@ -118,7 +118,7 @@ Each check calls `result <id> <status> "<title>" "<detail>" "<fix hint>"`. The s
 - **FAIL**: a real problem. The script exits with code `1` when at least one check fails.
 - **INFO**: for optional features. INFO never lowers the score.
 
-There are 56 checks in 11 sections: System, Updates, SSH, Firewall & network exposure, Intrusion prevention, Accounts & authentication, Kernel & system settings, Logging & monitoring, Services, Resources, and Panel readiness. Check ids start with their section, for example `ssh.*` or `acc.password_dict`.
+There are 59 checks in 11 sections: System, Updates, SSH, Firewall & network exposure, Intrusion prevention, Accounts & authentication, Kernel & system settings, Logging & monitoring, Services, Resources, and Panel readiness. Check ids start with their section, for example `ssh.*` or `acc.password_dict`.
 
 The audit writes a text report by default, and can also write Markdown (`--md`), JSON (`--json`) and TSV (`--tsv`). `server-prep.sh` reads the TSV for its before/after table, so those columns must stay stable.
 
@@ -143,7 +143,7 @@ After you change a step, a setting or an audit check, regenerate the data and co
 scripts/gen-data.sh
 ```
 
-It prints `wrote site/data.json and site/data.js (20 steps, ... settings, 56 audit checks)` and updates both files. It needs `jq`. In CI, `scripts/gen-data.sh --check` prints nothing and exits 0 when the data is up to date, or prints `site/data.json is out of date` with a diff.
+It prints `wrote site/data.json and site/data.js (20 steps, ... settings, 59 audit checks)` and updates both files. It needs `jq`. In CI, `scripts/gen-data.sh --check` prints nothing and exits 0 when the data is up to date, or prints `site/data.json is out of date` with a diff.
 
 To preview the page on your machine:
 

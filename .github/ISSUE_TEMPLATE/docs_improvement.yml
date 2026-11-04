@@ -1,0 +1,29 @@
+name: Docs improvement
+description: A page that is unclear, wrong or missing something
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Remove secrets before posting**: tokens, private keys, passwords. Replace real IPs and hostnames if you prefer.
+        A security problem (port left open, root login allowed, lockout...)? Use [Report a vulnerability](https://github.com/exceev-consulting/server-prep/security/advisories/new) instead.
+        A small fix, like a typo or a broken link? A pull request is welcome too.
+  - type: input
+    id: page
+    attributes:
+      label: Page
+      description: File path or link
+      placeholder: docs/monitoring.md, or the wiki page's link
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested text
+      description: Your wording, or what the page should say.

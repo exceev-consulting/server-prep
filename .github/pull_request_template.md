@@ -7,9 +7,18 @@
 - OS and version:
 - Server type: VPS / dedicated / own server / VM
 - Panel:
+- Built with: Claude Code / Codex / by hand
 - [ ] dry run (`--dry-run`)
 - [ ] real run on a test server
 - [ ] `server-audit.sh` after the run
+
+## Verification output
+
+<!-- Paste the end of the `./scripts/check.sh` output (planned in #34). Until that script exists, paste the output of the `bash -n` loop and of `shellcheck -S warning` from CONTRIBUTING.md, step 1. They print nothing when they pass: then write "bash -n: ok" and "shellcheck: ok". -->
+
+```text
+
+```
 
 ## Checklist
 
