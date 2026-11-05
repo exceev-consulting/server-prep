@@ -1663,10 +1663,26 @@ ssh_test_hint() {
     [[ -n "${ADMIN_IPS//[,[:space:]]/}" ]] && from=" from an ADMIN_IPS address"
     if [[ -z "$ts_ip" ]]; then
         echo "  Open a NEW terminal and test:  ${lan}"
-        if [[ "$PANEL_ACCESS" == *tailscale* && -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
-            # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
-            echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
-            echo "  Check 'tailscale status' first. If this test fails, answer n."
+        if [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+            # With no ADMIN_IPS, ufw_allow_ssh allows SSH from anywhere only when no panel IP,
+            # Tailscale or tunnel restricts it. Otherwise the local IP is blocked from your machine.
+            if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
+                # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
+                echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
+                echo "  Check 'tailscale status' first. If this test fails, answer n."
+            else
+                local only="" instead=""
+                if [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]]; then
+                    only="from the panel's IP (${PANEL_IP})"; instead="from the panel's host"
+                fi
+                if [[ "$PANEL_ACCESS" == *cloudflared* ]]; then
+                    only="${only:+$only and }through the Cloudflare tunnel"; instead="${instead:+$instead or }through the tunnel"
+                fi
+                if [[ -n "$only" ]]; then
+                    echo "  ADMIN_IPS is empty, so the firewall allows SSH only ${only} and blocks this test from your machine."
+                    echo "  Test ${instead} instead, or add your IP to ADMIN_IPS. If this test fails, answer n."
+                fi
+            fi
         fi
     elif [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
         # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.
