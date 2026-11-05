@@ -96,6 +96,7 @@ ONLY=""
 SKIP=""
 CONFIG_FILE=""
 VALIDATE=0
+UPGRADE=0
 
 usage() {
     cat <<EOF
@@ -105,6 +106,8 @@ Usage: sudo $0 [options]
 
   --config FILE        read settings from FILE (see server-prep.conf.example)
   --validate           check the --config FILE and exit (no root, runs nothing, writes nothing)
+  --upgrade            replace these scripts with the latest release, after checking every file against
+                       the release's SHA256SUMS (asks first; --yes to skip the question, --dry-run to only show)
   --yes                non-interactive: use config/env values and defaults
   --dry-run            show what would change, change nothing
   --only a,b,c         run only these steps
@@ -113,9 +116,10 @@ Usage: sudo $0 [options]
   -h, --help           this help
 
 Exit codes:
-  0  every selected step completed (or was skipped); with --validate: the config has no error (warnings allowed)
+  0  every selected step completed (or was skipped); with --validate: the config has no error (warnings allowed);
+     with --upgrade: upgraded, already up to date, or nothing to do
   1  a step failed, or the run stopped early (not root, unsupported OS, aborted, invalid settings);
-     with --validate: the config has at least one error
+     with --validate: the config has at least one error; with --upgrade: download, check or replace failed
   2  command-line usage error, including an unknown --only or --skip name, or --validate without --config
 
 Steps: ${ALL_STEPS}
@@ -135,6 +139,7 @@ while [[ $# -gt 0 ]]; do
         --yes|-y) ASSUME_YES=1; INTERACTIVE=0; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --validate) VALIDATE=1; shift ;;
+        --upgrade) UPGRADE=1; shift ;;
         --only) [[ $# -ge 2 ]] || { echo "--only needs a value" >&2; exit 2; }; ONLY="${2//,/ }"; shift 2 ;;
         --skip) [[ $# -ge 2 ]] || { echo "--skip needs a value" >&2; exit 2; }; SKIP="${2//,/ }"; shift 2 ;;
         --list-steps) echo "$ALL_STEPS"; exit 0 ;;
@@ -546,6 +551,127 @@ validate_values() {
     return 0
 }
 
+# ----------------------------------------------------------------------------
+# --upgrade: replace the scripts with the latest release. Only the operator starts it (never a timer),
+# it never runs the downloaded code (bash -n only parses it), and every file must match the release's
+# SHA256SUMS, downloaded over HTTPS from the same release. Old files go to .server-prep-old/ first.
+# Each file is renamed into place, so the running script keeps reading its old copy.
+# ----------------------------------------------------------------------------
+UPGRADE_FILES="server-prep.sh server-preconfig.sh server-audit.sh server-prep.conf.example telegraf.conf.example"
+
+version_newer() {   # version_newer A B: true when A is a newer version than B
+    # sort -V is GNU; --upgrade also needs GNU sha256sum and stops earlier on systems without them
+    [[ $1 != "$2" && $(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1) == "$1" ]]
+}
+
+upgrade_scripts() {
+    local repo=${PROJECT_URL#https://github.com/} dir=$SCRIPT_DIR json latest tmp f answer backup stamp new n=0
+    local -a files=()
+    # HTTPS only, redirects included, and no answer over 4 MiB
+    local -a get=(curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 4194304)
+    if [[ -z "$dir" || ! -f "$dir/server-prep.sh" ]]; then
+        echo "Cannot find the folder of server-prep.sh: run the file itself (./server-prep.sh --upgrade)." >&2
+        return 1
+    fi
+    if [[ -e "$dir/.git" ]]; then
+        echo "This copy is a git checkout. Update it with: git -C $dir pull"
+        return 0
+    fi
+    for f in curl sha256sum; do
+        command -v "$f" >/dev/null || { echo "--upgrade needs $f" >&2; return 1; }
+    done
+    json=$("${get[@]}" -m 20 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${repo}/releases/latest") \
+        || { echo "Could not reach GitHub to read the latest release. Try again later." >&2; return 1; }
+    latest=$(sed -n 's/.*"tag_name":[[:space:]]*"\(v[0-9][0-9.]*\)".*/\1/p' <<<"$json" | head -1)
+    if [[ ! $latest =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Could not read the latest release's version from GitHub." >&2
+        return 1
+    fi
+    if [[ ${latest#v} == "$PREP_VERSION" ]]; then
+        echo "server-prep v${PREP_VERSION} is the latest release. Nothing to do."
+        return 0
+    fi
+    if version_newer "$PREP_VERSION" "${latest#v}"; then
+        echo "This copy (v${PREP_VERSION}) is newer than the latest release (${latest}). Nothing to do."
+        return 0
+    fi
+
+    tmp=$(mktemp -d) || return 1
+    # EXIT, not RETURN: it also runs on Ctrl-C, and the script exits right after upgrade_scripts
+    # shellcheck disable=SC2064   # expand now: tmp is local
+    trap "rm -rf $(printf '%q' "$tmp")" EXIT
+    local base="https://github.com/${repo}/releases/download/${latest}"
+    "${get[@]}" -m 60 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" \
+        || { echo "Could not download SHA256SUMS of ${latest}." >&2; return 1; }
+    # only the known file names, each listed once with a 64-hex checksum
+    for f in $UPGRADE_FILES; do
+        if grep -qE "^[0-9a-f]{64}  ${f//./\\.}\$" "$tmp/SHA256SUMS"; then
+            files+=("$f")
+        fi
+    done
+    if [[ ${#files[@]} -eq 0 || " ${files[*]} " != *" server-prep.sh "* ]]; then
+        echo "The SHA256SUMS of ${latest} does not list server-prep.sh: refusing to upgrade." >&2
+        return 1
+    fi
+    for f in "${files[@]}"; do
+        "${get[@]}" -m 120 -o "$tmp/$f" "$base/$f" || { echo "Could not download $f of ${latest}." >&2; return 1; }
+    done
+    if ! (cd "$tmp" && grep -E "  ($(IFS='|'; echo "${files[*]//./\\.}"))\$" SHA256SUMS | sha256sum -c --strict --quiet); then
+        echo "A downloaded file does not match the release's SHA256SUMS: refusing to upgrade. Nothing was changed." >&2
+        return 1
+    fi
+    for f in "${files[@]}"; do
+        if [[ $f == *.sh ]] && ! bash -n "$tmp/$f" 2>/dev/null; then
+            echo "$f of ${latest} does not parse: refusing to upgrade. Nothing was changed." >&2
+            return 1
+        fi
+    done
+
+    echo "server-prep v${PREP_VERSION} -> ${latest}: ${#files[@]} files checked against the release's SHA256SUMS."
+    echo "Release notes: ${PROJECT_URL}/releases/tag/${latest}"
+    echo "Files: ${files[*]}"
+    echo "Folder: $dir"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[dry-run] nothing replaced."
+        return 0
+    fi
+    if [[ $ASSUME_YES -ne 1 ]]; then
+        read -rp "Replace them now? The old files are kept in $dir/.server-prep-old/. [y/N] " answer || answer=""
+        [[ ${answer,,} == y || ${answer,,} == yes ]] || { echo "Nothing changed."; return 0; }
+    fi
+    stamp=$(date +%Y%m%d-%H%M%S)
+    backup="$dir/.server-prep-old/v${PREP_VERSION}-${stamp}"
+    mkdir -p "$backup" || { echo "Cannot create $backup" >&2; return 1; }
+    for f in "${files[@]}"; do
+        if [[ -e "$dir/$f" ]]; then
+            cp -p "$dir/$f" "$backup/$f" || { echo "Cannot back up $f to $backup: nothing was changed." >&2; return 1; }
+        fi
+    done
+    for f in "${files[@]}"; do
+        if [[ -e "$dir/$f" ]]; then
+            chmod --reference="$dir/$f" "$tmp/$f" 2>/dev/null
+            chown --reference="$dir/$f" "$tmp/$f" 2>/dev/null
+        else
+            if [[ $f == *.sh ]]; then chmod 755 "$tmp/$f"; else chmod 644 "$tmp/$f"; fi
+        fi
+        # a new name in the same folder (mktemp: no file or link can be there first), then rename:
+        # atomic, and the running script keeps its old copy
+        new=$(mktemp "$dir/.$f.XXXXXX") && cp -p "$tmp/$f" "$new" && mv -f "$new" "$dir/$f" \
+            || { [[ -n $new ]] && rm -f "$new"; echo "Could not replace $f. The old files are in $backup." >&2; return 1; }
+        n=$((n + 1))
+    done
+    echo "Upgraded to ${latest}: ${n} files replaced. Old files: $backup"
+    echo "Next: read the release notes, re-run the steps they name with"
+    echo "  sudo $dir/server-prep.sh --config /etc/server-prep/server-prep.conf --only <step> --yes"
+    echo "then check with: sudo $dir/server-audit.sh"
+    return 0
+}
+
+if [[ $UPGRADE -eq 1 ]]; then
+    upgrade_scripts
+    exit $?
+fi
+
 if [[ $VALIDATE -eq 1 ]]; then
     [[ -n "$CONFIG_FILE" ]] || { echo "--validate needs --config FILE" >&2; exit 2; }
     [[ -f "$CONFIG_FILE" && -r "$CONFIG_FILE" ]] || { echo "Cannot read $CONFIG_FILE" >&2; exit 2; }
@@ -679,7 +805,7 @@ confirm() {   # confirm "question" -> 0 yes / 1 no
 # ----------------------------------------------------------------------------
 # Step bookkeeping & file helpers
 # ----------------------------------------------------------------------------
-STEP_NAMES=(); STEP_RESULTS=(); STEP_DETAILS=()
+STEP_IDS=(); STEP_NAMES=(); STEP_RESULTS=(); STEP_DETAILS=()
 CHANGED_FILES=(); NEW_FILES=(); MANUAL_TODO=()
 STEP_CHANGED=0
 STEP_NOTES=""
@@ -777,7 +903,7 @@ run_step() {
         *)  res="FAILED" ;;
     esac
     [[ $DRY_RUN -eq 1 && "$res" == "CHANGED" ]] && res="WOULD CHANGE"
-    STEP_NAMES+=("$label"); STEP_RESULTS+=("$res"); STEP_DETAILS+=("${STEP_NOTES:--}")
+    STEP_IDS+=("$name"); STEP_NAMES+=("$label"); STEP_RESULTS+=("$res"); STEP_DETAILS+=("${STEP_NOTES:--}")
     case "$res" in
         FAILED) err "$label: FAILED - ${STEP_NOTES}" ;;
         SKIPPED) warn "$label: skipped${STEP_NOTES:+ - $STEP_NOTES}" ;;
@@ -1537,26 +1663,10 @@ ssh_test_hint() {
     [[ -n "${ADMIN_IPS//[,[:space:]]/}" ]] && from=" from an ADMIN_IPS address"
     if [[ -z "$ts_ip" ]]; then
         echo "  Open a NEW terminal and test:  ${lan}"
-        if [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
-            # With no ADMIN_IPS, ufw_allow_ssh allows SSH from anywhere only when no panel IP,
-            # Tailscale or tunnel restricts it. Otherwise the local IP is blocked from your machine.
-            if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
-                # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
-                echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
-                echo "  Check 'tailscale status' first. If this test fails, answer n."
-            else
-                local only="" instead=""
-                if [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]]; then
-                    only="from the panel's IP (${PANEL_IP})"; instead="from the panel's host"
-                fi
-                if [[ "$PANEL_ACCESS" == *cloudflared* ]]; then
-                    only="${only:+$only and }through the Cloudflare tunnel"; instead="${instead:+$instead or }through the tunnel"
-                fi
-                if [[ -n "$only" ]]; then
-                    echo "  ADMIN_IPS is empty, so the firewall allows SSH only ${only} and blocks this test from your machine."
-                    echo "  Test ${instead} instead, or add your IP to ADMIN_IPS. If this test fails, answer n."
-                fi
-            fi
+        if [[ "$PANEL_ACCESS" == *tailscale* && -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+            # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
+            echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
+            echo "  Check 'tailscale status' first. If this test fails, answer n."
         fi
     elif [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
         # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.
@@ -2348,8 +2458,17 @@ write_rollback() {
     chmod 700 "$rb"
 }
 
+# Written by the sudo user, never root, with an empty environment (no exported token).
+copy_to_sudo_home() {   # copy_to_sudo_home FILE, mode 600; a failure only warns
+    local d; [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] && d="$(getent passwd "$SUDO_USER" | cut -d: -f6)" &&
+        [[ -d $d ]] || return 0
+    env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin runuser -u "$SUDO_USER" -- sh -c 'rm -f -- "$1" && umask 077 && cat > "$1"' sh "$d/${1##*/}" < "$1" ||
+        warn "No copy in ~$SUDO_USER/"
+}
+
 write_report() {
     local i
+    compute_root_sources   # users and ssh may not have run; the JSON report shows the same
     {
         echo "# Server preparation report - ${HOST_SHORT}"
         echo
@@ -2468,12 +2587,72 @@ write_report() {
         echo '```'
     } > "$REPORT_FILE"
     chmod 600 "$REPORT_FILE"
-    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]]; then
-        local dest; dest="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
-        if [[ -d "$dest" ]]; then
-            cp "$REPORT_FILE" "$dest/" && chown "$SUDO_USER": "$dest/$(basename "$REPORT_FILE")"
-        fi
+    copy_to_sudo_home "$REPORT_FILE"
+}
+
+# Copied from server-audit.sh (this script stays standalone).
+json_esc() {
+    local s="$1"
+    s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}
+    printf '%s' "$s"
+}
+# JSON helpers. jstr also drops the control characters json_esc leaves.
+jstr() { local s; s="$(json_esc "$1")"; printf '"%s"' "${s//[[:cntrl:]]/}"; }
+jlist() { local i s=""; for i in "$@"; do s+=,$(jstr "$i"); done; printf '[%s]' "${s#,}"; }
+jwords() { local w; read -r -d '' -a w <<<"${1//,/ }"; jlist "${w[@]}"; }
+jbool() { yes_ "$1" && printf true || printf false; }
+result_id() {   # the only map from run_step results to stable values
+    case "$1" in CHANGED) printf changed ;; "OK (already)") printf already_ok ;; SKIPPED) printf skipped ;;
+        "WOULD CHANGE") printf would_change ;; *) printf failed ;; esac
+}
+audit_counts() {   # null without an audit
+    [[ -s "$1" ]] || { printf null; return 0; }
+    awk -F'\t' '{n[$2]++} END {printf "{\"pass\":%d,\"warn\":%d,\"fail\":%d}", n["PASS"], n["WARN"], n["FAIL"]}' "$1"
+}
+
+# The report for scripts and agents: no token, no key. A failed write only warns and leaves no partial file.
+write_report_json() {
+    local json="${REPORT_FILE%.md}.json" i d id b a t m p=null ports="" steps="" chk="" mod="" bak=null rb=null w
+    read -r -d '' -a w <<<"${CURRENT_SSH_PORTS:-}"
+    for i in "${w[@]}"; do [[ $i =~ ^[0-9]{1,5}$ ]] && ports+=",$((10#$i))"; done
+    [[ $SSH_PORT =~ ^[0-9]{1,5}$ ]] && p=$((10#$SSH_PORT))
+    compute_root_sources   # users and ssh may not have run
+    for i in "${!STEP_NAMES[@]}"; do
+        d="${STEP_DETAILS[$i]}"; [[ $d == - ]] && d=""
+        steps+=",{\"name\":$(jstr "${STEP_IDS[$i]:-}"),\"title\":$(jstr "${STEP_NAMES[$i]}")"
+        steps+=",\"result\":\"$(result_id "${STEP_RESULTS[$i]}")\",\"details\":$(jstr "$d")}"
+    done
+    # as in the Markdown; \037 is not IFS whitespace, so empty fields stay
+    if [[ -s "$AUDIT_BEFORE" && -s "$AUDIT_AFTER" ]]; then
+        while IFS=$'\037' read -r id b a t m; do
+            [[ -n $b ]] && b="$(jstr "$b")" || b=null
+            chk+=",{\"id\":$(jstr "$id"),\"title\":$(jstr "$t"),\"before\":$b,\"after\":$(jstr "$a"),\"message\":$(jstr "$m")}"
+        done < <(awk -F'\t' -v OFS=$'\037' 'NR==FNR {b[$1]=$2; next} {p=($1 in b)?b[$1]:""} $2!="INFO" && p!=$2 {print $1,p,$2,$3,$4}' \
+            "$AUDIT_BEFORE" "$AUDIT_AFTER")
     fi
+    for i in "${CHANGED_FILES[@]}"; do mod+=",{\"path\":$(jstr "$i"),\"backup\":$(jstr "$BACKUP_DIR$i")}"; done
+    [[ -d "$BACKUP_DIR" ]] && bak="$(jstr "$BACKUP_DIR")"   # none in a dry run
+    [[ -f "$BACKUP_DIR/rollback.sh" ]] && rb="$(jstr "$BACKUP_DIR/rollback.sh")"
+    # a link planted at the name (non-root dry run in a shared folder) is removed, and noclobber
+    # makes the write fail rather than follow one put back in between
+    ( umask 077; rm -f -- "$json"; set -C
+      { printf '{"tool":"server-prep","schema_version":1,"version":%s,"mode":"%s","date":%s,"host":%s,"os":%s,"kernel":%s,"local_ip":%s,' \
+        "$(jstr "$PREP_VERSION")" "$([[ $DRY_RUN -eq 1 ]] && echo dry-run || echo applied)" "$(jstr "$(date -Is)")" \
+        "$(jstr "$(hostname)")" "$(jstr "${OS_PRETTY:-}")" "$(jstr "$(uname -r)")" "$(jstr "${LOCAL_IP:-}")"
+        printf '"settings":{"admin_user":%s,"ssh_port":%s,"ssh_port_before":[%s],"panel":%s,"panel_access":%s,"panel_ip":%s,' \
+        "$(jstr "$ADMIN_USER")" "$p" "${ports#,}" "$(jstr "$PANEL")" "$(jwords "$PANEL_ACCESS")" "$(jstr "$PANEL_IP")"
+        printf '"root_ssh_from":%s,"admin_ips":%s,"expose_web":%s,"extra_ports":%s,"fail2ban":%s,"crowdsec":%s,"telegram":%s},' \
+        "$(jlist "${ROOT_SOURCES[@]}")" "$(jwords "$ADMIN_IPS")" "$(jbool "$EXPOSE_WEB")" "$(jwords "$EXTRA_PORTS")" \
+        "$(jbool "$INSTALL_FAIL2BAN")" "$(jbool "$INSTALL_CROWDSEC")" "$(jbool "$TELEGRAM_ENABLE")"
+        printf '"steps":[%s],"audit":{"before":%s,"after":%s,"changed":[%s]},"files":{"modified":[%s],"created":%s},"todo":%s,' \
+        "${steps#,}" "$(audit_counts "$AUDIT_BEFORE")" "$(audit_counts "$AUDIT_AFTER")" "${chk#,}" "${mod#,}" \
+        "$(jlist "${NEW_FILES[@]}")" "$(jlist "${MANUAL_TODO[@]}")"
+        printf '"paths":{"report":%s,"log":%s,"backups":%s,"rollback":%s}}\n' \
+        "$(jstr "$REPORT_FILE")" "$(jstr "$LOG_FILE")" "$bak" "$rb"
+      } > "$json" ) 2>/dev/null || { rm -f -- "$json" 2>/dev/null; warn "JSON report not written: $json"; return 0; }
+    chmod 600 "$json"
+    copy_to_sudo_home "$json"
+    return 0
 }
 
 # ============================================================================
@@ -2513,6 +2692,7 @@ main() {
     run_audit after
     write_rollback
     write_report
+    write_report_json
 
     title "Done"
     local i result
@@ -2521,7 +2701,8 @@ main() {
     done
     echo
     echo "  Report:  ${REPORT_FILE}"
-    [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]] && echo "           (copy in ~${SUDO_USER}/)"
+    [[ -f ${REPORT_FILE%.md}.json ]] && echo "  JSON:    ${REPORT_FILE%.md}.json"
+    [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]] && echo "           (copies in ~${SUDO_USER}/)"
     echo "  Log:     ${LOG_FILE}"
     if [[ ${#MANUAL_TODO[@]} -gt 0 ]]; then
         echo; echo "${C_Y}  To do by hand:${C_0}"
