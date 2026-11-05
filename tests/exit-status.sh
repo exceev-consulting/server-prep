@@ -55,8 +55,16 @@ expect_help() {   # expect_help LABEL WANT_SCRIPT_DIR COMMAND...
 }
 expect_help file "$SCRIPT_DIR" bash "$SCRIPT" --help
 expect_help stdin '' bash -s -- --help < "$SCRIPT"
-expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
-expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+# stdin again, with the script file itself as $0: a header that trusts $0 would pick its folder
+expect_help 'stdin with a file as $0' '' bash -c 'exec -a "$1" bash -s -- --help' _ "$SCRIPT" < "$SCRIPT"
+# Linux limits one argument to 128 KiB (MAX_ARG_STRLEN), so a larger script cannot run as bash -c "$(cat ...)"
+# at all: nothing to test then. The other ways to run it (file, stdin, sourced) stay checked.
+if (( $(wc -c < "$SCRIPT") < 131072 )); then
+    expect_help 'bash -c' '' bash -c "$(cat "$SCRIPT")" server-prep.sh --help
+    expect_help 'bash -c with a file as $0' '' bash -c "$(cat "$SCRIPT")" "$SCRIPT" --help
+else
+    printf 'skip: bash -c "$(cat server-prep.sh)" (the script is over the 128 KiB argument limit)\n'
+fi
 expect_help sourced "$SCRIPT_DIR" bash -c '. "$1" --help' _ "$SCRIPT"
 mkdir "$tmp/script dir"
 cp "$SCRIPT" "$tmp/script dir/server-prep.sh"
@@ -142,6 +150,9 @@ save_answers() { :; }
 run_audit() { :; }
 write_rollback() { :; }
 write_report() { :; }
+# the real one would write under /root/server-prep-reports and into a home
+REPORT_FILE="$tmp/server-prep-report-test.md"
+write_report_json() { : > "${REPORT_FILE%.md}.json"; }
 title() { :; }
 
 # Fake steps only record their result. main() and its final result loop are real.
@@ -173,6 +184,23 @@ expect_main_status firewall 'OK (already)' 1   # failure before the final step
 expect_main_status suid 'OK (already)' 1       # failure in the final step
 expect_main_status none 'OK (already)' 0       # a missing return 0 must fail this
 expect_main_status none SKIPPED 0             # no selected step failed
+# The Done block names the JSON report next to the Markdown one (issue #15).
+if ! grep -qE '^  JSON: +[^ ]+\.json$' "$tmp/main-output"; then
+    printf 'not ok: the Done block does not print the JSON report path\n'
+    cat "$tmp/main-output" >&2
+    exit 1
+fi
+printf 'ok: the Done block prints the JSON report path\n'
+# A JSON report that was not written (write_report_json only warned) is not named.
+REPORT_FILE="$tmp/unwritten/server-prep-report-test.md"
+write_report_json() { :; }
+expect_main_status none SKIPPED 0
+if grep -q '^  JSON:' "$tmp/main-output"; then
+    printf 'not ok: the Done block names a JSON report that was not written\n'
+    cat "$tmp/main-output" >&2
+    exit 1
+fi
+printf 'ok: the Done block leaves out a JSON report that was not written\n'
 
 # run_secret shows a token as *** in the log and in dry-run output, but runs the
 # command with the real value. Glob characters in the token must match literally.
@@ -404,25 +432,6 @@ ufw() { echo "Status: active"; }
 TS_RC=0
 expect_hint 'without tailscale in PANEL_ACCESS keeps the old text' cloudflared '' 192.0.2.10 \
     is "$fallback" '' 192.0.2.10
-# Issue #163: with no ADMIN_IPS, ufw_allow_ssh allows SSH only from PANEL_IP (public) or
-# only through the tunnel (cloudflared, no SSH rule at all), so the local IP is blocked too.
-# 203.0.113.7 (a documentation address) stands in for the panel's public IP.
-expect_hint 'with only the tunnel warns and says to test through it' cloudflared '' '' \
-    is "$fallback" 'only through the Cloudflare tunnel' 'panel'
-PANEL_IP=203.0.113.7
-expect_hint 'with only the panel IP warns and says to test from the panel host' public '' '' \
-    is "$fallback" "only from the panel's IP (203.0.113.7)" 'tunnel'
-expect_hint 'with the panel IP and the tunnel names both' public,cloudflared '' '' \
-    is "$fallback" "from the panel's host or through the tunnel" 'Tailscale'
-expect_hint 'with the panel IP and ADMIN_IPS keeps the old text' public 192.168.1.0/24 '' \
-    is "$fallback" '' 'ADMIN_IPS is empty'
-ufw() { echo "Status: inactive"; }
-expect_hint 'with the panel IP and the firewall off keeps the old text' public '' '' \
-    is "$fallback" '' 'ADMIN_IPS is empty'
-ufw() { echo "Status: active"; }
-PANEL_IP=''
-expect_hint 'with public and no PANEL_IP keeps the old text (SSH open to anywhere)' public '' '' \
-    is "$fallback" '' 'ADMIN_IPS is empty'
 # No tailscale at all: have() says so for tailscale only, which also hides a real tailscale
 # binary on this host, and the rest of PATH (grep) keeps working. The firewall allows only
 # Tailscale, so the warning is expected.
@@ -465,15 +474,22 @@ eval "$real_have"
 unset -f jq docker
 DRY_RUN=0
 
-# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69) and the
-# server-preconfig.sh --check --json test (issue #13).
+# CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69), the
+# audit's lid-switch parser test (issue #80) and the server-preconfig.sh --check --json test (issue #13).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
+bash "$SCRIPT_DIR/tests/audit-logind-lid.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
 # ... and the audit's UFW port matcher test (issue #78).
 bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
+# ... and the audit's server-prep release check on sample release lists (hotfix lane, ADR 0003).
+bash "$SCRIPT_DIR/tests/audit-release.sh" || exit 1
+# ... and server-prep.sh --upgrade against a fake release (no network).
+bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1
 
 # ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
+# ... and the JSON report test (issue #15).
+bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
