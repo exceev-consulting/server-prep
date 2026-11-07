@@ -46,9 +46,10 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
                                  # (--validate on a good config and broken ones), tests/audit-ufw-ports.sh
                                  # (audit UFW port matcher on sample ufw status output), tests/upgrade.sh
                                  # (--upgrade against a fake release served by a fake curl, no network),
-                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter)
-                                 # and tests/report-json.sh (the JSON report next to the Markdown one, on fake
-                                 # run data, needs jq, skipped without it); no system changes
+                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter),
+                                 # tests/report-json.sh (the JSON report next to the Markdown one, on fake
+                                 # run data, needs jq, skipped without it) and tests/labels.sh
+                                 # (.github/labels.yml, then broken copies of it); no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
@@ -121,6 +122,35 @@ wiki's web editor are overwritten by the next sync. Wiki links use the page name
   The title becomes the release note line, so make it clear.
 - Pull requests are **squash-merged**. You don't need to sign your commits: the merge commit on `main`
   is signed by GitHub.
+
+## Labels
+
+`.github/labels.yml` is the source of truth for labels: name, color and description. Change a label through a
+pull request that edits this file, never only in the web UI. `tests/labels.sh` checks the file (CI runs it through
+`tests/exit-status.sh`): every label has a name, a color of 6 hex digits and a description, no two names match
+ignoring case, and the five release-notes labels are there.
+
+Nothing syncs the file to GitHub yet: the sync workflow is still to come
+([#24](https://github.com/exceev-consulting/server-prep/issues/24)). After the merge, a maintainer applies each
+added or changed label by hand:
+
+```bash
+gh label create "<name>" --color <hex> --description "<text>" --force
+```
+
+To rename a label, run `gh label edit "<old>" --name "<new>"` by hand, in the same pull request. Removing a label
+from the file does not delete it on GitHub: nothing deletes labels.
+
+- The groups: GitHub defaults, release notes (`security`, `skip-changelog`), workflow (`needs-info`, `triaged`,
+  `claude`, `proposal`, `ready`, `agent-ready`, `epic`), `area: *`, `panel: *`, `priority: *`, `size: *`,
+  issue status (`status: *`, `stale`), pull request state and review, and a few routine labels.
+- Every issue needs a type from GitHub issue types (Bug, Feature or Task, not a label) and at least one
+  `area: *` label.
+- `agent-ready` goes on an issue only when it has acceptance criteria and verification commands.
+- `security`, `enhancement`, `bug`, `documentation` and `skip-changelog` sort the release notes (see *Changelog*
+  below). Never rename or remove them.
+
+Triage is described in the [Maintainer handbook](https://github.com/exceev-consulting/server-prep/wiki/Maintainer-handbook).
 
 ## Changelog
 

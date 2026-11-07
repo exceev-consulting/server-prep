@@ -495,3 +495,5 @@ bash "$SCRIPT_DIR/tests/audit-third-party.sh" || exit 1
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
 # ... and the JSON report test (issue #15).
 bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
+# ... and the label taxonomy check on .github/labels.yml (issue #24).
+bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
