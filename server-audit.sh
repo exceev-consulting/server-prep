@@ -14,7 +14,7 @@
 #   - New checks: CrowdSec, fail2ban jail, kernel (sysctl) settings, AppArmor, auditd,
 #     rkhunter, AIDE, UID 0 accounts, empty passwords, world-writable /etc
 #     files, Docker hygiene, and a panel-readiness section (Coolify, Dokploy...)
-#   - Outputs: console, text report, Markdown (--md), JSON (--json), TSV (--tsv)
+#   - Outputs: console, text report, Markdown (--md), JSON (--json, format in docs/json-output.md), TSV (--tsv)
 #
 # Usage: sudo ./server-audit.sh [options]      (./server-audit.sh --help)
 # Exit code: 0 = no FAIL, 1 = at least one FAIL, 2 = usage error
@@ -57,7 +57,8 @@ Usage: sudo $0 [options]
   --out DIR        directory for the text report (default: current directory)
   --txt FILE       text report path (default: DIR/server-audit-<host>-<timestamp>.txt)
   --md FILE        also write a Markdown report
-  --json FILE      also write a JSON report
+  --json FILE      also write a JSON report, format described in
+                   ${PROJECT_URL}/blob/main/docs/json-output.md
   --tsv FILE       also write a TSV (id, status, title) - used by server-prep.sh
   --no-txt         do not write the text report
   --quiet          no console output (reports only)
@@ -1339,7 +1340,7 @@ fi
 
 if [[ -n "$JSON_OUT" ]]; then
     {
-        printf '{"tool":"server-audit","version":"%s","host":"%s","os":"%s","kernel":"%s","public_ip":"%s","date":"%s","root":%s,' \
+        printf '{"tool":"server-audit","version":"%s","schema_version":1,"host":"%s","os":"%s","kernel":"%s","public_ip":"%s","date":"%s","root":%s,' \
             "$AUDIT_VERSION" "$(json_esc "$HOST")" "$(json_esc "$OS_PRETTY")" "$KERNEL" "$(json_esc "$PUBLIC_IP")" "$STARTED_AT" \
             "$([[ $IS_ROOT -eq 1 ]] && echo true || echo false)"
         printf '"score":%d,"summary":{"pass":%d,"warn":%d,"fail":%d,"info":%d},"checks":[' \
