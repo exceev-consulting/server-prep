@@ -44,18 +44,12 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
 
 ## Commands
 
-Run these from the repo root. CI runs the same checks (`.github/workflows/lint.yml`).
+Run these from the repo root. `scripts/check.sh` runs the checks of CI (`.github/workflows/lint.yml`), with ShellCheck pinned to 0.11.0. CI may use another ShellCheck version until `lint.yml` runs this script.
 
 ```bash
-for script in server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh; do bash -n "$script" || exit 1; done
-shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
-for s in server-prep.sh server-preconfig.sh server-audit.sh; do ./"$s" --help >/dev/null; done
-scripts/gen-data.sh --check     # the site data matches the scripts (needs jq)
-scripts/check-tokens.sh         # the design token copies match site/tokens.css
-bash tests/exit-status.sh       # argument and exit-code checks, no system changes
-bash tests/swap.sh              # the swap file part of the logging step, with fake commands
-bash tests/e2e-report.sh        # the e2e report builder on fake results (needs jq)
-bash tests/e2e-pages.sh         # the e2e pages builder with a stub gh (needs jq, unzip, python3)
+./scripts/check.sh              # every CI lint check: bash -n, pinned ShellCheck -S warning, --help, site data, design tokens, tests
+./scripts/check.sh --list       # the sections
+./scripts/check.sh --only lint  # one section
 ./server-prep.sh --list-steps   # the step names, in run order
 ```
 
@@ -88,7 +82,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
 - **Panel-agnostic:** the panel is `PANEL` / `PANEL_PUBKEY` / `PANEL_ACCESS` / `PANEL_IP` (old `COOLIFY_*` names are mapped at load). Messages use `${PANEL_LABEL}`. Panel-specific behaviour must be guarded by `[[ ${PANEL,,} == <name> ]]`.
 - **Changes need matching updates in:** `server-prep.conf.example`, the README step table, and an audit check (INFO when optional).
 - **Checks after editing:** every check in *Commands* passes. When and why:
-  - ShellCheck: CI runs it on every push and PR, so keep it clean. It is not installed locally: download the static binary from the ShellCheck releases into a temporary folder outside the repo.
+  - ShellCheck: CI runs it on every push and PR, so keep it clean. `scripts/check.sh` runs the pinned ShellCheck (0.11.0). It downloads it once into `${XDG_CACHE_HOME:-~/.cache}/server-prep/` and checks its SHA-256 on every run. Update the version and the four hashes together.
   - Dry run: after changing a step, ask the operator to run it, since it needs sudo.
   - Site data: `scripts/gen-data.sh` after changing a step, a setting, an audit check or those README tables. CI runs `scripts/gen-data.sh --check`.
   - Design tokens: `scripts/check-tokens.sh` after changing `site/tokens.css`, a copy of it (the e2e report's `report.css`) or the brand page's colour ramps (2.2 and 2.4). Other values on that page are checked by eye. CI runs it.

@@ -32,6 +32,10 @@ SOFTWARE.
 
 `server-prep.sh` downloads [ufw-docker](https://github.com/chaifeng/ufw-docker) at runtime. The release is pinned and its SHA-256 is checked. It is installed to `/usr/local/bin/ufw-docker` and runs `ufw-docker install`. ufw-docker is licensed under **GPL-3.0**, and none of its code is included in this repository.
 
+## ShellCheck (not bundled)
+
+`scripts/check.sh` downloads [ShellCheck](https://github.com/koalaman/shellcheck) into your cache (`${XDG_CACHE_HOME:-~/.cache}/server-prep/`) when version 0.11.0 is not installed. The release is pinned and its SHA-256 is checked. ShellCheck is licensed under **GPL-3.0**, and none of its code is included in this repository.
+
 ## Ideas
 
 [vps-secure](https://github.com/rockballslab/vps-secure) inspired some of the security choices. No code is copied from it.
