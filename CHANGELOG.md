@@ -11,6 +11,12 @@ Highlights of each release. The full list of merged pull requests is in each
   stable values (`changed`, `already_ok`, `skipped`, `failed`, `would_change`). The file holds no token and no full
   public key. Both report copies in your home are now written as your user, mode 600. The Markdown report's "Root SSH
   allowed from" row now lists the sources on a run without the users and ssh steps too, as the JSON does.
+- **Security:** CrowdSec, cloudflared, Telegraf and Tailscale now get their security fixes automatically. They come from
+  their own repositories, which unattended-upgrades skipped, so a fix waited until someone upgraded by hand. The
+  `unattended` step adds their repositories (new setting `THIRD_PARTY_AUTO_UPDATE`, `yes` by default), and the new audit
+  check `upd.third_party` warns when an installed one is left out. Each update restarts that tool for a moment (SSH
+  over Tailscale pauses a few seconds). On a server prepared before, run:
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes`.
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
   now says it would check that file and merge the log rotation if it is missing.

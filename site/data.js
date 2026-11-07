@@ -60,7 +60,7 @@ window.SERVER_PREP_DATA = {
       "name": "unattended",
       "title": "Automatic security updates",
       "gate": null,
-      "details": "daily security updates (+ Docker CE), optional auto-reboot"
+      "details": "daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot"
     },
     {
       "name": "sysctl",
@@ -334,6 +334,16 @@ window.SERVER_PREP_DATA = {
       "example": "yes",
       "default": "yes",
       "comment": "Docker CE in unattended-upgrades",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "THIRD_PARTY_AUTO_UPDATE",
+      "example": "yes",
+      "default": "yes",
+      "comment": "CrowdSec, cloudflared, Telegraf, Tailscale in unattended-upgrades",
       "help": null,
       "saved": true,
       "secret": false
@@ -708,7 +718,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 60,
+    "checks": 61,
     "sections": [
       {
         "key": "system",
@@ -774,6 +784,15 @@ window.SERVER_PREP_DATA = {
               "PASS",
               "WARN",
               "FAIL"
+            ]
+          },
+          {
+            "id": "upd.third_party",
+            "title": "Third-party tool updates",
+            "statuses": [
+              "INFO",
+              "PASS",
+              "WARN"
             ]
           },
           {

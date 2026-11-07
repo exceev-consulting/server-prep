@@ -488,6 +488,8 @@ bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-release.sh" || exit 1
 # ... and server-prep.sh --upgrade against a fake release (no network).
 bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1
+# ... and the audit's third-party update matcher (issue #155).
+bash "$SCRIPT_DIR/tests/audit-third-party.sh" || exit 1
 
 # ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
