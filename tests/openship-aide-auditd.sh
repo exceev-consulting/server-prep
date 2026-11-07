@@ -49,19 +49,20 @@ BASELINE_RC=1
 KEY_DIRS=(/etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh)
 OPENSHIP_EXCLUDES=('!/var/lib/openship/(?!(ssh-keys|host-ssh)(/|$))' '!/etc/openship/modules(/|$)'
     '!/etc/openresty(/|$)' '!/usr/local/openresty/nginx/conf(/|$)'
-    '!/etc/letsencrypt/(live|archive|renewal|csr|keys)(/|$)' '/etc/letsencrypt$ d VarDir')
+    '!/etc/letsencrypt/(live|archive|csr|keys)(/|$)' '/etc/letsencrypt$ d VarDir')
 # What AIDE must still check on an Openship server, and what it must leave out.
 CHECKED=(/etc/openship/ssh-keys /etc/openship/ssh-keys/id_ed25519
     /var/lib/openship/ssh-keys /var/lib/openship/ssh-keys/host_ed25519
     /var/lib/openship/host-ssh /var/lib/openship/host-ssh/id_ed25519
     /etc/letsencrypt /etc/letsencrypt/renewal-hooks /etc/letsencrypt/renewal-hooks/deploy/reload.sh
     /etc/letsencrypt/cli.ini /etc/letsencrypt/accounts/acme-v02.api.letsencrypt.org/directory/x/private_key.json
+    /etc/letsencrypt/renewal /etc/letsencrypt/renewal/example.com.conf
     /etc/openship /etc/openresty.conf /usr/local/openresty/bin/openresty)
 LEFT_OUT=(/var/lib/openship/app-config/p1/web/etc/nginx.conf /var/lib/openship/edge/sites-enabled/example.com.conf
     /var/lib/openship/edge-takeover.json /var/lib/openship/backups/b1.tar /var/lib/openship/ssh-keys.old
     /etc/openship/modules /etc/openship/modules/m.conf /etc/openresty /etc/openresty/nginx.conf
     /usr/local/openresty/nginx/conf/nginx.conf /etc/letsencrypt/live /etc/letsencrypt/live/example.com/privkey.pem
-    /etc/letsencrypt/archive/example.com/privkey1.pem /etc/letsencrypt/renewal/example.com.conf
+    /etc/letsencrypt/archive/example.com/privkey1.pem
     /etc/letsencrypt/csr/0000_csr-certbot.pem /etc/letsencrypt/keys/0000_key-certbot.pem)
 
 fail() { printf 'not ok: %s\n' "$*"; exit 1; }

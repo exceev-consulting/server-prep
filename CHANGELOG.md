@@ -7,12 +7,12 @@ Highlights of each release. The full list of merged pull requests is in each
 
 - With `PANEL=openship`, the daily AIDE check no longer fills with Openship's deploy changes: it now leaves out
   `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`,
-  `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `renewal`, `csr` and `keys`
-  under `/etc/letsencrypt`). Openship's SSH keys and certbot's `renewal-hooks` and `cli.ini` are still checked. On the
-  server that runs the Openship API, auditd also logs every change to its SSH key folders (`/etc/openship/ssh-keys`,
-  `/var/lib/openship/ssh-keys`, `/var/lib/openship/host-ssh`; `sudo ausearch -k panel`). The audit shows both as INFO
-  (`mon.auditd_panel`, `mon.aide_panel`). On a server prepared earlier, set `PANEL=openship` in
-  `/etc/server-prep/server-prep.conf` and run:
+  `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `csr` and `keys` under
+  `/etc/letsencrypt`). Openship's SSH keys, certbot's renewal settings, `renewal-hooks` and `cli.ini` are still
+  checked. On the server that runs the Openship API, auditd also logs every change to its SSH key folders
+  (`/etc/openship/ssh-keys`, `/var/lib/openship/ssh-keys`, `/var/lib/openship/host-ssh`; `sudo ausearch -k panel`).
+  The audit shows both as INFO (`mon.auditd_panel`, `mon.aide_panel`). On a server prepared earlier, set
+  `PANEL=openship` in `/etc/server-prep/server-prep.conf` and run:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide,auditd --yes`. If AIDE already had a
   baseline, the run's to-do list says how to rebuild it. Other panels get the same files as before.
 - Each `server-prep.sh` run, applied or dry run, also writes the report as JSON next to the Markdown one

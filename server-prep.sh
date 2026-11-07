@@ -2251,7 +2251,8 @@ aide_baseline_exists() { [[ -e /var/lib/aide/aide.db ]]; }
 # line match a whole folder name only.
 # - /var/lib/openship minus the key folders of OPENSHIP_KEY_DIRS (the lookahead), which stay checked;
 # - of /etc/letsencrypt, only the folders certbot rewrites when it issues or renews a certificate.
-#   renewal-hooks/ and cli.ini, which certbot runs or reads as root, stay checked;
+#   renewal/ (its confs can name hooks), renewal-hooks/ and cli.ini, which certbot runs or reads as
+#   root, stay checked: a renewal rewrites one renewal/ conf per domain, a small churn;
 # - the /etc/letsencrypt folder entry itself (the last line, not an exclude) stays checked without its
 #   timestamps, as aide-common does for /etc (`/etc$ d VarDir`): every certbot run creates and deletes
 #   /etc/letsencrypt/.certbot.lock, which changes the folder's mtime and ctime;
@@ -2261,7 +2262,7 @@ OPENSHIP_AIDE_EXCLUDES='!/var/lib/openship/(?!(ssh-keys|host-ssh)(/|$))
 !/etc/openship/modules(/|$)
 !/etc/openresty(/|$)
 !/usr/local/openresty/nginx/conf(/|$)
-!/etc/letsencrypt/(live|archive|renewal|csr|keys)(/|$)
+!/etc/letsencrypt/(live|archive|csr|keys)(/|$)
 /etc/letsencrypt$ d VarDir'
 
 # aide_has_openship_excludes FILE: true when FILE already has every line of OPENSHIP_AIDE_EXCLUDES

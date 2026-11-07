@@ -470,11 +470,10 @@ sc_openship_paths() {
     # The paths of the left-out list are what Openship and certbot rewrite on a deploy or a renewal.
     local checked="/etc/openship/ssh-keys/id_ed25519 /var/lib/openship/ssh-keys/host_ed25519
         /var/lib/openship/host-ssh/id_ed25519 /etc/letsencrypt /etc/letsencrypt/renewal-hooks/deploy/reload.sh
-        /etc/letsencrypt/cli.ini"
+        /etc/letsencrypt/cli.ini /etc/letsencrypt/renewal/example.com.conf"
     local left_out="/var/lib/openship/app-config/p1/web/nginx.conf /var/lib/openship/edge/sites-enabled/example.com.conf
         /etc/openship/modules/m.conf /etc/openresty/nginx.conf /usr/local/openresty/nginx/conf/nginx.conf
-        /etc/letsencrypt/live/example.com/privkey.pem /etc/letsencrypt/archive/example.com/privkey1.pem
-        /etc/letsencrypt/renewal/example.com.conf"
+        /etc/letsencrypt/live/example.com/privkey.pem /etc/letsencrypt/archive/example.com/privkey1.pem"
     # prep-run builds the AIDE baseline in the background and only audit-prepared waits for it: with
     # --only openship-paths, step_aide would find no baseline yet, so no to-do, and start a second aideinit.
     wait_services
@@ -513,7 +512,7 @@ sc_openship_paths() {
     printf 'aide --path-check:\n%s\n' "$got" >> "$OUT/$SC_ID.log"
     bad=""
     for p in $checked; do grep -qxF "$p 0" <<<"$got" || bad+=" $p"; done
-    [[ -z $bad ]]; check "AIDE still checks Openship's SSH keys, /etc/letsencrypt and certbot's hooks" $? "left out:$bad"
+    [[ -z $bad ]]; check "AIDE still checks Openship's SSH keys, /etc/letsencrypt, certbot's hooks and its renewal settings" $? "left out:$bad"
     bad=""
     for p in $left_out; do grep -qxF "$p 1" <<<"$got" || bad+=" $p"; done
     [[ -z $bad ]]; check "AIDE leaves out Openship's deploy files and certbot's certificates" $? "still checked:$bad"

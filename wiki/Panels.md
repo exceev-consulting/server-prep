@@ -103,10 +103,10 @@ There is no Dokploy guide yet. If you run it, please share your result (see [Pro
 What server-prep does for Openship today (`PANEL=openship`):
 
 - uses "Openship" in the messages and the report;
-- tells AIDE to skip what Openship and certbot rewrite on every deploy and renewal: `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`, `/usr/local/openresty/nginx/conf`) and certbot's `live`, `archive`, `renewal`, `csr` and `keys` folders under `/etc/letsencrypt`. Openship's SSH key folders, certbot's `renewal-hooks` and `cli.ini` stay checked, and so does the `/etc/letsencrypt` folder itself, without its timestamps (certbot's lock file changes them on every run);
+- tells AIDE to skip what Openship and certbot rewrite on every deploy and renewal: `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`, `/usr/local/openresty/nginx/conf`) and certbot's `live`, `archive`, `csr` and `keys` folders under `/etc/letsencrypt`. Openship's SSH key folders, certbot's renewal settings (`/etc/letsencrypt/renewal`, which can name hooks), `renewal-hooks` and `cli.ini` stay checked, and so does the `/etc/letsencrypt` folder itself, without its timestamps (certbot's lock file changes them on every run);
 - adds an auditd watch (key `panel`, see it with `sudo ausearch -k panel`) on each of Openship's SSH key folders that exists: `/etc/openship/ssh-keys`, `/var/lib/openship/ssh-keys` and `/var/lib/openship/host-ssh`. The Openship API keeps the private keys it uses to log in to servers there, so these folders exist only on the server that runs the Openship API. A server it manages has none: the run's notes say so, and there is nothing to do.
 
-The trade-off: on an Openship server, AIDE no longer checks the certificates and their private keys, certbot's renewal settings (`/etc/letsencrypt/renewal`, which can also name hooks) and the OpenResty configs, because they change on every deploy and renewal.
+The trade-off: on an Openship server, AIDE no longer checks the certificates and their private keys and the OpenResty configs, because they change on every deploy and renewal. Certbot's renewal settings stay checked, so after a renewal AIDE's next check lists that domain's file in `/etc/letsencrypt/renewal` as changed: a small cost for seeing a hook planted there.
 
 On a server prepared earlier, set `PANEL=openship` in `/etc/server-prep/server-prep.conf`, then re-run both steps with the saved answers:
 
