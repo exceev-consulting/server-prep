@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/exceev-consulting/server-prep/main/docs/schemas/server-audit.schema.json",
+  "title": "server-audit.sh JSON report",
+  "description": "The file that server-audit.sh --json FILE writes. Every field is described in docs/json-output.md.",
+  "$comment": "schema_version 1. Adding a field, a check id or a category keeps schema_version: this schema allows extra fields and does not list the check ids. Removing or renaming a field, a check id or a status, or changing a field's type, bumps schema_version here (const) and in the JSON writer of server-audit.sh.",
+  "type": "object",
+  "required": [
+    "tool",
+    "version",
+    "schema_version",
+    "host",
+    "os",
+    "kernel",
+    "public_ip",
+    "date",
+    "root",
+    "score",
+    "summary",
+    "checks"
+  ],
+  "properties": {
+    "tool": {
+      "description": "Always server-audit.",
+      "const": "server-audit"
+    },
+    "version": {
+      "description": "The audit's own version (AUDIT_VERSION in server-audit.sh), not server-prep's.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "The version of this format. It changes only when a change breaks the programs that read the file.",
+      "type": "integer",
+      "const": 1
+    },
+    "host": {
+      "description": "The server's hostname.",
+      "type": "string"
+    },
+    "os": {
+      "description": "PRETTY_NAME from /etc/os-release, or unknown.",
+      "type": "string"
+    },
+    "kernel": {
+      "description": "The running kernel (uname -r).",
+      "type": "string"
+    },
+    "public_ip": {
+      "description": "The public IPv4 address from api.ipify.org, skipped with --no-network or without curl, or unknown when the lookup fails.",
+      "type": "string",
+      "examples": [
+        "203.0.113.10",
+        "skipped",
+        "unknown"
+      ]
+    },
+    "date": {
+      "description": "When the audit started (date -Is): ISO 8601 with the time zone offset.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "root": {
+      "description": "true when the audit ran as root. false means partial results.",
+      "type": "boolean"
+    },
+    "score": {
+      "description": "(pass*100 + warn*50) / (pass + warn + fail), rounded down; 0 when no check has PASS, WARN or FAIL.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "summary": {
+      "description": "How many checks have each status.",
+      "type": "object",
+      "required": [
+        "pass",
+        "warn",
+        "fail",
+        "info"
+      ],
+      "properties": {
+        "pass": {
+          "description": "Checks with status PASS.",
+          "$ref": "#/$defs/count"
+        },
+        "warn": {
+          "description": "Checks with status WARN.",
+          "$ref": "#/$defs/count"
+        },
+        "fail": {
+          "description": "Checks with status FAIL. The audit exits 1 when it is not 0.",
+          "$ref": "#/$defs/count"
+        },
+        "info": {
+          "description": "Checks with status INFO. They never count in the score.",
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "checks": {
+      "description": "Every check that ran, in run order. An id can appear twice (panel.data_dir).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    }
+  },
+  "$defs": {
+    "count": {
+      "description": "A number of checks.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "check": {
+      "description": "One check result.",
+      "type": "object",
+      "required": [
+        "id",
+        "category",
+        "status",
+        "title",
+        "message",
+        "fix"
+      ],
+      "properties": {
+        "id": {
+          "description": "A stable id, <prefix>.<name>. docs/json-output.md lists every id.",
+          "type": "string",
+          "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$"
+        },
+        "category": {
+          "description": "The section the check belongs to: system, updates, ssh, firewall, ips, accounts, kernel, monitoring, services, resources, docker or panel. New sections can be added.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "status": {
+          "description": "PASS, WARN (half a point), FAIL (the audit exits 1) or INFO (not scored).",
+          "enum": [
+            "PASS",
+            "WARN",
+            "FAIL",
+            "INFO"
+          ]
+        },
+        "title": {
+          "description": "The check's name, for people. It can change: match on id.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What the check found, for people. It can change: match on id and status.",
+          "type": "string"
+        },
+        "fix": {
+          "description": "What to do, or an empty string when there is no fix.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}
