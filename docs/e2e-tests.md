@@ -40,8 +40,9 @@ Each system (Debian 12 and 13, Ubuntu 22.04, 24.04 and 26.04) goes through these
 | `docker-firewall` | A container published with `-p` answers inside the server but not from outside. With a `ufw route allow` rule it does answer, which proves the test goes through the firewall. |
 | `audit-prepared` | The audit exits 0 with 0 FAIL, the checks a prepared server must pass are PASS, the checks of steps the test config leaves out (`sys.laptop`, `mon.telegram`, `panel.cloudflared`) are absent, and the "hard-won gotchas" of `AGENTS.md` hold. |
 | `prep-rerun` | A second run reports every step as `OK (already)` or `SKIPPED`. Then a `--only firewall` run (what the to-do says when a panel installs Docker later) keeps container traffic going through UFW and CrowdSec. |
+| `openship-paths` | With no real Openship: makes the folders where the Openship API keeps SSH keys, then re-runs the `aide` and `auditd` steps with `PANEL=openship`. auditd loads a watch (key `panel`) on each folder, AIDE accepts the excludes, and `aide --path-check` shows that Openship's deploy files and certbot's certificates are left out while the SSH keys and certbot's hooks stay checked, and that the `/etc/letsencrypt` folder itself gets its own rule, without the timestamps certbot's lock file changes. The run's to-do asks to rebuild the existing AIDE baseline. |
 | `reboot` | The server comes back, root and the admin log in on 822, no unit failed, and the tarpit is back on port 22. |
-| `audit-rebooted` | Still 0 FAIL after the reboot, and the gotchas still hold (`log_martians`, `suid_dumpable`...). |
+| `audit-rebooted` | Still 0 FAIL after the reboot, and the gotchas still hold (`log_martians`, `suid_dumpable`...). After `openship-paths`, the audit also sees the Openship watches, loaded again at boot, and the AIDE excludes. |
 | `preconfig-after` | `server-preconfig.sh --check` has no FAIL on the finished server. |
 
 A scenario that needs a step that failed is skipped, with the reason in the report.

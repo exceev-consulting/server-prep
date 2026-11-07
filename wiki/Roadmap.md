@@ -64,7 +64,7 @@ The base that everything else plugs into:
 
 [Milestone](https://github.com/exceev-consulting/server-prep/milestone/3) · Epic [#10](https://github.com/exceev-consulting/server-prep/issues/10)
 
-Today `PANEL=openship` only changes the labels in messages. Coolify has more: hints, audit checks, guides. This phase brings Openship to the same level:
+Today `PANEL=openship` changes the labels in messages, leaves Openship's deploy files out of AIDE and has auditd watch its SSH key folders. Coolify has more: hints, audit checks, guides. This phase brings Openship to the same level:
 
 - panel profiles instead of panel checks spread over the scripts ([#46](https://github.com/exceev-consulting/server-prep/issues/46)), and an `/add-panel` checklist ([#47](https://github.com/exceev-consulting/server-prep/issues/47));
 - an Openship profile with its own questions and hints ([#48](https://github.com/exceev-consulting/server-prep/issues/48)), audit checks ([#53](https://github.com/exceev-consulting/server-prep/issues/53)) and a guide ([#55](https://github.com/exceev-consulting/server-prep/issues/55));

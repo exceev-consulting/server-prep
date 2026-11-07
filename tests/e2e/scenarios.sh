@@ -14,6 +14,7 @@ ssh-access|ssh|SSH as a user sees it after server-prep
 docker-firewall|firewall|Docker vs firewall: a published port stays closed from outside
 audit-prepared|audit|Audit the prepared server: 0 FAIL
 prep-rerun|server-prep|Second run changes nothing
+openship-paths|server-prep|PANEL=openship: AIDE skips the deploy files, auditd watches the SSH keys
 reboot|reboot|Reboot: SSH comes back on 822 and the settings stay
 audit-rebooted|audit|Audit after the reboot: still 0 FAIL
 preconfig-after|preconfig|server-preconfig.sh --check on the finished server'
@@ -26,6 +27,9 @@ unset _id _group _title
 
 VM_REPO=/home/ops/server-prep   # where the operator copied the repo
 VM_CFG=/home/ops/ci.cfg         # tests/e2e/ci.cfg plus the keys of this run
+# Where the Openship API keeps SSH keys (OPENSHIP_KEY_DIRS in server-prep.sh, issue #54)
+OPENSHIP_KEY_DIRS="/etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh"
+OPENSHIP_PATHS=0                # 1 once openship-paths has re-run aide and auditd with PANEL=openship
 
 # --------------------------------------------------------------------------- helpers
 
@@ -156,6 +160,10 @@ run_audit() {   # run_audit NAME: server-audit.sh as root, JSON kept as audit-NA
 
 audit_status() {   # audit_status ID: status of one check in the last audit, "absent" if not run
     jq -r --arg id "$1" '[.checks[] | select(.id == $id) | .status] | first // "absent"' "$AUDIT_JSON"
+}
+
+audit_message() {   # audit_message ID: message of one check in the last audit, "absent" if not run
+    jq -r --arg id "$1" '[.checks[] | select(.id == $id) | .message] | first // "absent"' "$AUDIT_JSON"
 }
 
 check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
@@ -357,6 +365,10 @@ sc_prep_run() {
         [[ -z "$failed" ]]; check "no step FAILED" $? "$failed"
     fi
     check_prep_json applied
+    # issue #54: the Openship paths are only for PANEL=openship (this run uses coolify)
+    as_root 'f=/etc/aide/aide.conf.d/99_server-prep; r=/etc/audit/rules.d/50-server-prep.rules
+        test -f "$f" && test -f "$r" && ! grep -qiE "openship|openresty|letsencrypt" "$f" "$r"' < /dev/null
+    check "a Coolify run adds no Openship lines to AIDE or auditd" $?
     [[ $CHANNEL == root ]] && PREP_DONE=1
     [[ $PREP_DONE -eq 1 ]]; check "the panel key logs in as root on port 822" $?
     finish
@@ -452,6 +464,68 @@ sc_prep_rerun() {
     finish
 }
 
+sc_openship_paths() {
+    begin openship-paths
+    local rc cfg=/var/tmp/e2e/openship.cfg rules got p bad
+    # The paths of the left-out list are what Openship and certbot rewrite on a deploy or a renewal.
+    local checked="/etc/openship/ssh-keys/id_ed25519 /var/lib/openship/ssh-keys/host_ed25519
+        /var/lib/openship/host-ssh/id_ed25519 /etc/letsencrypt /etc/letsencrypt/renewal-hooks/deploy/reload.sh
+        /etc/letsencrypt/cli.ini"
+    local left_out="/var/lib/openship/app-config/p1/web/nginx.conf /var/lib/openship/edge/sites-enabled/example.com.conf
+        /etc/openship/modules/m.conf /etc/openresty/nginx.conf /usr/local/openresty/nginx/conf/nginx.conf
+        /etc/letsencrypt/live/example.com/privkey.pem /etc/letsencrypt/archive/example.com/privkey1.pem
+        /etc/letsencrypt/renewal/example.com.conf"
+    # prep-run builds the AIDE baseline in the background and only audit-prepared waits for it: with
+    # --only openship-paths, step_aide would find no baseline yet, so no to-do, and start a second aideinit.
+    wait_services
+    # No real Openship: make the key folders its API keeps on its own server (issue #54), then re-run
+    # the two steps with PANEL=openship, as the wiki says for a server prepared earlier.
+    as_root "mkdir -p /var/tmp/e2e && sed 's/^PANEL=.*/PANEL=\"openship\"/' $VM_CFG > $cfg &&
+        install -d -m 700 $OPENSHIP_KEY_DIRS" < /dev/null
+    check "the Openship key folders and a PANEL=openship config are in place" $?
+    run_prep openship --config "$cfg" --yes --only aide,auditd; rc=$?
+    check_eq "a PANEL=openship run of the aide and auditd steps exits 0" "$rc" 0
+    [[ $rc -eq 0 ]] && OPENSHIP_PATHS=1
+    if [[ -n "$PREP_JSON" ]]; then
+        # prep-run built the AIDE baseline, so the run asks to rebuild it, and nothing else about AIDE or auditd
+        got="$(jq -r '[.todo[] | select(test("aideinit|--only (aide|auditd)"))] | join(" | ")' "$PREP_JSON" 2>/dev/null)"
+        [[ $got == *aideinit* && $got != *" | "* ]]
+        check "the run's to-do asks once to rebuild the AIDE baseline" $? "${got:0:300}"
+    fi
+
+    rules="$(as_root 'auditctl -l' < /dev/null 2>&1)"
+    printf 'auditctl -l:\n%s\n' "$rules" >> "$OUT/$SC_ID.log"
+    bad=""
+    for p in $OPENSHIP_KEY_DIRS; do
+        grep -qxE -- "-w $p/? -p wa -k panel" <<<"$rules" || bad+=" $p"
+    done
+    [[ -z $bad ]]; check "auditd loads a watch (key panel) on each Openship key folder" $? "missing:$bad"
+    # a syscall rule's key is listed as key=..., a watch's as -k ...
+    grep -q 'key=admin_root_cmd' <<<"$rules"
+    check "auditd still loads the rules written before the watches" $?
+
+    as_root 'aide --config /etc/aide/aide.conf --config-check' < /dev/null 2>&1 | log_to > /dev/null
+    check "AIDE accepts the Openship excludes (aide --config-check)" "${PIPESTATUS[0]}"
+    # aide --path-check (AIDE 0.17 and later) exits 0 when AIDE checks a path, 1 when a rule leaves it out
+    # shellcheck disable=SC2086 # the lists are split on purpose
+    got="$(as_root "for p in $(printf '%s ' $checked $left_out); do
+        aide --config /etc/aide/aide.conf --path-check f:\$p > /dev/null 2>&1; echo \"\$p \$?\"; done" < /dev/null)"
+    printf 'aide --path-check:\n%s\n' "$got" >> "$OUT/$SC_ID.log"
+    bad=""
+    for p in $checked; do grep -qxF "$p 0" <<<"$got" || bad+=" $p"; done
+    [[ -z $bad ]]; check "AIDE still checks Openship's SSH keys, /etc/letsencrypt and certbot's hooks" $? "left out:$bad"
+    bad=""
+    for p in $left_out; do grep -qxF "$p 1" <<<"$got" || bad+=" $p"; done
+    [[ -z $bad ]]; check "AIDE leaves out Openship's deploy files and certbot's certificates" $? "still checked:$bad"
+    # certbot creates and deletes /etc/letsencrypt/.certbot.lock on every run: the folder itself must get
+    # the VarDir rule (no mtime or ctime), not the catch-all `/ 0 Full`, or every daily check lists it.
+    got="$(as_root 'aide --config /etc/aide/aide.conf --path-check d:/etc/letsencrypt' < /dev/null 2>&1)"; rc=$?
+    printf 'aide --path-check d:/etc/letsencrypt (exit %s):\n%s\n' "$rc" "$got" >> "$OUT/$SC_ID.log"
+    [[ $rc -eq 0 && $got == *'/etc/letsencrypt$'* ]]
+    check "AIDE checks the /etc/letsencrypt folder with its own rule, without the timestamps certbot's lock file changes" $? "${got:0:300}"
+    finish
+}
+
 sc_reboot() {
     begin reboot
     local failed
@@ -468,11 +542,20 @@ sc_reboot() {
 
 sc_audit_rebooted() {
     begin audit-rebooted
-    local rc
+    local rc msg
     wait_services
     run_audit rebooted; rc=$?
     check_audit_clean "$rc"
     check_regressions
+    # issue #54: the watches of openship-paths load again at boot, and the audit reports them
+    if [[ $OPENSHIP_PATHS -eq 1 && -n "$AUDIT_JSON" ]]; then
+        msg="$(audit_message mon.auditd_panel)"
+        [[ $msg == "Watched by auditd"* ]]
+        check "after the reboot, the audit sees the auditd watches on Openship's key folders" $? "$msg"
+        msg="$(audit_message mon.aide_panel)"
+        [[ $msg == "Openship's deploy files are left out"* ]]
+        check "the audit sees the Openship AIDE excludes" $? "$msg"
+    fi
     finish
 }
 
