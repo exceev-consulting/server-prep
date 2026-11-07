@@ -2277,10 +2277,10 @@ step_aide() {
     yes_ "$INSTALL_AIDE" || return $SKIP_RC
     pkg_install aide aide-common || return 1
     local conf=/etc/aide/aide.conf.d/99_server-prep
-    # New excludes don't drop the old entries from an existing baseline: its checks list them as
+    # New excludes don't drop the old entries from an existing baseline: its checks may list them as
     # removed until it is rebuilt. Rebuilding here would accept unreviewed changes, so ask the user.
     if [[ ${PANEL,,} == openship ]] && aide_baseline_exists && ! aide_has_openship_excludes "$conf"; then
-        todo "AIDE now leaves out Openship's deploy files, but the existing baseline still lists them, so its next check shows them as removed. Review that check, then rebuild the baseline: sudo aideinit -y -f"
+        todo "AIDE now leaves out Openship's deploy files, but the existing baseline still lists them, so its next check may list them as removed. Review that check, then rebuild the baseline: sudo aideinit -y -f"
     fi
     {
         cat <<'EOF'

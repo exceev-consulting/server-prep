@@ -114,7 +114,7 @@ On a server prepared earlier, set `PANEL=openship` in `/etc/server-prep/server-p
 sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide,auditd --yes
 ```
 
-On the server that runs the Openship API, run the `auditd` step again once Openship has created a key folder. If AIDE already had a baseline, its next check lists the files under the new excludes as removed. Review that check, then rebuild the baseline with `sudo aideinit -y -f` (the run's to-do list says so too).
+On the server that runs the Openship API, run the `auditd` step again once Openship has created a key folder. If AIDE already had a baseline, its next check may list the files under the new excludes as removed. Review that check, then rebuild the baseline with `sudo aideinit -y -f` (the run's to-do list says so too).
 
 The audit shows both as INFO: `mon.auditd_panel` (are the key folders watched?) and `mon.aide_panel` (are the deploy files left out of AIDE?).
 
