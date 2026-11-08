@@ -317,19 +317,34 @@ A program checks `schema_version` first, and ignores the fields, checks and cate
 ### Schema
 
 [docs/schemas/server-audit.schema.json](schemas/server-audit.schema.json) is a
-[JSON Schema (draft 2020-12)](https://json-schema.org/draft/2020-12) of this format. Check a file against it with
-[check-jsonschema](https://check-jsonschema.readthedocs.io/) (`uvx` comes with [uv](https://docs.astral.sh/uv/)):
+[JSON Schema (draft 2020-12)](https://json-schema.org/draft/2020-12) of this format. Check a file against it on your
+workstation, not on the server: copy `audit.json` there first. A validator is a program from the internet, and the
+server does not need it.
+
+With Python's `jsonschema` module (the `python3-jsonschema` package on Debian and Ubuntu), nothing to download:
 
 ```bash
-uvx check-jsonschema --schemafile docs/schemas/server-audit.schema.json audit.json
+python3 -I -c 'import json,sys,jsonschema; jsonschema.validate(json.load(open(sys.argv[2])), json.load(open(sys.argv[1])))' \
+    docs/schemas/server-audit.schema.json audit.json && echo ok
+```
+
+Expected: `ok`. A file that does not match prints a `ValidationError` that names the wrong field.
+
+Or with [check-jsonschema](https://check-jsonschema.readthedocs.io/) (`uvx` comes with [uv](https://docs.astral.sh/uv/)).
+`uvx` downloads the version you name and runs it, so name one:
+
+```bash
+uvx check-jsonschema==0.39.0 --schemafile docs/schemas/server-audit.schema.json audit.json
 ```
 
 Expected: `ok -- validation done`.
 
-A release download has no `docs/` folder. Give the schema's URL instead:
+A release download has no `docs/` folder. Take the schema from the same release: replace `v<version>` with the version
+on the first line of `./server-prep.sh --help` (like `v1.2.0`), then give `server-audit.schema.json` to the commands
+above instead of `docs/schemas/server-audit.schema.json`:
 
 ```bash
-uvx check-jsonschema --schemafile https://raw.githubusercontent.com/exceev-consulting/server-prep/main/docs/schemas/server-audit.schema.json audit.json
+curl -fsSLO https://raw.githubusercontent.com/exceev-consulting/server-prep/v<version>/docs/schemas/server-audit.schema.json
 ```
 
 ### Privacy
@@ -360,7 +375,7 @@ post them. [SUPPORT.md](../SUPPORT.md) has a shorter summary to paste in a suppo
 | `public_ip` is `unknown` | api.ipify.org did not answer within 5 seconds: no internet, or outgoing HTTPS blocked | `curl -fsS -m 5 https://api.ipify.org` should print the IP |
 | a check you expect is missing | it appears only on some hosts | see *When it appears* in [Check ids](#check-ids) |
 | `jq: parse error` on one server only | the JSON writer escapes only `\`, `"`, newlines and tabs (and removes `\r`). Another control character in a file name, in `kern.world_writable` or `kern.suid`, breaks the JSON | read the text report to find the file, then rename it |
-| a validator rejects `schema_version` | the file comes from a newer audit with a new format | read the [CHANGELOG](../CHANGELOG.md) and use the schema of the same release |
+| a validator rejects `schema_version` | the file and the schema come from different releases | use the schema of the release that wrote the file (see [Schema](#schema)). The [CHANGELOG](../CHANGELOG.md) says what changed |
 
 ## Official docs
 
