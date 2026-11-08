@@ -37,6 +37,11 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    done
    shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
    scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
+   scripts/check-files.sh        # after git add, before git commit (it reads only tracked and staged
+                                 # files): no report, filled config, key or CLAUDE.local.md is tracked,
+                                 # and every IPv4 address is an example
+   gitleaks git --redact --config .gitleaks.toml   # optional, if gitleaks is installed: no secret in the history
+                                                   # (no CI job runs it yet: the security workflow of #40 is to come)
    bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
                                  # (audit "Docker vs firewall" matcher on sample iptables output),
                                  # tests/audit-logind-lid.sh (audit lid-switch parser on sample
@@ -46,9 +51,11 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
                                  # (--validate on a good config and broken ones), tests/audit-ufw-ports.sh
                                  # (audit UFW port matcher on sample ufw status output), tests/upgrade.sh
                                  # (--upgrade against a fake release served by a fake curl, no network),
-                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter)
-                                 # and tests/report-json.sh (the JSON report next to the Markdown one, on fake
-                                 # run data, needs jq, skipped without it); no system changes
+                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter),
+                                 # tests/report-json.sh (the JSON report next to the Markdown one, on fake
+                                 # run data, needs jq, skipped without it) and tests/check-files.sh
+                                 # (the committed-file guard on this repository, then on temp repos);
+                                 # no system changes
    bash tests/swap.sh            # swap file creation with fake commands; no system changes
    bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
    ```
@@ -81,7 +88,8 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
   `validate_values` when it has a format to check (a yes/no setting not named `INSTALL_*`, a port, a list...).
   `tests/validate-config.sh` fails when a setting is missing from `KNOWN_SETTINGS` or a yes/no setting is not checked.
 - **No secrets and no real infrastructure** in the repo: tokens, keys, real IPs or hostnames.
-  Use examples like `web-01` and `192.168.1.50`.
+  Use examples like `web-01` and `192.168.1.50`. `scripts/check-files.sh` flags a tracked report, filled config
+  or key, and any IPv4 address that is not an example. CI runs it through `tests/exit-status.sh`.
 - **Simple words** in messages and docs. Many users are not security experts.
 - Style: 4 spaces, `[[ ]]`, quote variables. `.editorconfig` has the basics.
 
@@ -146,6 +154,24 @@ workflow uses: it is on `main`'s bypass list, and its client ID (`RELEASE_APP_CL
 
 GitHub signs the commit and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
 in a normal pull request, when the audit changes a lot.
+
+## Repository settings (maintainers)
+
+These settings live in GitHub, not in a file, so no check sees them. Review them when a workflow
+or the repository's owner changes.
+
+- **Secret scanning** with **push protection** on (Settings → Code security), plus **Dependabot alerts**,
+  **Dependabot security updates** and **private vulnerability reporting** ([SECURITY.md](SECURITY.md) sends
+  reporters there).
+- **A ruleset on `main`:** a pull request with an approving review, the required status check `lint`, no force
+  push, no deletion, and the release GitHub App as the only bypass. `lint` already covers the committed-file
+  guard. Once the security workflow of #40 exists, make its `security` check required only when `release.yml`
+  also posts it on the release commit, or releases stop.
+- **Actions:** default workflow permissions read-only, Actions may not create or approve pull requests, and
+  workflows from first-time contributors need an approval.
+- **The `release` environment** can only be used from `main`.
+- **Code scanning** on, so the OpenSSF Scorecard results show in the Security tab once the security workflow
+  exists.
 
 ## License
 

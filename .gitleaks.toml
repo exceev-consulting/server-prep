@@ -1,0 +1,27 @@
+# gitleaks configuration (issue #40): the default rules, plus the known false positives only.
+# Each entry below allowlists one value or one line shape, never a file or a script (no path entries).
+# No CI job runs it yet: the security workflow of #40 (gitleaks on PR commits and a weekly
+# full-history scan) is still to be added. Run it locally with:
+#   gitleaks git --redact --config .gitleaks.toml
+# A new entry needs a real false positive from a gitleaks run: never add one "just in case".
+# The [[allowlists]] tables need a recent gitleaks 8.x (older versions read a single [allowlist]).
+
+title = "server-prep"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "ufw-docker release checksum (UFW_DOCKER_SHA256 in server-prep.sh): a public SHA-256, tied to the variable so a version bump keeps working"
+regexTarget = "line"
+regexes = ['''\bUFW_DOCKER_SHA256="[0-9a-f]{64}"''']
+
+[[allowlists]]
+description = "InfluxData repository key fingerprint (step_telegraf in server-prep.sh): public, changes only if InfluxData rotates its key"
+regexTarget = "line"
+regexes = ['''\bfpr=24C975CBA61A024EE1B631787C3D57159FC2F927\b''']
+
+[[allowlists]]
+description = "SSH public key placeholders (server-prep.conf.example, server-prep.sh, site/data.*, tests/validate-config.sh)"
+regexTarget = "line"
+regexes = ['''ssh-ed25519 AAAA\.\.\.[ "]''']
