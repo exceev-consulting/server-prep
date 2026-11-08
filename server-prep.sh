@@ -2298,7 +2298,7 @@ step_aide() {
 !/swapfile
 EOF
         if [[ ${PANEL,,} == openship ]]; then
-            echo "# Openship rewrites these on every deploy; its SSH key folders and certbot's hooks stay checked,"
+            echo "# Openship rewrites these on every deploy; its SSH key folders, certbot's renewal settings and hooks stay checked,"
             echo "# and /etc/letsencrypt itself without its timestamps (certbot's lock file changes them on every run)"
             printf '%s\n' "$OPENSHIP_AIDE_EXCLUDES"
         fi
