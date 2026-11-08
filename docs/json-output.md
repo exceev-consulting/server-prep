@@ -350,14 +350,19 @@ curl -fsSLO https://raw.githubusercontent.com/exceev-consulting/server-prep/v<ve
 ### Privacy
 
 The file holds the hostname (`host`, and the `sys.info` message) and the public IP (`public_ip`, and `sys.info`).
-Some messages also name users, ports or addresses. Remove them before you post the file, in an issue for example:
+Some messages also name users, ports or addresses.
+
+In an issue or a support request, never post the whole file: paste the short summary from
+[SUPPORT.md](../SUPPORT.md), and read its messages first.
+
+To keep a copy of the full file without the hostname and the public IP, for your own use:
 
 ```bash
 jq 'del(.host, .public_ip) | .checks |= map(select(.id != "sys.info"))' audit.json
 ```
 
-Expected: the same JSON without `host`, `public_ip` and the `sys.info` check. Read the other messages before you
-post them. [SUPPORT.md](../SUPPORT.md) has a shorter summary to paste in a support request.
+Expected: the same JSON without `host`, `public_ip` and the `sys.info` check. Other messages can still name users,
+ports or addresses.
 
 - `--no-network` skips the public IP lookup: `public_ip` is then `skipped`.
 - The file holds no token, key or password.
