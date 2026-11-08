@@ -4,6 +4,8 @@
 # full-history scan) is still to be added. Run it locally with:
 #   gitleaks git --redact --config .gitleaks.toml
 # A new entry needs a real false positive from a gitleaks run: never add one "just in case".
+# The three entries below come from issue #40 and were matched against the source lines, not yet
+# against a gitleaks run: on the first run, drop any entry that never fires.
 # The [[allowlists]] tables need a recent gitleaks 8.x (older versions read a single [allowlist]).
 
 title = "server-prep"
