@@ -116,20 +116,21 @@ if jq -e . "$SCHEMA" >/dev/null 2>&1; then
     ok "the schema is valid JSON"
     expect 'the schema is draft 2020-12' '."$schema" == "https://json-schema.org/draft/2020-12/schema"' "$SCHEMA"
     expect 'the schema has schema_version const 1' '.properties.schema_version.const == 1' "$SCHEMA"
-    want="$(jq -c 'keys_unsorted | sort' "$nonroot")"
-    got="$(jq -c '.required | sort' "$SCHEMA")"
-    if [[ $got == "$want" ]]; then
-        ok "the schema requires every top-level key of the output"
-    else
-        bad "the schema requires $got, the output has $want"
-    fi
-    want="$(jq -c '.checks[0] | keys_unsorted | sort' "$nonroot")"
-    got="$(jq -c '."$defs".check.required | sort' "$SCHEMA")"
-    if [[ $got == "$want" ]]; then
-        ok "the schema requires every check key of the output"
-    else
-        bad "the schema requires $got for a check, the output has $want"
-    fi
+    # Every key the writer outputs is described in the schema, and every key the schema requires is written.
+    # Not equality: a field added later under schema_version 1 goes in properties only, not in required,
+    # so files written by older releases still pass the version 1 schema.
+    keys_match() {   # keys_match LABEL OUTPUT_FILTER SCHEMA_FILTER
+        local undescribed unwritten
+        undescribed="$(jq -c --slurpfile s "$SCHEMA" "($2 | keys) - (\$s[0] | $3 | .properties | keys)" "$nonroot")"
+        unwritten="$(jq -c --slurpfile s "$SCHEMA" "(\$s[0] | $3 | .required) - ($2 | keys)" "$nonroot")"
+        if [[ $undescribed == '[]' && $unwritten == '[]' ]]; then
+            ok "the schema describes every $1 key of the output and requires only keys it writes"
+        else
+            bad "$1 keys: not in the schema's properties: ${undescribed:-?}; required but not written: ${unwritten:-?}"
+        fi
+    }
+    keys_match top-level '.' '.'
+    keys_match check '.checks[0]' '."$defs".check'
 else
     bad "the schema is missing or not valid JSON ($SCHEMA)"
 fi

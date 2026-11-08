@@ -152,7 +152,8 @@ GitHub signs the commit and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` b
 in a normal pull request, when the audit changes a lot.
 
 The audit's JSON report has its own format version, `schema_version` ([docs/json-output.md](docs/json-output.md)).
-Adding a field or a check does not change it. Removing or renaming a field, a check id or a status breaks the programs
+Adding a field or a check does not change it: describe a new field in the schema's `properties`, not in `required`,
+so files written by older releases still pass. Removing or renaming a field, a check id or a status breaks the programs
 that read the file: then bump `schema_version` in the JSON writer of `server-audit.sh` and in the `const` of
 `docs/schemas/server-audit.schema.json`, update the doc and add a CHANGELOG line, in the same pull request.
 `AUDIT_VERSION` and `schema_version` change separately.
