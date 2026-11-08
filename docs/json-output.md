@@ -308,7 +308,8 @@ These changes keep `schema_version`, so a program that reads the file keeps work
 
 These changes break programs that read the file, so they bump `schema_version`:
 
-- removing or renaming a field, a check id or a status;
+- removing or renaming a field or a check id;
+- adding, removing or renaming a status (the schema lists the four statuses, and programs act on each one);
 - changing a field's type, such as `score` from a number to a string.
 
 A program checks `schema_version` first, and ignores the fields, checks and categories it does not know.
