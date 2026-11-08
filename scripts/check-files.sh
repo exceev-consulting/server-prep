@@ -29,7 +29,7 @@
 # Usage: scripts/check-files.sh
 #   No arguments: it checks the repository it belongs to, from any folder.
 #   Exit status: 0 nothing found, 1 a forbidden file or a non-example address,
-#   2 not a git work tree, git missing or git failed.
+#   2 not a git work tree (or a copy inside another repository), git missing or git failed.
 set -euo pipefail
 export LC_ALL=C
 
@@ -41,6 +41,11 @@ fi
 cd "$(dirname "$0")/.." || exit 2
 if ! command -v git >/dev/null 2>&1 || ! top="$(git rev-parse --show-toplevel 2>/dev/null)" || [[ -z $top ]]; then
     printf 'check-files: not a git work tree\n' >&2
+    exit 2
+fi
+# A copy with no .git of its own, unpacked inside another repository, would scan that outer one
+if [[ ! $top -ef . ]]; then
+    printf 'check-files: %s is not the top of a git work tree (git found %s instead)\n' "$PWD" "$top" >&2
     exit 2
 fi
 cd "$top"

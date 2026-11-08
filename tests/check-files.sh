@@ -198,6 +198,19 @@ if [[ $status -ne 2 ]] || ! grep -qF 'check-files: not a git work tree' "$tmp/ou
     exit 1
 fi
 printf 'ok: check-files outside a git work tree\n'
+# ... and a copy with no .git of its own inside another repository: the outer one is not scanned
+new_repo
+mkdir -p "$repo/vendor/server-prep/scripts"
+cp "$SCRIPT_DIR/scripts/check-files.sh" "$repo/vendor/server-prep/scripts/"
+add_file docs/a.md "Server: $bad"
+status=0
+(cd "$tmp" && bash "$repo/vendor/server-prep/scripts/check-files.sh") >"$tmp/out" 2>&1 || status=$?
+if [[ $status -ne 2 ]] || ! grep -qF 'is not the top of a git work tree' "$tmp/out"; then
+    printf 'not ok: check-files inside another repository (status %s, want 2)\n' "$status"
+    cat "$tmp/out"
+    exit 1
+fi
+printf 'ok: check-files inside another repository\n'
 
 # 11. It takes no arguments
 new_repo
