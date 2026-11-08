@@ -130,7 +130,7 @@ command grep -q '^!/var/lib/openship/' "$tmp/aide-openship" ||
     fail "AIDE: no line server-audit.sh (mon.aide_panel) can find"
 printf 'ok: AIDE gets the Openship excludes for PANEL=OpenShip\n'
 
-# (3) What the excludes cover: Openship's SSH key folders and certbot's hooks stay checked, the deploy
+# (3) What the excludes cover: Openship's SSH key folders, certbot's renewal settings and hooks stay checked, the deploy
 # files are left out. Checked on the Coolify drop-in first, so the test itself is known to work.
 for path in "${LEFT_OUT[@]}"; do
     left_out "$tmp/aide-coolify" "$path" && fail "AIDE: the Coolify drop-in already leaves out $path"
