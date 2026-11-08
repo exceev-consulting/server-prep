@@ -21,7 +21,8 @@
 # with an octet over 255 or longer than 3 digits is not an address and is skipped. A dotted number
 # with five parts or more is a version (1.2.3.4.5) and is skipped too, unless a domain follows it:
 # in a host name like <id>.203.0.113.10.sslip.io or web-01.203.0.113.10.nip.io its last four parts
-# are the address.
+# are the address. A version with exactly four parts cannot be told apart from an address: it is
+# checked as one, and fails unless it falls in an allowed range.
 #
 # It does not catch a real address inside 10.x or 192.168.x, or tokens and keys: gitleaks
 # (.gitleaks.toml) looks for those.
