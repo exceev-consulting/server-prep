@@ -3,7 +3,7 @@
   "$id": "https://raw.githubusercontent.com/exceev-consulting/server-prep/main/docs/schemas/server-audit.schema.json",
   "title": "server-audit.sh JSON report",
   "description": "The file that server-audit.sh --json FILE writes. Every field is described in docs/json-output.md.",
-  "$comment": "schema_version 1. Adding a field, a check id or a category keeps schema_version: this schema allows extra fields and does not list the check ids. Removing or renaming a field, a check id or a status, or changing a field's type, bumps schema_version here (const) and in the JSON writer of server-audit.sh.",
+  "$comment": "schema_version 1. Adding a field, a check id or a category keeps schema_version: this schema allows extra fields and does not list the check ids. Removing or renaming a field or a check id, adding, removing or renaming a status, or changing a field's type, bumps schema_version here (const) and in the JSON writer of server-audit.sh.",
   "type": "object",
   "required": [
     "tool",
