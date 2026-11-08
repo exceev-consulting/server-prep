@@ -60,10 +60,10 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/server-prep"
 
 # The files of the Syntax and ShellCheck steps of .github/workflows/lint.yml, in the same order.
 # The Lint step of .github/workflows/release.yml checks a part of them. Keep the three lists in
-# sync until both workflows run this script.
-shopt -s nullglob
+# sync until both workflows run this script. No nullglob, as in lint.yml: when a folder is gone,
+# its pattern stays as written and the syntax and lint sections fail on it, instead of checking
+# fewer files without a word.
 FILES=(server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh)
-shopt -u nullglob
 HELP_SCRIPTS=(server-prep.sh server-preconfig.sh server-audit.sh)
 
 # One line per section, in run order: name|gate|tools|description
