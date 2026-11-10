@@ -143,6 +143,8 @@ grep -qF 'installed packages, and services it turned on or off' "$tmp/stdout" ||
 grep -qF 'the Endlessh rule that allows port 22 from anywhere' "$tmp/stdout" && fail 'the Endlessh rule is listed as not undone, but rollback.sh deletes it'
 grep -qF 'deletes the Endlessh rule (endlessh tarpit), which allowed port 22 from anywhere' "$tmp/stdout" ||
     fail 'the output does not say that the Endlessh rule is deleted'
+grep -qF '  - the Endlessh rule (endlessh tarpit) if UFW is off now' "$tmp/stdout" ||
+    fail 'the output does not say that the Endlessh rule stays when UFW is off'
 grep -qF 'Endlessh stops first' "$tmp/stdout" || fail 'the output does not say that Endlessh stops'
 grep -qxF 'SSH goes back to port(s) 22.' "$tmp/stdout" || fail 'the output does not name the restored SSH port'
 grep -qF 'Coolify loses its SSH access' "$tmp/stdout" || fail 'the output does not say that the panel loses SSH'
@@ -267,6 +269,7 @@ called 'systemctl disable --now endlessh' || fail 'port not moved: the Endlessh 
 grep -q '^ufw --force delete' "$tmp/calls" && fail 'port not moved: a UFW rule is deleted'
 grep -qF 'the Endlessh rule that allows port 22 from anywhere' "$tmp/stdout" ||
     fail 'port not moved: the Endlessh rule, which stays, is not listed as not undone'
+grep -qF 'if UFW is off now' "$tmp/stdout" && fail 'port not moved: the UFW-off note is printed, but no rule is deleted'
 pass 'SSH not moved: no UFW rule added or deleted, Endlessh stopped, its rule listed as not undone'
 
 # --- a run that touched no SSH file (a re-run of other steps) -----------------------------------------

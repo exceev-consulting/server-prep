@@ -2607,6 +2607,8 @@ write_rollback() {
         rollback_say "  - UFW stays on, with every rule this run added (sudo ufw status numbered)"
         rollback_say "  - the ufw-docker rules in /etc/ufw/after.rules and after6.rules"
         [[ $endlessh -eq 1 && $drop_tarpit -eq 0 && $port22 -eq 0 ]] && rollback_say "  - the Endlessh rule that allows port 22 from anywhere"
+        # "ufw status numbered" lists no rule while UFW is off, so the delete below finds nothing then.
+        [[ $drop_tarpit -eq 1 ]] && rollback_say "  - the Endlessh rule (endlessh tarpit) if UFW is off now: it allows port 22 from anywhere again once UFW is on (sudo ufw show added)"
         rollback_step users && rollback_say "  - users it created or added to the sudo group"
         rollback_step update 'timezone ' && rollback_say "  - the timezone"
         rollback_step services && rollback_say "  - Ctrl-Alt-Del turned off"
