@@ -60,7 +60,7 @@ sudo ./server-prep.sh --dry-run
 |---|---|
 | Admin user | their usual user, created if missing |
 | Admin public key | the content of `~/.ssh/id_ed25519.pub` **on the admin's Mac**, not on the server |
-| Panel | `coolify`, `dokploy`, ... (only used in messages and the report) |
+| Panel | `coolify`, `dokploy`, ... (used in messages and the report; `openship` also sets AIDE excludes and auditd watches) |
 | Panel key | the public part of the SSH key the panel uses for servers (Coolify: Keys & Tokens → Private Keys → the key → Public Key) |
 | Access | `tailscale` |
 | SSH port | `822`; set the same port on the server in the panel |
