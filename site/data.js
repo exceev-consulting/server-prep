@@ -629,7 +629,7 @@ window.SERVER_PREP_DATA = {
     {
       "script": "server-audit.sh",
       "flag": "--json FILE",
-      "help": "also write a JSON report"
+      "help": "also write a JSON report, format described in https://github.com/exceev-consulting/server-prep/blob/main/docs/json-output.md"
     },
     {
       "script": "server-audit.sh",
@@ -1367,6 +1367,11 @@ window.SERVER_PREP_DATA = {
       "title": "End-to-end tests",
       "path": "docs/e2e-tests.md",
       "details": "How every system is tested in a VM like a real server, where the reports are, run it yourself"
+    },
+    {
+      "title": "JSON output",
+      "path": "docs/json-output.md",
+      "details": "The audit's JSON report for agents and scripts: every field, the statuses, the score, every check id and the JSON Schema"
     },
     {
       "title": "Troubleshooting",
