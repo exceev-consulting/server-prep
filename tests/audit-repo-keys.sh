@@ -35,7 +35,7 @@ PINNED='crowdsec:
         100 /var/lib/dpkg/status
      1.8.1 900
         500 https://packagecloud.io/crowdsec/crowdsec/any any/main amd64 Packages
-     1.4.6-10.1ubuntu0.26.04.1~esm1 510
+     1.4.6-10.1ubuntu0.1~esm1 510
         510 https://esm.ubuntu.com/apps/ubuntu resolute-apps-security/main amd64 Packages
      1.4.6-10.1 500
         500 http://archive.ubuntu.com/ubuntu resolute/universe amd64 Packages'
