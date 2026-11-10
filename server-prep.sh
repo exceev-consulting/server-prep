@@ -1678,10 +1678,30 @@ ssh_test_hint() {
     [[ -n "${ADMIN_IPS//[,[:space:]]/}" ]] && from=" from an ADMIN_IPS address"
     if [[ -z "$ts_ip" ]]; then
         echo "  Open a NEW terminal and test:  ${lan}"
-        if [[ "$PANEL_ACCESS" == *tailscale* && -z "$from" ]] && ufw_status 2>/dev/null | grep -q "Status: active"; then
-            # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
-            echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
-            echo "  Check 'tailscale status' first. If this test fails, answer n."
+        if [[ -z "$from" ]] && ufw_status 2>/dev/null | grep -q "Status: active"; then
+            # With no ADMIN_IPS, ufw_allow_ssh allows SSH from anywhere only when no panel IP,
+            # Tailscale or tunnel restricts it. Otherwise the local IP is blocked from your machine.
+            if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
+                # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
+                echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
+                echo "  Check 'tailscale status' first. If this test fails, answer n."
+            else
+                local only="" instead=""
+                if [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]]; then
+                    # The panel's host holds the panel key for root (Match Address), not the admin user's key.
+                    only="from the panel's IP (${PANEL_IP})"
+                    instead="from the panel's host as root with the panel key (ssh -p ${SSH_PORT} root@<server public IP>)"
+                fi
+                if [[ "$PANEL_ACCESS" == *cloudflared* ]]; then
+                    # Plain ssh does not go through the tunnel, and on a first run the cloudflared step comes later.
+                    only="${only:+$only and }through the Cloudflare tunnel"
+                    instead="${instead:+$instead, }through the tunnel (cloudflared access ssh, once the tunnel hostname exists)"
+                fi
+                if [[ -n "$only" ]]; then
+                    echo "  ADMIN_IPS is empty, so the firewall allows SSH only ${only} and blocks this test from your machine."
+                    echo "  Test ${instead}, or add your IP to ADMIN_IPS and re-run the firewall step. If this test fails, answer n."
+                fi
+            fi
         fi
     elif [[ -z "$from" ]] && ufw_status 2>/dev/null | grep -q "Status: active"; then
         # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.

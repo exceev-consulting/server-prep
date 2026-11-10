@@ -454,6 +454,29 @@ UFW_UP=1
 TS_RC=0
 expect_hint 'without tailscale in PANEL_ACCESS keeps the old text' cloudflared '' 192.0.2.10 \
     is "$fallback" '' 192.0.2.10
+# Issue #163: with no ADMIN_IPS, ufw_allow_ssh allows SSH only from PANEL_IP (public) or
+# only through the tunnel (cloudflared, no SSH rule at all), so the local IP is blocked too.
+# 203.0.113.7 (a documentation address) stands in for the panel's public IP.
+expect_hint 'with only the tunnel warns and says to test through it' cloudflared '' '' \
+    is "$fallback" 'only through the Cloudflare tunnel' 'panel'
+expect_hint 'with only the tunnel says to use cloudflared access ssh' cloudflared '' '' \
+    is "$fallback" 'Test through the tunnel (cloudflared access ssh, once the tunnel hostname exists), or add' 'root@'
+PANEL_IP=203.0.113.7
+expect_hint 'with only the panel IP warns and says to test from the panel host' public '' '' \
+    is "$fallback" "only from the panel's IP (203.0.113.7)" 'tunnel'
+expect_hint 'with only the panel IP says to test as root with the panel key' public '' '' \
+    is "$fallback" "Test from the panel's host as root with the panel key (ssh -p 822 root@<server public IP>), or add" 'tunnel'
+expect_hint 'with the panel IP and the tunnel names both' public,cloudflared '' '' \
+    is "$fallback" "(ssh -p 822 root@<server public IP>), through the tunnel (cloudflared access ssh" 'Tailscale'
+expect_hint 'with the panel IP and ADMIN_IPS keeps the old text' public 192.168.1.0/24 '' \
+    is "$fallback" '' 'ADMIN_IPS is empty'
+UFW_UP=0
+expect_hint 'with the panel IP and the firewall off keeps the old text' public '' '' \
+    is "$fallback" '' 'ADMIN_IPS is empty'
+UFW_UP=1
+PANEL_IP=''
+expect_hint 'with public and no PANEL_IP keeps the old text (SSH open to anywhere)' public '' '' \
+    is "$fallback" '' 'ADMIN_IPS is empty'
 # No tailscale at all: have() says so for tailscale only, which also hides a real tailscale
 # binary on this host, and the rest of PATH (grep) keeps working. The firewall allows only
 # Tailscale, so the warning is expected.
