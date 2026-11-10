@@ -119,10 +119,11 @@ access_tsv() {
         | sed -n 's/.*\*\([a-z]*\)\*.*ROOT_SOURCES+=(\(.*\))$/\1\t\2/p' | tr -d '"$'
 }
 
-# --- usage options of each script (continuation lines joined to their flag) ---
+# --- usage options of each script (continuation lines joined to their flag, ${PROJECT_URL} expanded) ---
 flags_tsv() {   # flags_tsv SCRIPT LABEL
-    sed -n '/^usage()/,/^}/p' "$1" | awk -v s="$2" '
-        function flush() { if (f != "") print s "\t" f "\t" h; f = "" }
+    sed -n '/^usage()/,/^}/p' "$1" | awk -v s="$2" -v url="$(script_var "$1" PROJECT_URL)" '
+        function expand(t,   i) { while (url != "" && (i = index(t, "${PROJECT_URL}"))) t = substr(t, 1, i - 1) url substr(t, i + 14); return t }
+        function flush() { if (f != "") print s "\t" f "\t" expand(h); f = "" }
         /^  +-/ {
             flush(); l = $0; sub(/^ +/, "", l)
             f = l; sub(/  +.*/, "", f)

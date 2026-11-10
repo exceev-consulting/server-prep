@@ -87,6 +87,7 @@ means `--config` is missing or the file cannot be read.
 | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) | Publish apps with no open port, from Coolify, with a Zero Trust login |
 | [Monitoring](docs/monitoring.md) | Server and Docker metrics: Telegraf, InfluxDB and Grafana |
 | [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
+| [JSON output](docs/json-output.md) | The audit's JSON report for agents and scripts: every field, the statuses, the score, every check id and the JSON Schema |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
 | [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with the same skills in Claude Code and Codex, and the project rules every agent reads |
@@ -151,6 +152,8 @@ Where things go (root only): the report in `/root/server-prep-reports/` as Markd
 ```bash
 sudo ./server-audit.sh --md audit.md --json audit.json
 ```
+
+The JSON format, every check id and the score formula are in [docs/json-output.md](docs/json-output.md).
 
 It is a rework of [vps-audit](https://github.com/nuver-labs/vps-audit) v0.2.0. It reads sshd's effective config
 (`sshd -T`), counts a port as exposed only when the bind address and the firewall both allow it, detects Docker

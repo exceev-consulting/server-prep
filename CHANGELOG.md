@@ -15,6 +15,10 @@ Highlights of each release. The full list of merged pull requests is in each
   `PANEL=openship` in `/etc/server-prep/server-prep.conf` and run:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide,auditd --yes`. If AIDE already had a
   baseline, the run's to-do list says how to rebuild it. Other panels get the same files as before.
+- `server-audit.sh --json` now writes `"schema_version": 1` right after `version`, so a program can tell when the
+  format changes; the other keys do not change. The format is described in [docs/json-output.md](docs/json-output.md):
+  every field, what PASS, WARN, FAIL and INFO mean, the score formula, the exit codes and every check id, with a JSON
+  Schema in `docs/schemas/server-audit.schema.json`. `./server-audit.sh --help` links to it.
 - Each `server-prep.sh` run, applied or dry run, also writes the report as JSON next to the Markdown one
   (`server-prep-report-<host>-<date>.json`, root only, with a copy in your home). An agent or a script can read from it
   which steps changed or failed, the audit before and after, the files changed and what is still to do. Step results use

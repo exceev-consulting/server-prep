@@ -51,7 +51,8 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    - `exit-status`, `swap`, `e2e-report`, `e2e-pages`: the quick tests in `tests/`, with fake commands
    - `consistency`: `scripts/check-consistency.sh`, once that file exists
 
-   `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`),
+   `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
+   checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`),
    `preconfig-json.sh`, `validate-config.sh`, `upgrade.sh`, `skills-sync.sh`, `report-json.sh` and `labels.sh`
    (`.github/labels.yml`, then broken copies of it).
    The `lint` section uses ShellCheck 0.11.0: `scripts/check.sh` downloads it once to
@@ -81,8 +82,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 - **Works with any panel:** use `PANEL`, `PANEL_PUBKEY`, `PANEL_ACCESS`, `PANEL_IP` and `${PANEL_LABEL}` in messages.
   Code for one panel only goes behind `[[ ${PANEL,,} == <name> ]]`.
 - **A new or changed step** also updates `server-prep.conf.example`, the step table in `README.md`,
-  and adds a check to `server-audit.sh` (INFO when optional). Then run `scripts/gen-data.sh` so the
-  setup console (`site/`) shows it.
+  and adds a check to `server-audit.sh` (INFO when optional). List the new check's id in
+  `docs/json-output.md`, in its category's table (`tests/audit-json.sh` fails otherwise). Then run
+  `scripts/gen-data.sh` so the setup console (`site/`) shows it.
 - **A new setting** also goes into `KNOWN_SETTINGS` in `server-prep.sh`, so `--validate` knows it, and into
   `validate_values` when it has a format to check (a yes/no setting not named `INSTALL_*`, a port, a list...).
   `tests/validate-config.sh` fails when a setting is missing from `KNOWN_SETTINGS` or a yes/no setting is not checked.
@@ -181,6 +183,14 @@ workflow uses: it is on `main`'s bypass list, and its client ID (`RELEASE_APP_CL
 
 GitHub signs the commit and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
 in a normal pull request, when the audit changes a lot.
+
+The audit's JSON report has its own format version, `schema_version` ([docs/json-output.md](docs/json-output.md)).
+Adding a field or a check does not change it: describe a new field in the schema's `properties`, not in `required`,
+so files written by older releases still pass. Removing or renaming a field or a check id, and adding, removing or
+renaming a status, break the programs that read the file: then bump `schema_version` in the JSON writer of
+`server-audit.sh` and in the `const` of `docs/schemas/server-audit.schema.json`, update the doc and add a CHANGELOG
+line, in the same pull request.
+`AUDIT_VERSION` and `schema_version` change separately.
 
 ## License
 
