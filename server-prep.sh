@@ -2643,6 +2643,10 @@ write_rollback() {
 EOF
             echo "fi"
         fi
+        # A failed restart would leave no sshd at all: check the restored files first, as the SSH step
+        # does. sshd -t needs /run/sshd, which a socket-started sshd may not have made yet.
+        echo "mkdir -p -m 0755 /run/sshd"
+        echo "sshd -t || { echo 'SSH is not restarted: sshd -t rejects the restored SSH configuration, so SSH keeps running as it is. Fix /etc/ssh until sudo sshd -t passes, then restart SSH.' >&2; exit 1; }"
         echo "if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then systemctl stop ssh.service; systemctl reset-failed ssh.socket; systemctl restart ssh.socket; systemctl start ssh.service; else systemctl restart ssh 2>/dev/null || systemctl restart sshd; fi"
         echo "ufw reload 2>/dev/null"
         echo "systemctl try-restart crowdsec-firewall-bouncer 2>/dev/null   # a UFW reload drops its DOCKER-USER rule"

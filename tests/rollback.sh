@@ -2,10 +2,10 @@
 # shellcheck disable=SC2034
 # Tests the rollback.sh that write_rollback writes after a real run (issue #71), on fake run data:
 # it is valid bash, it warns to run it from the console and says what it does not undo before any
-# change, and before SSH restarts on its old port it stops Endlessh, allows that port in UFW and
-# deletes the Endlessh rule. The generated script only runs with fake cp, rm, systemctl, sysctl and
-# ufw, plus the real grep, sed and sort that read ufw's output: its PATH holds nothing else, so it
-# can never touch /etc. No root needed.
+# change, and before SSH restarts on its old port it stops Endlessh, allows that port in UFW,
+# deletes the Endlessh rule and checks the restored files with sshd -t. The generated script only
+# runs with fake cp, rm, mkdir, sshd, systemctl, sysctl and ufw, plus the real grep, sed and sort
+# that read ufw's output: its PATH holds nothing else, so it can never touch /etc. No root needed.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,22 +32,23 @@ pass() { printf 'ok: %s\n' "$*"; }
 
 # One fake for every command rollback.sh runs: it records "NAME ARGS" in $CALLS and succeeds.
 # "systemctl is-enabled --quiet ssh.socket" succeeds only with SOCKET=1 (sshd started by ssh.socket),
-# "systemctl is-active/is-enabled --quiet endlessh" only with ENDLESSH=1, and "ufw status numbered"
-# prints $UFW_STATUS.
+# "systemctl is-active/is-enabled --quiet endlessh" only with ENDLESSH=1, "sshd -t" fails with
+# SSHD_BAD=1, and "ufw status numbered" prints $UFW_STATUS.
 cat > "$tmp/fake" <<'EOF'
 #!/bin/sh
 printf '%s\n' "${0##*/} $*" >> "$CALLS"
 case "${0##*/} $*" in
     "systemctl is-enabled --quiet ssh.socket") [ "${SOCKET:-0}" = 1 ]; exit ;;
     "systemctl is-active --quiet endlessh"|"systemctl is-enabled --quiet endlessh") [ "${ENDLESSH:-0}" = 1 ]; exit ;;
+    "sshd -t") [ "${SSHD_BAD:-0}" != 1 ]; exit ;;
     "ufw status numbered") printf '%s\n' "${UFW_STATUS:-}" ;;
 esac
 exit 0
 EOF
 chmod 755 "$tmp/fake"
 mkdir -p "$tmp/bin" "$tmp/bin-no-ufw"
-for c in cp rm systemctl sysctl ufw; do ln -s "$tmp/fake" "$tmp/bin/$c"; done
-for c in cp rm systemctl sysctl; do ln -s "$tmp/fake" "$tmp/bin-no-ufw/$c"; done
+for c in cp rm mkdir sshd systemctl sysctl ufw; do ln -s "$tmp/fake" "$tmp/bin/$c"; done
+for c in cp rm mkdir sshd systemctl sysctl; do ln -s "$tmp/fake" "$tmp/bin-no-ufw/$c"; done
 # The real read-only tools that pick the Endlessh rule numbers out of "ufw status numbered"
 for c in grep sed sort; do
     p="$(command -v "$c")" || { printf 'not ok: no %s for rollback.sh\n' "$c"; exit 1; }
@@ -167,27 +168,44 @@ allow1=$(first "$tmp/calls" '^ufw (allow|limit) ')
 allowN=$(last "$tmp/calls" '^ufw (allow|limit) ')
 drop1=$(first "$tmp/calls" '^ufw --force delete ')
 dropN=$(last "$tmp/calls" '^ufw --force delete ')
+rundir=$(first "$tmp/calls" '^mkdir -p -m 0755 /run/sshd$')
+check=$(first "$tmp/calls" '^sshd -t$')
 restart=$(first "$tmp/calls" '^systemctl restart ssh$')
 reload=$(first "$tmp/calls" '^ufw reload$')
-((endlessh > 0 && restart > 0 && reload > 0)) || fail 'the Endlessh stop, the SSH restart or the UFW reload did not run'
+((endlessh > 0 && check > 0 && restart > 0 && reload > 0)) || fail 'the Endlessh stop, sshd -t, the SSH restart or the UFW reload did not run'
+((rundir > 0 && rundir < check)) || fail 'sshd -t runs without making /run/sshd first'
 ((endlessh < allow1)) || fail 'Endlessh is stopped after the first UFW rule'
 ((allowN < drop1)) || fail 'the Endlessh rule is deleted before port 22 is allowed from the admin addresses'
-((dropN < restart)) || fail 'the Endlessh rule is deleted after the SSH restart'
+((dropN < check)) || fail 'sshd -t runs before the Endlessh rule is deleted'
+((check < restart)) || fail 'sshd -t runs after the SSH restart'
 ((restart < reload)) || fail 'UFW reloads before the SSH restart'
-pass 'order: Endlessh stopped, port 22 allowed in UFW, the Endlessh rule deleted, SSH restarted, UFW reloaded'
+pass 'order: Endlessh stopped, port 22 allowed in UFW, the Endlessh rule deleted, sshd -t, SSH restarted, UFW reloaded'
 
 # --- the same run where ssh.socket starts sshd (Ubuntu 22.10 and later) -----------------------------
 run_rb 'ssh.socket' "$tmp/bin" 1
 endlessh=$(first "$tmp/calls" '^systemctl disable --now endlessh$')
 allowN=$(last "$tmp/calls" '^ufw (allow|limit) ')
+check=$(first "$tmp/calls" '^sshd -t$')
 stop=$(first "$tmp/calls" '^systemctl stop ssh\.service$')
 socket=$(first "$tmp/calls" '^systemctl restart ssh\.socket$')
 reload=$(first "$tmp/calls" '^ufw reload$')
 ((stop > 0 && socket > 0)) || fail 'ssh.socket: sshd is not stopped or the socket not restarted'
 called 'systemctl restart ssh' && fail 'ssh.socket: ssh.service restarted instead of the socket'
-((endlessh < stop && allowN < stop && stop < socket && socket < reload)) ||
-    fail 'ssh.socket: Endlessh stop and UFW rules must come before stop ssh.service, restart ssh.socket, then ufw reload'
-pass 'ssh.socket: Endlessh stopped and port 22 allowed before sshd stops and the socket restarts'
+((endlessh < stop && allowN < stop && check > 0 && check < stop && stop < socket && socket < reload)) ||
+    fail 'ssh.socket: Endlessh stop, UFW rules and sshd -t must come before stop ssh.service, restart ssh.socket, then ufw reload'
+pass 'ssh.socket: Endlessh stopped, port 22 allowed and sshd -t passed before sshd stops and the socket restarts'
+
+# --- sshd -t rejects the restored files: SSH keeps running as it is ----------------------------------
+: > "$tmp/calls"
+status=0
+CALLS="$tmp/calls" SSHD_BAD=1 UFW_STATUS="$UFW_STATUS" PATH="$tmp/bin" \
+    "$BASH" "$rb" < /dev/null > "$tmp/stdout" 2> "$tmp/stderr" || status=$?
+((status != 0)) || fail 'sshd -t fails: rollback.sh exits 0'
+called 'sshd -t' || fail 'sshd -t fails: sshd -t did not run'
+grep -qE '^systemctl (restart|stop|start) ssh' "$tmp/calls" && fail 'sshd -t fails: SSH is restarted anyway'
+grep -qF 'sshd -t rejects the restored SSH configuration' "$tmp/stderr" || fail 'sshd -t fails: rollback.sh does not say why it stops'
+grep -qF 'Rollback done' "$tmp/stdout" && fail 'sshd -t fails: rollback.sh says "Rollback done"'
+pass 'sshd -t rejects the restored files: rollback.sh stops before SSH restarts and says why'
 
 # --- no ufw command (the firewall step never ran) ----------------------------------------------------
 run_rb 'no ufw' "$tmp/bin-no-ufw"
