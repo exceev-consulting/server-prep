@@ -11,9 +11,9 @@ Why VMs and not containers: [docs/decisions/0002-e2e-test-platform.md](decisions
 
 | Report | Address |
 |---|---|
-| Last run on `main` | <https://exceev-consulting.github.io/server-prep/e2e/main/> |
-| A pull request | `https://exceev-consulting.github.io/server-prep/e2e/pr-<number>/` |
-| All reports | <https://exceev-consulting.github.io/server-prep/e2e/> |
+| Last run on `main` | <https://server-prep.exceev.com/e2e/main/> |
+| A pull request | `https://server-prep.exceev.com/e2e/pr-<number>/` |
+| All reports | <https://server-prep.exceev.com/e2e/> |
 
 - Every pull request that changes a script or the tests runs them. A comment on the pull request gives the link
   and the result. A pull request from a fork gets a report only when its author is an owner, member or
@@ -38,7 +38,7 @@ Each system (Debian 12 and 13, Ubuntu 22.04, 24.04 and 26.04) goes through these
 | `prep-run` | The real run exits 0, no step FAILs, the panel's key logs in as root on port 822, and the JSON report lists the same steps as the Markdown one. |
 | `ssh-access` | The admin logs in with a key and can use sudo, the provider user and root with the admin key are refused, password login is off, root is refused from an address that is not the panel's, and port 22 gives no login: the Endlessh tarpit really listens there. |
 | `docker-firewall` | A container published with `-p` answers inside the server but not from outside. With a `ufw route allow` rule it does answer, which proves the test goes through the firewall. |
-| `audit-prepared` | The audit exits 0 with 0 FAIL, the checks a prepared server must pass are PASS, the checks of steps the test config leaves out (`sys.laptop`, `mon.telegram`, `panel.cloudflared`) are absent, and the "hard-won gotchas" of `AGENTS.md` hold. |
+| `audit-prepared` | The audit exits 0 with 0 FAIL, its JSON report has `schema_version` 1 and matches [docs/schemas/server-audit.schema.json](schemas/server-audit.schema.json) when the machine that runs the tests has Python's `jsonschema`, the checks a prepared server must pass are PASS, the checks of steps the test config leaves out (`sys.laptop`, `mon.telegram`, `panel.cloudflared`) are absent, and the "hard-won gotchas" of `AGENTS.md` hold. |
 | `prep-rerun` | A second run reports every step as `OK (already)` or `SKIPPED`. Then a `--only firewall` run (what the to-do says when a panel installs Docker later) keeps container traffic going through UFW and CrowdSec. |
 | `openship-paths` | With no real Openship: makes the folders where the Openship API keeps SSH keys, then re-runs the `aide` and `auditd` steps with `PANEL=openship`. auditd loads a watch (key `panel`) on each folder, AIDE accepts the excludes, and `aide --path-check` shows that Openship's deploy files and certbot's certificates are left out while the SSH keys, certbot's hooks and its renewal settings stay checked, and that the `/etc/letsencrypt` folder itself gets its own rule, without the timestamps certbot's lock file changes. The run's to-do asks to rebuild the existing AIDE baseline. |
 | `reboot` | The server comes back, root and the admin log in on 822, no unit failed, and the tarpit is back on port 22. |

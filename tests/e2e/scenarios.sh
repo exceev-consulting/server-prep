@@ -171,6 +171,15 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
     local id st
     [[ -n "$AUDIT_JSON" ]]; check "the audit writes a JSON report" $?
     [[ -n "$AUDIT_JSON" ]] || return
+    # the documented format (issue #16): schema_version, and the schema when the host has Python's jsonschema
+    check_eq "the audit JSON has schema_version 1" "$(jq .schema_version "$AUDIT_JSON")" 1
+    if python3 -I -c 'import jsonschema' 2>/dev/null; then
+        python3 -I -c 'import json,sys,jsonschema; jsonschema.validate(json.load(open(sys.argv[2])), json.load(open(sys.argv[1])))' \
+            "$REPO_DIR/docs/schemas/server-audit.schema.json" "$AUDIT_JSON" 2>&1 | log_to > /dev/null
+        check "the audit JSON matches docs/schemas/server-audit.schema.json" "${PIPESTATUS[0]}"
+    else
+        printf 'skip: schema validation (python3 jsonschema missing)\n' | log_to > /dev/null
+    fi
     check_eq "0 FAIL" "$(jq .summary.fail "$AUDIT_JSON")" 0
     check_eq "the audit exits 0" "$1" 0
     for id in ssh.root_login ssh.password_auth ssh.port ssh.max_auth ssh.allow_users fw.status \

@@ -1519,6 +1519,11 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
 # 'ufw allow/limit/route/default' exit 0 even when the rule or policy already exists, so compare the rule files instead.
 ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/dev/null | sha256sum; }
 
+# ufw_status [verbose|numbered]: 'ufw status' in English, for every check that reads it and the report. ufw translates
+# "Status: active" and "Default:" (Python gettext reads LANGUAGE before LC_ALL, so both are set here).
+# Only this command: apt and the other tools keep the operator's language.
+ufw_status() { LC_ALL=C LANGUAGE='' ufw status "$@"; }
+
 # RUNNER is run (the default) or rollback_cmd, which only prints the commands for rollback.sh.
 ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT [RUNNER]
     local port="$1" c="$2" r="${3:-run}" ip any=1
@@ -1544,7 +1549,7 @@ step_firewall() {
     before="$(ufw_state)"
     # 'ufw default' reloads the whole firewall even when the policy does not change, and a reload
     # drops CrowdSec from DOCKER-USER: set the policies only when they differ.
-    if [[ "$(ufw status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
+    if [[ "$(ufw_status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
         run ufw default deny incoming
         run ufw default allow outgoing
     fi
@@ -1574,7 +1579,7 @@ step_firewall() {
     # nothing, so it keeps showing what it would do.
     if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
 
-    if ! ufw status 2>/dev/null | grep -q "Status: active"; then
+    if ! ufw_status 2>/dev/null | grep -q "Status: active"; then
         run ufw --force enable && { changed; note "UFW enabled"; }
     elif [[ "$(ufw_state)" != "$before" ]]; then
         ufw_reload
@@ -1673,12 +1678,12 @@ ssh_test_hint() {
     [[ -n "${ADMIN_IPS//[,[:space:]]/}" ]] && from=" from an ADMIN_IPS address"
     if [[ -z "$ts_ip" ]]; then
         echo "  Open a NEW terminal and test:  ${lan}"
-        if [[ "$PANEL_ACCESS" == *tailscale* && -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+        if [[ "$PANEL_ACCESS" == *tailscale* && -z "$from" ]] && ufw_status 2>/dev/null | grep -q "Status: active"; then
             # Tailscale-only access, but tailscale gave no IP (logged out, daemon stopped).
             echo "  No Tailscale IP found and ADMIN_IPS is empty, so the firewall may block this test."
             echo "  Check 'tailscale status' first. If this test fails, answer n."
         fi
-    elif [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+    elif [[ -z "$from" ]] && ufw_status 2>/dev/null | grep -q "Status: active"; then
         # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.
         echo "  Open a NEW terminal and test over Tailscale:  ssh -p ${SSH_PORT} ${ADMIN_USER}@${ts_ip}"
         echo "  ADMIN_IPS is empty, so the firewall blocks SSH to the local IP from your machine. If this test fails, answer n."
@@ -1792,7 +1797,7 @@ EOF
         # The rollback timer is already stopped: a failed restart here would leave no sshd at all.
         restart_ssh || { bash "$rb"; note "phase B restart failed, rolled back"; return 1; }
         local nums
-        nums=$(ufw status numbered 2>/dev/null | grep 'server-prep-temp' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn)
+        nums=$(ufw_status numbered 2>/dev/null | grep 'server-prep-temp' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn)
         for p in $nums; do run ufw --force delete "$p"; done
         note "old SSH port(s) ${CURRENT_SSH_PORTS}closed"
     fi
@@ -2440,7 +2445,7 @@ EOF
 h=$(hostname)
 up=$(uptime -p)
 disk=$(df -h / | awk 'NR==2{print $5" used ("$4" free)"}')
-mem=$(free -h | awk '/^Mem:/{print $7" available of "$2}')
+mem=$(LC_ALL=C free -h | awk '/^Mem:/{print $7" available of "$2}')   # free translates "Mem:"
 upd=$(apt-get -s dist-upgrade 2>/dev/null | grep -c '^Inst ')
 reboot=$([ -f /var/run/reboot-required ] && echo "YES" || echo "no")
 f2b=$(fail2ban-client status sshd 2>/dev/null | awk -F: '/Total banned/{gsub(/ /,"",$2);print $2}')
@@ -2727,7 +2732,7 @@ write_report() {
         echo "## Firewall"
         echo
         echo '```'
-        ufw status verbose 2>/dev/null || echo "ufw status unavailable"
+        ufw_status verbose 2>/dev/null || echo "ufw status unavailable"   # English, like the audit above
         echo '```'
         echo
         echo "## Listening ports"

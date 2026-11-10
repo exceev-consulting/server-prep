@@ -5,6 +5,8 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
+  the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
   which the run turned on, no longer allowed that port, and Endlessh still held port 22 when another run had installed
   it. Before it restarts SSH, it now stops Endlessh whenever it is on and SSH goes back to 22, allows the old SSH port in
@@ -21,6 +23,15 @@ Highlights of each release. The full list of merged pull requests is in each
   `PANEL=openship` in `/etc/server-prep/server-prep.conf` and run:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide,auditd --yes`. If AIDE already had a
   baseline, the run's to-do list says how to rebuild it. Other panels get the same files as before.
+- `server-audit.sh --json` now writes `"schema_version": 1` right after `version`, so a program can tell when the
+  format changes; the other keys do not change. The format is described in [docs/json-output.md](docs/json-output.md):
+  every field, what PASS, WARN, FAIL and INFO mean, the score formula, the exit codes and every check id, with a JSON
+  Schema in `docs/schemas/server-audit.schema.json`. `./server-audit.sh --help` links to it.
+- Fix: on a server set to another language (for example Ubuntu installed in French), `server-audit.sh` reported UFW as
+  inactive (FAIL), counted every port as reachable from the internet and found no swap, because `ufw` and `free`
+  print those lines in that language. The audit now reads every command's output in English. In `server-prep.sh`, the
+  firewall step no longer says CHANGED on every re-run there, the SSH test hint names the right address again, and
+  the report shows the firewall status in English, like the audit.
 - Each `server-prep.sh` run, applied or dry run, also writes the report as JSON next to the Markdown one
   (`server-prep-report-<host>-<date>.json`, root only, with a copy in your home). An agent or a script can read from it
   which steps changed or failed, the audit before and after, the files changed and what is still to do. Step results use

@@ -85,7 +85,7 @@ Today `PANEL=openship` changes the labels in messages, leaves Openship's deploy 
 
 [Milestone](https://github.com/exceev-consulting/server-prep/milestone/5) · Epic [#11](https://github.com/exceev-consulting/server-prep/issues/11)
 
-**Partly done.** The [setup console](https://exceev-consulting.github.io/server-prep/) is live. Its data generator ([#59](https://github.com/exceev-consulting/server-prep/issues/59)), the page ([#60](https://github.com/exceev-consulting/server-prep/issues/60)) and the Pages deploy with a data-drift check ([#61](https://github.com/exceev-consulting/server-prep/issues/61)) are closed. Still open: an accessibility and mobile review ([#62](https://github.com/exceev-consulting/server-prep/issues/62)), and showing Openship and the beginner flow once they ship ([#63](https://github.com/exceev-consulting/server-prep/issues/63)).
+**Partly done.** The [setup console](https://server-prep.exceev.com/) is live. Its data generator ([#59](https://github.com/exceev-consulting/server-prep/issues/59)), the page ([#60](https://github.com/exceev-consulting/server-prep/issues/60)) and the Pages deploy with a data-drift check ([#61](https://github.com/exceev-consulting/server-prep/issues/61)) are closed. Still open: an accessibility and mobile review ([#62](https://github.com/exceev-consulting/server-prep/issues/62)), and showing Openship and the beginner flow once they ship ([#63](https://github.com/exceev-consulting/server-prep/issues/63)).
 
 ### Phase 5: Servers already in use
 

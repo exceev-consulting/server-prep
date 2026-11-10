@@ -306,9 +306,20 @@ PANEL_IP=""
 EXPOSE_WEB=no
 EXTRA_PORTS=""
 pkg_install() { :; }
-ufw() {                                            # only "ufw status [verbose]" is called directly
-    echo "Status: active"
-    [[ ${2:-} == verbose ]] && echo "Default: ${UFW_POLICY:-deny (incoming), allow (outgoing), deny (routed)}"
+# Only "ufw status [verbose]" is called directly. The real ufw translates these lines on a server set
+# to another language, and its Python gettext reads LANGUAGE before LC_ALL (issue #197). This one
+# prints French unless it is asked for English the way ufw_status does, so every check that reads
+# the status must go through ufw_status.
+UFW_UP=1
+ufw() {
+    local policy="${UFW_POLICY:-deny (incoming), allow (outgoing), deny (routed)}"
+    if [[ ${LC_ALL:-} == C && -z ${LANGUAGE:-} ]]; then
+        if [[ $UFW_UP -eq 1 ]]; then echo "Status: active"; else echo "Status: inactive"; return 0; fi
+        [[ ${2:-} == verbose ]] && echo "Default: $policy"
+    else
+        if [[ $UFW_UP -eq 1 ]]; then echo "État : actif"; else echo "État : inactif"; return 0; fi
+        [[ ${2:-} == verbose ]] && echo "Par défaut : $policy"
+    fi
     return 0
 }
 RAN=()
@@ -346,6 +357,15 @@ expect_firewall 're-run with nothing to change is OK (already)' 1 old 0 ok 0
 # 'ufw default' and 'ufw reload' both reload the firewall, which drops CrowdSec's DOCKER-USER rule
 expect_ran 're-run with nothing to change' no 'ufw default'
 expect_ran 're-run with nothing to change' no 'ufw reload'
+expect_ran 're-run with nothing to change' no 'ufw --force enable'
+# A server set to French: the step must still read the status in English (issue #197).
+LANG=fr_FR.UTF-8 LANGUAGE=fr_FR:fr expect_firewall 're-run on a French server is OK (already)' 1 old 0 ok 0
+expect_ran 're-run on a French server' no 'ufw --force enable'
+expect_ran 're-run on a French server' no 'ufw default'
+UFW_UP=0
+expect_firewall 'with UFW off enables it' 1 old 0 ok 1 'UFW enabled'
+expect_ran 'with UFW off' yes 'ufw --force enable'
+UFW_UP=1
 expect_firewall 'with a new rule is CHANGED' 1 new 0 ok 1
 expect_ran 'with a new rule' yes 'ufw reload'
 UFW_POLICY='allow (incoming), allow (outgoing), disabled (routed)'
@@ -414,10 +434,12 @@ expect_hint 'with Tailscale and a blank ADMIN_IPS shows only the Tailscale IP' t
     has 'admin@192.0.2.10' 'ADMIN_IPS is empty' 'admin@192.168.1.50'
 expect_hint 'with Tailscale and ADMIN_IPS shows the local IP first' tailscale 192.168.1.0/24 192.0.2.10 \
     has 'admin@192.168.1.50' 'admin@192.0.2.10' 'ADMIN_IPS is empty'
-ufw() { echo "Status: inactive"; }   # --skip firewall, or --only ssh on a fresh server
+LANG=fr_FR.UTF-8 LANGUAGE=fr_FR:fr expect_hint 'on a French server with Tailscale only shows only the Tailscale IP' \
+    tailscale '' 192.0.2.10 has 'admin@192.0.2.10' 'ADMIN_IPS is empty' 'admin@192.168.1.50'
+UFW_UP=0   # --skip firewall, or --only ssh on a fresh server
 expect_hint 'with Tailscale and the firewall off also shows the local IP' tailscale '' 192.0.2.10 \
     is "$fallback" 'admin@192.0.2.10' ADMIN_IPS
-ufw() { echo "Status: active"; }
+UFW_UP=1
 TS_RC=1
 expect_hint 'with Tailscale logged out keeps the old text and warns' tailscale '' '' \
     is "$fallback" 'No Tailscale IP found' 'over Tailscale'
@@ -425,10 +447,10 @@ expect_hint 'ignores a "Logged out." message' tailscale '' 'Logged out.' \
     is "$fallback" 'No Tailscale IP found' 'over Tailscale'
 expect_hint 'with Tailscale logged out and ADMIN_IPS keeps the old text' tailscale 192.168.1.0/24 '' \
     is "$fallback" '' Tailscale
-ufw() { echo "Status: inactive"; }
+UFW_UP=0
 expect_hint 'with Tailscale logged out and the firewall off keeps the old text' tailscale '' '' \
     is "$fallback" '' Tailscale
-ufw() { echo "Status: active"; }
+UFW_UP=1
 TS_RC=0
 expect_hint 'without tailscale in PANEL_ACCESS keeps the old text' cloudflared '' 192.0.2.10 \
     is "$fallback" '' 192.0.2.10
@@ -484,8 +506,12 @@ bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
 # ... and the audit's UFW port matcher test (issue #78).
 bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
+# ... and the audit on a server set to French: ufw and free read in English (issue #197).
+bash "$SCRIPT_DIR/tests/audit-locale.sh" || exit 1
 # ... and the audit's server-prep release check on sample release lists (hotfix lane, ADR 0003).
 bash "$SCRIPT_DIR/tests/audit-release.sh" || exit 1
+# ... and the audit's JSON format: writer keys, schema_version, the schema and every check id in its category's table in docs/json-output.md (issue #16).
+bash "$SCRIPT_DIR/tests/audit-json.sh" || exit 1
 # ... and server-prep.sh --upgrade against a fake release (no network).
 bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1
 # ... and the audit's third-party update matcher (issue #155).
@@ -499,3 +525,8 @@ bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/rollback.sh" || exit 1
 # ... and the Openship AIDE excludes and auditd watch (issue #54).
 bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1
+# ... and the label taxonomy check on .github/labels.yml (issue #24).
+bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
+# ... and the committed-file guard (issue #40): on this repository first, so CI fails on a tracked
+# report, filled config or key, or an IPv4 address that is not an example; then on temp repos.
+bash "$SCRIPT_DIR/tests/check-files.sh" || exit 1

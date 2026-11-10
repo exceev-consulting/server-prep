@@ -36,7 +36,7 @@ The report that server-prep writes (`/root/server-prep-reports/`, with a copy in
 
 | `PANEL_ACCESS` | Root allowed from | Address to type in the panel | Good for |
 |---|---|---|---|
-| `tailscale` | `100.64.0.0/10` and `fd7a:115c:a1e0::/48` (Tailscale's address ranges) | the server's Tailscale IP, for example `100.64.0.12`. The panel's server must be in the same tailnet. | most setups: VPS, dedicated, office or home servers |
+| `tailscale` | `100.64.0.0/10` and `fd7a:115c:a1e0::/48` (Tailscale's address ranges) | the server's Tailscale IP, in `100.64.0.0/10` (`tailscale ip -4` on the server prints it). The panel's server must be in the same tailnet. | most setups: VPS, dedicated, office or home servers |
 | `cloudflared` | `127.0.0.1` and `::1` (the tunnel arrives locally) | the tunnel SSH hostname, for example `ssh-web-01.example.com` | servers behind NAT without Tailscale |
 | `public` | `PANEL_IP` only | the server's public IP, for example `203.0.113.10` | a VPS when the panel's server has a fixed public IP |
 
@@ -147,4 +147,4 @@ Until these land, if you try Openship:
 
 Any panel that logs in over SSH as root with a key should work: set `PANEL` to its name and follow the steps above. Code for one panel only is guarded by `[[ ${PANEL,,} == <name> ]]` in the scripts, so a new panel never changes what the others get. To add real support for a panel, read [CONTRIBUTING.md](https://github.com/exceev-consulting/server-prep/blob/main/CONTRIBUTING.md) and open an issue first. Questions about a panel go to [Discussions](https://github.com/exceev-consulting/server-prep/discussions).
 
-You can also see what each panel and access route opens, step by step, in the [setup console](https://exceev-consulting.github.io/server-prep/).
+You can also see what each panel and access route opens, step by step, in the [setup console](https://server-prep.exceev.com/).
