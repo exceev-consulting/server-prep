@@ -1695,7 +1695,7 @@ ssh_test_hint() {
                 fi
                 if [[ -n "$only" ]]; then
                     echo "  ADMIN_IPS is empty, so the firewall allows SSH only ${only} and blocks this test from your machine."
-                    echo "  Test ${instead} instead, or add your IP to ADMIN_IPS. If this test fails, answer n."
+                    echo "  Test from the panel's host as root with the panel key (ssh -p ${SSH_PORT} root@<server public IP>), through the tunnel (cloudflared access ssh, once the tunnel hostname exists), or add your IP to ADMIN_IPS and re-run the firewall step. If this test fails, answer n."
                 fi
             fi
         fi
