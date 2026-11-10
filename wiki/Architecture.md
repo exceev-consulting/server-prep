@@ -130,7 +130,7 @@ You see the checks scroll by in color, then a PASS / WARN / FAIL summary, and th
 
 ## Setup console: from scripts to GitHub Pages
 
-The [setup console](https://exceev-consulting.github.io/server-prep/) shows what server-prep does for your setup: VPS or dedicated, your panel, your access route. Its facts are not written by hand. They come from the scripts.
+The [setup console](https://server-prep.exceev.com/) shows what server-prep does for your setup: VPS or dedicated, your panel, your access route. Its facts are not written by hand. They come from the scripts.
 
 1. [`scripts/gen-data.sh`](https://github.com/exceev-consulting/server-prep/blob/main/scripts/gen-data.sh) reads `server-prep.sh`, `server-audit.sh`, `server-preconfig.sh`, the README tables and `server-prep.conf.example`.
 2. It writes `site/data.json` and `site/data.js` (the same data, loaded by the page so it also works offline). The output has no timestamps, so CI can compare it.
@@ -165,6 +165,6 @@ Five workflows live in [`.github/workflows/`](https://github.com/exceev-consulti
 | `wiki` | Push to `main` that touches `wiki/`; or by hand | Publishes `wiki/` to the GitHub Wiki |
 | `release` | By hand only (the release button) | Bumps the version, updates the changelog and the site data in one commit put on `main` by the release app (the one exception to `main`'s required approval), tags, and publishes the release with `SHA256SUMS`. See [Maintainer handbook](Maintainer-handbook). |
 
-More checks are planned: a consistency check that keeps steps, README, config example and audit in sync ([#35](https://github.com/exceev-consulting/server-prep/issues/35)), one local script that runs everything CI runs ([#34](https://github.com/exceev-consulting/server-prep/issues/34)), unit tests ([#37](https://github.com/exceev-consulting/server-prep/issues/37)), and secret scanning ([#40](https://github.com/exceev-consulting/server-prep/issues/40)).
+More checks are planned: the `lint` and `release` workflows running `scripts/check.sh` with its pinned ShellCheck ([#34](https://github.com/exceev-consulting/server-prep/issues/34)), a consistency check that keeps steps, README, config example and audit in sync ([#35](https://github.com/exceev-consulting/server-prep/issues/35)), unit tests ([#37](https://github.com/exceev-consulting/server-prep/issues/37)), and secret scanning ([#40](https://github.com/exceev-consulting/server-prep/issues/40)).
 
 Architecture choices are recorded as ADRs (architecture decision records) in [`docs/decisions/`](https://github.com/exceev-consulting/server-prep/tree/main/docs/decisions). Its README says when to write one. How decisions are made: [GOVERNANCE.md](https://github.com/exceev-consulting/server-prep/blob/main/GOVERNANCE.md).

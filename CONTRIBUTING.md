@@ -15,7 +15,9 @@ Security problems: **don't open a public issue**. See [SECURITY.md](SECURITY.md)
 
 ## Set up
 
-There is nothing to build. You need bash 5 and, for linting, [ShellCheck](https://github.com/koalaman/shellcheck).
+There is nothing to build. You need bash 5 (macOS: `brew install bash`) and curl. `scripts/check.sh` downloads the
+pinned [ShellCheck](https://github.com/koalaman/shellcheck) the first time. Some checks also need jq, ssh-keygen, unzip
+and python3.
 
 ```bash
 git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
@@ -30,28 +32,40 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 
 ## Before you open a pull request
 
-1. **Syntax, lint and regression checks**:
+1. **Syntax, lint and regression checks**: run `./scripts/check.sh`. It runs the checks of
+   `.github/workflows/lint.yml`, without root and without changing the system. Its ShellCheck is pinned to 0.11.0, while
+   CI uses the ShellCheck of its runner until `lint.yml` runs this script: the two can disagree on a warning that only
+   one version reports.
    ```bash
-   for script in server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh; do
-       bash -n "$script" || exit 1
-   done
-   shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
-   scripts/gen-data.sh --check   # the setup console's data matches the scripts (needs jq)
-   bash tests/exit-status.sh     # argument and final-status checks, then tests/audit-docker-user.sh
-                                 # (audit "Docker vs firewall" matcher on sample iptables output),
-                                 # tests/audit-logind-lid.sh (audit lid-switch parser on sample
-                                 # systemd-analyze cat-config output), tests/preconfig-json.sh
-                                 # (server-preconfig.sh --check --json with fake host commands, needs jq,
-                                 # skipped without it), tests/validate-config.sh
-                                 # (--validate on a good config and broken ones), tests/audit-ufw-ports.sh
-                                 # (audit UFW port matcher on sample ufw status output), tests/upgrade.sh
-                                 # (--upgrade against a fake release served by a fake curl, no network),
-                                 # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter)
-                                 # and tests/report-json.sh (the JSON report next to the Markdown one, on fake
-                                 # run data, needs jq, skipped without it); no system changes
-   bash tests/swap.sh            # swap file creation with fake commands; no system changes
-   bash tests/e2e-report.sh      # the end-to-end report builder, on fake results
+   ./scripts/check.sh                # every check
+   ./scripts/check.sh --list         # the sections
+   ./scripts/check.sh --only lint    # one section
+   scripts/check-files.sh            # after git add, before git commit (it reads only tracked and staged
+                                     # files): no report, filled config, key or CLAUDE.local.md is tracked,
+                                     # and every IPv4 address is an example
+   gitleaks git --redact --config .gitleaks.toml   # optional, if gitleaks is installed: no secret in the history
+                                                   # (no CI job runs it yet: the security workflow of #40 is to come)
    ```
+   It prints one line per section (OK, FAIL or SKIP) and a summary, and exits with 1 when a section fails. The
+   output of a failed section shows under its FAIL line. The sections:
+   - `syntax`: `bash -n` on every script, one file per call
+   - `lint`: ShellCheck `-S warning` on the same files
+   - `help`: `--help` of the three scripts
+   - `data`: `scripts/gen-data.sh --check`, the setup console's data matches the scripts
+   - `tokens`: `scripts/check-tokens.sh`, the design token copies match `site/tokens.css`
+   - `exit-status`, `swap`, `e2e-report`, `e2e-pages`: the quick tests in `tests/`, with fake commands
+   - `consistency`: `scripts/check-consistency.sh`, once that file exists
+
+   `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
+   checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`;
+   `audit-locale.sh` runs the audit's ufw and free checks on a server set to French, with fake ufw and free),
+   `preconfig-json.sh`, `validate-config.sh`, `upgrade.sh`, `skills-sync.sh`, `report-json.sh`, `labels.sh`
+   (`.github/labels.yml`, then broken copies of it) and `check-files.sh` (the committed-file guard on this
+   repository, then on temp repos).
+   The `lint` section uses ShellCheck 0.11.0: `scripts/check.sh` downloads it once to
+   `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its SHA-256 on every run, and stops when the checksum does not
+   match. When a tool is missing, the sections that need it show SKIP on your machine: `data` and `e2e-report` need
+   jq, `exit-status` needs jq and ssh-keygen, `e2e-pages` needs jq, unzip and python3. CI has those tools.
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
    sudo ./server-prep.sh --dry-run --only <step>
@@ -75,13 +89,15 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 - **Works with any panel:** use `PANEL`, `PANEL_PUBKEY`, `PANEL_ACCESS`, `PANEL_IP` and `${PANEL_LABEL}` in messages.
   Code for one panel only goes behind `[[ ${PANEL,,} == <name> ]]`.
 - **A new or changed step** also updates `server-prep.conf.example`, the step table in `README.md`,
-  and adds a check to `server-audit.sh` (INFO when optional). Then run `scripts/gen-data.sh` so the
-  setup console (`site/`) shows it.
+  and adds a check to `server-audit.sh` (INFO when optional). List the new check's id in
+  `docs/json-output.md`, in its category's table (`tests/audit-json.sh` fails otherwise). Then run
+  `scripts/gen-data.sh` so the setup console (`site/`) shows it.
 - **A new setting** also goes into `KNOWN_SETTINGS` in `server-prep.sh`, so `--validate` knows it, and into
   `validate_values` when it has a format to check (a yes/no setting not named `INSTALL_*`, a port, a list...).
   `tests/validate-config.sh` fails when a setting is missing from `KNOWN_SETTINGS` or a yes/no setting is not checked.
 - **No secrets and no real infrastructure** in the repo: tokens, keys, real IPs or hostnames.
-  Use examples like `web-01` and `192.168.1.50`.
+  Use examples like `web-01` and `192.168.1.50`. `scripts/check-files.sh` flags a tracked report, filled config
+  or key, and any IPv4 address that is not an example. CI runs it through `tests/exit-status.sh`.
 - **Simple words** in messages and docs. Many users are not security experts.
 - Style: 4 spaces, `[[ ]]`, quote variables. `.editorconfig` has the basics.
 
@@ -90,13 +106,13 @@ If you use [Claude Code](https://claude.com/claude-code) or Codex, the `add-step
 
 ## The setup console (site/)
 
-The [setup console](https://exceev-consulting.github.io/server-prep/) is `site/index.html`, a static page published
+The [setup console](https://server-prep.exceev.com/) is `site/index.html`, a static page published
 with GitHub Pages by `.github/workflows/pages.yml`. Its data (`site/data.json`, `site/data.js`) is generated from the
 scripts, the README tables and `server-prep.conf.example` by `scripts/gen-data.sh`. CI fails when the data is out of date,
 so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result.
 
 Colours, type, radii and spacing are the tokens in `site/tokens.css`, shared with the
-[brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) (`site/brand/`). Use a token instead of a new
+[brand guidelines](https://server-prep.exceev.com/brand/) (`site/brand/`). Use a token instead of a new
 colour. A page that must also work offline, like the e2e report, keeps its own copy of the tokens, and
 `scripts/check-tokens.sh` fails CI when a copy, or a colour ramp on the brand page (sections 2.2 and 2.4), differs
 from `site/tokens.css`. The PNG files in `site/` (link preview, home-screen icon, favicon) are
@@ -122,6 +138,35 @@ wiki's web editor are overwritten by the next sync. Wiki links use the page name
 - Pull requests are **squash-merged**. You don't need to sign your commits: the merge commit on `main`
   is signed by GitHub.
 
+## Labels
+
+`.github/labels.yml` is the source of truth for labels: name, color and description. Change a label through a
+pull request that edits this file, never only in the web UI. `tests/labels.sh` checks the file (CI runs it through
+`tests/exit-status.sh`): every label has a name, a color of 6 hex digits and a description, no two names match
+ignoring case, and the five release-notes labels are there.
+
+Nothing syncs the file to GitHub yet: the sync workflow is still to come
+([#24](https://github.com/exceev-consulting/server-prep/issues/24)). After the merge, a maintainer applies each
+added or changed label by hand:
+
+```bash
+gh label create "<name>" --color <hex> --description "<text>" --force
+```
+
+To rename a label, run `gh label edit "<old>" --name "<new>"` by hand, in the same pull request. Removing a label
+from the file does not delete it on GitHub: nothing deletes labels.
+
+- The groups: GitHub defaults, release notes (`security`, `skip-changelog`), workflow (`needs-info`, `triaged`,
+  `claude`, `proposal`, `ready`, `agent-ready`, `epic`), `area: *`, `panel: *`, `priority: *`, `size: *`,
+  issue status (`status: *`, `stale`), pull request state and review, and a few routine labels.
+- Every issue needs a type from GitHub issue types (Bug, Feature or Task, not a label) and at least one
+  `area: *` label.
+- `agent-ready` goes on an issue only when it has acceptance criteria and verification commands.
+- `security`, `enhancement`, `bug`, `documentation` and `skip-changelog` sort the release notes (see *Changelog*
+  below). Never rename or remove them.
+
+Triage is described in the [Maintainer handbook](https://github.com/exceev-consulting/server-prep/wiki/Maintainer-handbook).
+
 ## Changelog
 
 If your change matters to users, add a line under `## [Unreleased]` in `CHANGELOG.md`, in simple words.
@@ -146,6 +191,32 @@ workflow uses: it is on `main`'s bypass list, and its client ID (`RELEASE_APP_CL
 
 GitHub signs the commit and the tag. Bump `AUDIT_VERSION` in `server-audit.sh` by hand,
 in a normal pull request, when the audit changes a lot.
+
+The audit's JSON report has its own format version, `schema_version` ([docs/json-output.md](docs/json-output.md)).
+Adding a field or a check does not change it: describe a new field in the schema's `properties`, not in `required`,
+so files written by older releases still pass. Removing or renaming a field or a check id, and adding, removing or
+renaming a status, break the programs that read the file: then bump `schema_version` in the JSON writer of
+`server-audit.sh` and in the `const` of `docs/schemas/server-audit.schema.json`, update the doc and add a CHANGELOG
+line, in the same pull request.
+`AUDIT_VERSION` and `schema_version` change separately.
+
+## Repository settings (maintainers)
+
+These settings live in GitHub, not in a file, so no check sees them. Review them when a workflow
+or the repository's owner changes.
+
+- **Secret scanning** with **push protection** on (Settings → Code security), plus **Dependabot alerts**,
+  **Dependabot security updates** and **private vulnerability reporting** ([SECURITY.md](SECURITY.md) sends
+  reporters there).
+- **A ruleset on `main`:** a pull request with an approving review, the required status check `lint`, no force
+  push, no deletion, and the release GitHub App as the only bypass. `lint` already covers the committed-file
+  guard. Once the security workflow of #40 exists, make its `security` check required only when `release.yml`
+  also posts it on the release commit, or releases stop.
+- **Actions:** default workflow permissions read-only, Actions may not create or approve pull requests, and
+  workflows from first-time contributors need an approval.
+- **The `release` environment** can only be used from `main`.
+- **Code scanning** on, so the OpenSSF Scorecard results show in the Security tab once the security workflow
+  exists.
 
 ## License
 

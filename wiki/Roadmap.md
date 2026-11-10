@@ -64,7 +64,7 @@ The base that everything else plugs into:
 
 [Milestone](https://github.com/exceev-consulting/server-prep/milestone/3) · Epic [#10](https://github.com/exceev-consulting/server-prep/issues/10)
 
-Today `PANEL=openship` only changes the labels in messages. Coolify has more: hints, audit checks, guides. This phase brings Openship to the same level:
+Today `PANEL=openship` changes the labels in messages, leaves Openship's deploy files out of AIDE and has auditd watch its SSH key folders. Coolify has more: hints, audit checks, guides. This phase brings Openship to the same level:
 
 - panel profiles instead of panel checks spread over the scripts ([#46](https://github.com/exceev-consulting/server-prep/issues/46)), and an `/add-panel` checklist ([#47](https://github.com/exceev-consulting/server-prep/issues/47));
 - an Openship profile with its own questions and hints ([#48](https://github.com/exceev-consulting/server-prep/issues/48)), audit checks ([#53](https://github.com/exceev-consulting/server-prep/issues/53)) and a guide ([#55](https://github.com/exceev-consulting/server-prep/issues/55));
@@ -85,7 +85,7 @@ Today `PANEL=openship` only changes the labels in messages. Coolify has more: hi
 
 [Milestone](https://github.com/exceev-consulting/server-prep/milestone/5) · Epic [#11](https://github.com/exceev-consulting/server-prep/issues/11)
 
-**Partly done.** The [setup console](https://exceev-consulting.github.io/server-prep/) is live. Its data generator ([#59](https://github.com/exceev-consulting/server-prep/issues/59)), the page ([#60](https://github.com/exceev-consulting/server-prep/issues/60)) and the Pages deploy with a data-drift check ([#61](https://github.com/exceev-consulting/server-prep/issues/61)) are closed. Still open: an accessibility and mobile review ([#62](https://github.com/exceev-consulting/server-prep/issues/62)), and showing Openship and the beginner flow once they ship ([#63](https://github.com/exceev-consulting/server-prep/issues/63)).
+**Partly done.** The [setup console](https://server-prep.exceev.com/) is live. Its data generator ([#59](https://github.com/exceev-consulting/server-prep/issues/59)), the page ([#60](https://github.com/exceev-consulting/server-prep/issues/60)) and the Pages deploy with a data-drift check ([#61](https://github.com/exceev-consulting/server-prep/issues/61)) are closed. Still open: an accessibility and mobile review ([#62](https://github.com/exceev-consulting/server-prep/issues/62)), and showing Openship and the beginner flow once they ship ([#63](https://github.com/exceev-consulting/server-prep/issues/63)).
 
 ### Phase 5: Servers already in use
 

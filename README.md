@@ -14,13 +14,14 @@
 
 <p align="center">
   <a href="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml/badge.svg" alt="lint"></a>
-  <a href="https://exceev-consulting.github.io/server-prep/e2e/main/"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/e2e.yml/badge.svg?branch=main" alt="end-to-end tests"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/exceev-consulting/server-prep"><img src="https://api.scorecard.dev/projects/github.com/exceev-consulting/server-prep/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://server-prep.exceev.com/e2e/main/"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/e2e.yml/badge.svg?branch=main" alt="end-to-end tests"></a>
   <a href="https://github.com/exceev-consulting/server-prep/releases/latest"><img src="https://img.shields.io/github/v/release/exceev-consulting/server-prep" alt="latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0B1117.svg" alt="MIT license"></a>
 </p>
 
 <p align="center">
-  <a href="https://exceev-consulting.github.io/server-prep/"><b>Setup console</b></a> ·
+  <a href="https://server-prep.exceev.com/"><b>Setup console</b></a> ·
   <a href="https://github.com/exceev-consulting/server-prep/wiki">Docs</a> ·
   <a href="https://github.com/exceev-consulting/server-prep/discussions">Discussions</a> ·
   <a href="https://github.com/orgs/exceev-consulting/projects/7">Roadmap</a> ·
@@ -54,7 +55,7 @@ sudo ./server-prep.sh --dry-run   # preview every change
 sudo ./server-prep.sh             # apply
 ```
 
-Not sure what to answer? Build your setup in the **[setup console](https://exceev-consulting.github.io/server-prep/)**:
+Not sure what to answer? Build your setup in the **[setup console](https://server-prep.exceev.com/)**:
 it shows the ports, the logins, the commands in order and a ready config file for your server and panel.
 New to servers? Follow **[Start here](https://github.com/exceev-consulting/server-prep/wiki/Start-here)**.
 
@@ -87,6 +88,7 @@ means `--config` is missing or the file cannot be read.
 | [Cloudflare Tunnel](docs/cloudflare-tunnel.md) | Publish apps with no open port, from Coolify, with a Zero Trust login |
 | [Monitoring](docs/monitoring.md) | Server and Docker metrics: Telegraf, InfluxDB and Grafana |
 | [End-to-end tests](docs/e2e-tests.md) | How every system is tested in a VM like a real server, where the reports are, run it yourself |
+| [JSON output](docs/json-output.md) | The audit's JSON report for agents and scripts: every field, the statuses, the score, every check id and the JSON Schema |
 | [Troubleshooting](https://github.com/exceev-consulting/server-prep/wiki/Troubleshooting) | Known problems, their cause and the fix |
 | [FAQ](https://github.com/exceev-consulting/server-prep/wiki/FAQ) | Lockouts, re-runs, undo, logs, ports and panels |
 | [Working with AI agents](https://github.com/exceev-consulting/server-prep/wiki/Working-with-AI-agents) | Guided setups with the same skills in Claude Code and Codex, and the project rules every agent reads |
@@ -96,7 +98,7 @@ means `--config` is missing or the file cannot be read.
 Tested target: Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, on cloud VPS and on dedicated / on-premise servers.
 
 Each of these systems also runs end to end on every change to the scripts, in a VM booted from its official cloud image:
-[latest report](https://exceev-consulting.github.io/server-prep/e2e/main/) ([how it works](docs/e2e-tests.md)).
+[latest report](https://server-prep.exceev.com/e2e/main/) ([how it works](docs/e2e-tests.md)).
 
 ### VPS or dedicated server
 
@@ -122,14 +124,14 @@ Both work the same way. Only a few details change:
 | `firewall` | UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched) |
 | `ssh` | port 822, keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works |
 | `ips` | fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER), panel/admin IPs whitelisted, LAPI moved off 8080 |
-| `unattended` | daily security updates (+ Docker CE), optional auto-reboot |
+| `unattended` | daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot |
 | `sysctl` | ~30 kernel/network parameters, rare protocols blacklisted (Docker/Tailscale compatible) |
 | `auth` | sudo log file (`/var/log/sudo.log`), pwquality minlen 12 + complexity, password dictionary built (`cracklib-runtime`) so `passwd` works |
 | `services` | disable avahi, cups, bluetooth, ModemManager; mask Ctrl-Alt-Del; optional headless boot |
 | `laptop` | laptop used as a server: ignore lid close, mask sleep/suspend |
 | `logging` | persistent journald (1 GB cap), swap file if none |
-| `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands |
-| `rkhunter` / `aide` | rootkit scan + file-integrity baseline, daily |
+| `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands; with `PANEL=openship`, Openship's SSH key folders where they exist |
+| `rkhunter` / `aide` | rootkit scan + file-integrity baseline, daily; with `PANEL=openship`, AIDE leaves out Openship's deploy files (`/var/lib/openship` except its SSH keys, the OpenResty configs, certbot's certificates) |
 | `endlessh` | SSH tarpit on port 22 once SSH has moved |
 | `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md)) |
 | `telegram` | alert on every SSH login (except ignored users, e.g. the panel's root) + daily report at 09:00 |
@@ -152,6 +154,8 @@ Where things go (root only): the report in `/root/server-prep-reports/` as Markd
 sudo ./server-audit.sh --md audit.md --json audit.json
 ```
 
+The JSON format, every check id and the score formula are in [docs/json-output.md](docs/json-output.md).
+
 It is a rework of [vps-audit](https://github.com/nuver-labs/vps-audit) v0.2.0. It reads sshd's effective config
 (`sshd -T`), counts a port as exposed only when the bind address and the firewall both allow it, detects Docker
 bypassing UFW, separates security updates from regular ones, and adds CrowdSec, fail2ban, sysctl, AppArmor,
@@ -162,6 +166,11 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 ## Safety
 
 - Make sure you can reach a console before you start: the provider's web console, IPMI/KVM, rescue mode or a screen.
+- To undo a run, run its `rollback.sh` from the console, not over SSH: `sudo bash /var/lib/server-prep/backups/<date>/rollback.sh`.
+  It puts back the files the run changed and deletes the ones it created. Before SSH goes back to its old port, it allows
+  that port in UFW from the run's SSH addresses; when that port is 22, it also stops Endlessh and deletes the Endlessh
+  rule, which allowed port 22 from anywhere. It does not remove packages, undo service changes or turn UFW off: it
+  prints what it leaves in place.
 - Add your SSH key before the SSH step: password login is turned off.
 - `--dry-run` changes nothing, and every step can be re-run safely.
 - Found a security problem? Report it privately: see [SECURITY.md](SECURITY.md).

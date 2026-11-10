@@ -8,7 +8,7 @@ server-prep works with any panel that does this. You give it three things:
 
 | Setting | What it is |
 |---|---|
-| `PANEL` | the panel's name: `coolify`, `dokploy`, `openship` or any other name. Today it is only used in the questions, the notes and the report. |
+| `PANEL` | the panel's name: `coolify`, `dokploy`, `openship` or any other name. It is used in the questions, the notes and the report. Two names also change settings: `coolify` creates `/data/coolify`, and `openship` sets AIDE excludes and auditd watches (see [Openship](#openship)). |
 | `PANEL_PUBKEY` | the **public** part of the key the panel uses for servers. |
 | `PANEL_ACCESS` | how the panel's server reaches this server: `cloudflared`, `tailscale`, `public`, or several, separated by commas. |
 
@@ -36,7 +36,7 @@ The report that server-prep writes (`/root/server-prep-reports/`, with a copy in
 
 | `PANEL_ACCESS` | Root allowed from | Address to type in the panel | Good for |
 |---|---|---|---|
-| `tailscale` | `100.64.0.0/10` and `fd7a:115c:a1e0::/48` (Tailscale's address ranges) | the server's Tailscale IP, for example `100.64.0.12`. The panel's server must be in the same tailnet. | most setups: VPS, dedicated, office or home servers |
+| `tailscale` | `100.64.0.0/10` and `fd7a:115c:a1e0::/48` (Tailscale's address ranges) | the server's Tailscale IP, in `100.64.0.0/10` (`tailscale ip -4` on the server prints it). The panel's server must be in the same tailnet. | most setups: VPS, dedicated, office or home servers |
 | `cloudflared` | `127.0.0.1` and `::1` (the tunnel arrives locally) | the tunnel SSH hostname, for example `ssh-web-01.example.com` | servers behind NAT without Tailscale |
 | `public` | `PANEL_IP` only | the server's public IP, for example `203.0.113.10` | a VPS when the panel's server has a fixed public IP |
 
@@ -100,7 +100,25 @@ There is no Dokploy guide yet. If you run it, please share your result (see [Pro
 
 ## Openship
 
-**Today:** `PANEL=openship` only changes the name in the messages and the report. The SSH, firewall and Docker setup is the same as for any panel. It has not been tested end to end yet.
+What server-prep does for Openship today (`PANEL=openship`):
+
+- uses "Openship" in the messages and the report;
+- tells AIDE to skip what Openship and certbot rewrite on every deploy and renewal: `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`, `/usr/local/openresty/nginx/conf`) and certbot's `live`, `archive`, `csr` and `keys` folders under `/etc/letsencrypt`. Openship's SSH key folders, certbot's renewal settings (`/etc/letsencrypt/renewal`, which can name hooks), `renewal-hooks` and `cli.ini` stay checked, and so does the `/etc/letsencrypt` folder itself, without its timestamps (certbot's lock file changes them on every run);
+- adds an auditd watch (key `panel`, see it with `sudo ausearch -k panel`) on each of Openship's SSH key folders that exists: `/etc/openship/ssh-keys`, `/var/lib/openship/ssh-keys` and `/var/lib/openship/host-ssh`. The Openship API keeps the private keys it uses to log in to servers there, so these folders exist only on the server that runs the Openship API. A server it manages has none: the run's notes say so, and there is nothing to do.
+
+The trade-off: on an Openship server, AIDE no longer checks the certificates and their private keys and the OpenResty configs, because they change on every deploy and renewal. Certbot's renewal settings stay checked, so after a renewal AIDE's next check lists that domain's file in `/etc/letsencrypt/renewal` as changed: a small cost for seeing a hook planted there.
+
+On a server prepared earlier, set `PANEL=openship` in `/etc/server-prep/server-prep.conf`, then re-run both steps with the saved answers:
+
+```bash
+sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide,auditd --yes
+```
+
+On the server that runs the Openship API, run the `auditd` step again once Openship has created a key folder. If AIDE already had a baseline, its next check may list the files under the new excludes as removed. Review that check, then rebuild the baseline with `sudo aideinit -y -f` (the run's to-do list says so too).
+
+The audit shows both as INFO: `mon.auditd_panel` (are the key folders watched?) and `mon.aide_panel` (are the deploy files left out of AIDE?).
+
+The `openship-paths` end-to-end scenario checks these AIDE and auditd paths on every supported system, without a real Openship. The SSH, firewall and Docker setup is the same as for any panel, and has not been tested with Openship end to end yet.
 
 **Planned**, in [epic #10](https://github.com/exceev-consulting/server-prep/issues/10): Openship support at the same level as Coolify. Openship changes the host in ways the hardening must know about, so these sub-issues are open:
 
@@ -114,7 +132,6 @@ There is no Dokploy guide yet. If you run it, please share your result (see [Pro
 | [#51](https://github.com/exceev-consulting/server-prep/issues/51) | explain 80/443: Openship runs OpenResty and certbot on the host network, and certbot needs port 80 open unless you use a tunnel |
 | [#52](https://github.com/exceev-consulting/server-prep/issues/52) | an opt-in WireGuard rule for Openship's private networking |
 | [#53](https://github.com/exceev-consulting/server-prep/issues/53) | audit checks for Openship |
-| [#54](https://github.com/exceev-consulting/server-prep/issues/54) | AIDE and auditd paths for Openship |
 | [#55](https://github.com/exceev-consulting/server-prep/issues/55) | a guide, `docs/openship.md` |
 | [#56](https://github.com/exceev-consulting/server-prep/issues/56) | Openship answers in `/new-server`, the examples and the README |
 | [#57](https://github.com/exceev-consulting/server-prep/issues/57) | an end-to-end test on an Ubuntu 24.04 VPS and a Debian 13 dedicated server |
@@ -130,4 +147,4 @@ Until these land, if you try Openship:
 
 Any panel that logs in over SSH as root with a key should work: set `PANEL` to its name and follow the steps above. Code for one panel only is guarded by `[[ ${PANEL,,} == <name> ]]` in the scripts, so a new panel never changes what the others get. To add real support for a panel, read [CONTRIBUTING.md](https://github.com/exceev-consulting/server-prep/blob/main/CONTRIBUTING.md) and open an issue first. Questions about a panel go to [Discussions](https://github.com/exceev-consulting/server-prep/discussions).
 
-You can also see what each panel and access route opens, step by step, in the [setup console](https://exceev-consulting.github.io/server-prep/).
+You can also see what each panel and access route opens, step by step, in the [setup console](https://server-prep.exceev.com/).

@@ -88,7 +88,7 @@ You should see the jail with a count of failed and banned addresses.
 
 ## Tailscale
 
-[Tailscale](https://tailscale.com) links your machines in a private network called a *tailnet*. Each machine gets an address in `100.64.0.0/10` (for example `100.101.102.103`). The traffic is encrypted, and it works behind a home or office router with no open port.
+[Tailscale](https://tailscale.com) links your machines in a private network called a *tailnet*. Each machine gets an address in `100.64.0.0/10`, which `tailscale ip -4` prints. The traffic is encrypted, and it works behind a home or office router with no open port.
 
 `server-preconfig.sh` installs Tailscale and logs the server in. With `PANEL_ACCESS=tailscale`, server-prep lets SSH in on the `tailscale0` interface and allows the panel's root login from tailnet addresses. The panel server must be in the same tailnet.
 
@@ -132,7 +132,7 @@ You should see `permitrootlogin no`: a random internet address cannot log in as 
 
 ## Automatic security updates
 
-The `unattended` step turns on *unattended-upgrades*: every day, the server installs security updates by itself. With `DOCKER_AUTO_UPDATE=yes`, Docker CE updates are included. Old kernels and unused packages are removed.
+The `unattended` step turns on *unattended-upgrades*: every day, the server installs security updates by itself. With `DOCKER_AUTO_UPDATE=yes`, Docker CE updates are included. With `THIRD_PARTY_AUTO_UPDATE=yes` (the default), so are CrowdSec, cloudflared, Telegraf and Tailscale: they come from their own repositories, which automatic updates skip otherwise, so their security fixes would wait for you. Each update restarts that tool for a moment: SSH over Tailscale pauses a few seconds. Any other package installed from these repositories, like an InfluxDB server or a CrowdSec bouncer, is upgraded too. Old kernels and unused packages are removed.
 
 Some updates (like a new kernel) need a reboot. `AUTO_REBOOT=yes` reboots by itself at `AUTO_REBOOT_TIME` (04:00). It is `no` by default, because a reboot restarts your apps.
 
@@ -175,4 +175,4 @@ The last line shows the score, for example `Score: 92/100 - 43 PASS, 8 WARN, 0 F
 
 ## Read next
 
-[Glossary](Glossary) for the terms, [FAQ](FAQ) for lockouts, re-runs and undo, and the [setup console](https://exceev-consulting.github.io/server-prep/) to see the ports and logins for your setup.
+[Glossary](Glossary) for the terms, [FAQ](FAQ) for lockouts, re-runs and undo, and the [setup console](https://server-prep.exceev.com/) to see the ports and logins for your setup.

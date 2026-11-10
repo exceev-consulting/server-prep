@@ -5,6 +5,33 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
+  the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
+- `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
+  which the run turned on, no longer allowed that port, and Endlessh still held port 22 when another run had installed
+  it. Before it restarts SSH, it now stops Endlessh whenever it is on and SSH goes back to 22, allows the old SSH port in
+  UFW from the same addresses as the run's SSH rule, deletes the Endlessh rule, which would have left the old SSH open
+  to everyone on 22, and checks the restored files with `sshd -t`. It starts with a warning to run it from the console,
+  not over SSH, and prints what it does not undo.
+- With `PANEL=openship`, the daily AIDE check no longer fills with Openship's deploy changes: it now leaves out
+  `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`,
+  `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `csr` and `keys` under
+  `/etc/letsencrypt`). Openship's SSH keys, certbot's renewal settings, `renewal-hooks` and `cli.ini` are still
+  checked. On the server that runs the Openship API, auditd also logs every change to its SSH key folders
+  (`/etc/openship/ssh-keys`, `/var/lib/openship/ssh-keys`, `/var/lib/openship/host-ssh`; `sudo ausearch -k panel`).
+  The audit shows both as INFO (`mon.auditd_panel`, `mon.aide_panel`). On a server prepared earlier, set
+  `PANEL=openship` in `/etc/server-prep/server-prep.conf` and run:
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide,auditd --yes`. If AIDE already had a
+  baseline, the run's to-do list says how to rebuild it. Other panels get the same files as before.
+- `server-audit.sh --json` now writes `"schema_version": 1` right after `version`, so a program can tell when the
+  format changes; the other keys do not change. The format is described in [docs/json-output.md](docs/json-output.md):
+  every field, what PASS, WARN, FAIL and INFO mean, the score formula, the exit codes and every check id, with a JSON
+  Schema in `docs/schemas/server-audit.schema.json`. `./server-audit.sh --help` links to it.
+- Fix: on a server set to another language (for example Ubuntu installed in French), `server-audit.sh` reported UFW as
+  inactive (FAIL), counted every port as reachable from the internet and found no swap, because `ufw` and `free`
+  print those lines in that language. The audit now reads every command's output in English. In `server-prep.sh`, the
+  firewall step no longer says CHANGED on every re-run there, the SSH test hint names the right address again, and
+  the report shows the firewall status in English, like the audit.
 - Each `server-prep.sh` run, applied or dry run, also writes the report as JSON next to the Markdown one
   (`server-prep-report-<host>-<date>.json`, root only, with a copy in your home). An agent or a script can read from it
   which steps changed or failed, the audit before and after, the files changed and what is still to do. Step results use
@@ -15,6 +42,12 @@ Highlights of each release. The full list of merged pull requests is in each
   IP (`PANEL_ACCESS=public` with `PANEL_IP`) or only through the Cloudflare tunnel (`PANEL_ACCESS=cloudflared`). The
   firewall then blocks the test command with the local IP from your machine, so it says to test from the panel's host or
   through the tunnel instead, or to add your IP to `ADMIN_IPS`. The test command itself is unchanged.
+- **Security:** CrowdSec, cloudflared, Telegraf and Tailscale now get their security fixes automatically. They come from
+  their own repositories, which unattended-upgrades skipped, so a fix waited until someone upgraded by hand. The
+  `unattended` step adds their repositories (new setting `THIRD_PARTY_AUTO_UPDATE`, `yes` by default), and the new audit
+  check `upd.third_party` warns when an installed one is left out. Each update restarts that tool for a moment (SSH
+  over Tailscale pauses a few seconds). On a server prepared before, run:
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes`.
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
   now says it would check that file and merge the log rotation if it is missing.

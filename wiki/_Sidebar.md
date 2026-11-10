@@ -4,7 +4,7 @@
 - [Start here](Start-here)
 - [VPS or dedicated](VPS-or-dedicated)
 - [Panels](Panels)
-- [Setup console ↗](https://exceev-consulting.github.io/server-prep/)
+- [Setup console ↗](https://server-prep.exceev.com/)
 
 **Understand**
 - [Concepts](Concepts)

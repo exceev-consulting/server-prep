@@ -60,7 +60,7 @@ window.SERVER_PREP_DATA = {
       "name": "unattended",
       "title": "Automatic security updates",
       "gate": null,
-      "details": "daily security updates (+ Docker CE), optional auto-reboot"
+      "details": "daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot"
     },
     {
       "name": "sysctl",
@@ -96,19 +96,19 @@ window.SERVER_PREP_DATA = {
       "name": "auditd",
       "title": "auditd",
       "gate": "INSTALL_AUDITD",
-      "details": "audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands"
+      "details": "audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands; with `PANEL=openship`, Openship's SSH key folders where they exist"
     },
     {
       "name": "rkhunter",
       "title": "rkhunter",
       "gate": "INSTALL_RKHUNTER",
-      "details": "rootkit scan + file-integrity baseline, daily"
+      "details": "rootkit scan + file-integrity baseline, daily; with `PANEL=openship`, AIDE leaves out Openship's deploy files (`/var/lib/openship` except its SSH keys, the OpenResty configs, certbot's certificates)"
     },
     {
       "name": "aide",
       "title": "AIDE",
       "gate": "INSTALL_AIDE",
-      "details": "rootkit scan + file-integrity baseline, daily"
+      "details": "rootkit scan + file-integrity baseline, daily; with `PANEL=openship`, AIDE leaves out Openship's deploy files (`/var/lib/openship` except its SSH keys, the OpenResty configs, certbot's certificates)"
     },
     {
       "name": "endlessh",
@@ -194,7 +194,7 @@ window.SERVER_PREP_DATA = {
       "example": "coolify",
       "default": null,
       "comment": "name used in messages/report; empty = none",
-      "help": null,
+      "help": "The name is used in messages and the report. coolify also creates /data/coolify; openship also leaves Openship's deploy files out of AIDE and adds auditd watches on its SSH key folders",
       "saved": true,
       "secret": false
     },
@@ -334,6 +334,16 @@ window.SERVER_PREP_DATA = {
       "example": "yes",
       "default": "yes",
       "comment": "Docker CE in unattended-upgrades",
+      "help": null,
+      "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Protection",
+      "name": "THIRD_PARTY_AUTO_UPDATE",
+      "example": "yes",
+      "default": "yes",
+      "comment": "CrowdSec, cloudflared, Telegraf, Tailscale in unattended-upgrades",
       "help": null,
       "saved": true,
       "secret": false
@@ -619,7 +629,7 @@ window.SERVER_PREP_DATA = {
     {
       "script": "server-audit.sh",
       "flag": "--json FILE",
-      "help": "also write a JSON report"
+      "help": "also write a JSON report, format described in https://github.com/exceev-consulting/server-prep/blob/main/docs/json-output.md"
     },
     {
       "script": "server-audit.sh",
@@ -708,7 +718,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 60,
+    "checks": 63,
     "sections": [
       {
         "key": "system",
@@ -774,6 +784,15 @@ window.SERVER_PREP_DATA = {
               "PASS",
               "WARN",
               "FAIL"
+            ]
+          },
+          {
+            "id": "upd.third_party",
+            "title": "Third-party tool updates",
+            "statuses": [
+              "INFO",
+              "PASS",
+              "WARN"
             ]
           },
           {
@@ -1078,6 +1097,20 @@ window.SERVER_PREP_DATA = {
             ]
           },
           {
+            "id": "mon.auditd_panel",
+            "title": "Openship SSH keys",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
+            "id": "mon.aide_panel",
+            "title": "AIDE and Openship",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
             "id": "mon.journal",
             "title": "Persistent logs",
             "statuses": [
@@ -1334,6 +1367,11 @@ window.SERVER_PREP_DATA = {
       "title": "End-to-end tests",
       "path": "docs/e2e-tests.md",
       "details": "How every system is tested in a VM like a real server, where the reports are, run it yourself"
+    },
+    {
+      "title": "JSON output",
+      "path": "docs/json-output.md",
+      "details": "The audit's JSON report for agents and scripts: every field, the statuses, the score, every check id and the JSON Schema"
     },
     {
       "title": "Troubleshooting",

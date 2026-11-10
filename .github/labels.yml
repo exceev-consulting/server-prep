@@ -1,0 +1,199 @@
+# Every label of this repo, with its name, color and description. This file is
+# the source of truth: change labels through a pull request that edits it.
+#
+# - color is 6 hex digits, without "#".
+# - Every value is a quoted string: a name with ": " would become a mapping,
+#   and a color like 000000 would become the integer 0.
+# - An issue's type comes from GitHub issue types (Bug, Feature, Task), not
+#   from type:* labels.
+# - The waiting-state labels and their automation (triage, stale) are tracked
+#   in #31.
+# - Rename a label by hand with gh label edit "<old>" --name "<new>", in the
+#   same pull request that changes this file.
+# - Nothing syncs this file to GitHub yet: the sync workflow is still to come
+#   (#24). After the merge, a maintainer applies each added or changed label
+#   by hand with
+#   gh label create "<name>" --color <hex> --description "<text>" --force.
+#   That sync, by hand or by the workflow, only creates or updates labels. It
+#   never deletes one.
+# - tests/labels.sh checks this file (CI runs it through tests/exit-status.sh):
+#   every value quoted, colors of 6 hex digits, no empty description, no two
+#   names that match ignoring case, and the release-notes labels below.
+# - .github/release.yml uses security, enhancement, bug, documentation and
+#   skip-changelog (and .github/dependabot.yml uses skip-changelog): never
+#   rename or remove them.
+
+# GitHub defaults
+- name: "bug"
+  color: "d73a4a"
+  description: "Something isn't working"
+- name: "documentation"
+  color: "0075ca"
+  description: "Improvements or additions to documentation"
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "This issue or pull request already exists"
+- name: "enhancement"
+  color: "a2eeef"
+  description: "New feature or request"
+- name: "good first issue"
+  color: "7057ff"
+  description: "Good for newcomers"
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is needed"
+- name: "invalid"
+  color: "e4e669"
+  description: "This doesn't seem right"
+- name: "question"
+  color: "d876e3"
+  description: "Further information is requested"
+- name: "wontfix"
+  color: "ffffff"
+  description: "This will not be worked on"
+
+# Release notes
+- name: "security"
+  color: "B60205"
+  description: "Security fix or hardening of a default"
+- name: "skip-changelog"
+  color: "EDEDED"
+  description: "Leave out of the release notes"
+
+# Workflow
+- name: "needs-info"
+  color: "FBCA04"
+  description: "Waiting for details from the reporter"
+- name: "triaged"
+  color: "C5DEF5"
+  description: "First response done by the triage routine or a maintainer"
+- name: "claude"
+  color: "D97757"
+  description: "Opened by a Claude Code routine"
+- name: "proposal"
+  color: "BFD4F2"
+  description: "Feature idea waiting for a maintainer decision"
+- name: "ready"
+  color: "0E8A16"
+  description: "Approved by a maintainer: the feature-builder routine may implement it"
+- name: "agent-ready"
+  color: "1D76DB"
+  description: "Has acceptance criteria and verification commands: Claude Code or Codex can pick it up"
+- name: "epic"
+  color: "3E4B9E"
+  description: "Groups related sub-issues; progress shows in the Sub-issues panel"
+
+# Area
+- name: "area: audit"
+  color: "C5DEF5"
+  description: "server-audit.sh"
+- name: "area: prep"
+  color: "C5DEF5"
+  description: "server-prep.sh"
+- name: "area: preconfig"
+  color: "C5DEF5"
+  description: "server-preconfig.sh"
+- name: "area: docs"
+  color: "C5DEF5"
+  description: "Guides in docs/, README, examples"
+- name: "area: agents"
+  color: "C5DEF5"
+  description: "AGENTS.md, CLAUDE.md, skills, hooks"
+- name: "area: ci"
+  color: "C5DEF5"
+  description: "GitHub Actions, tests, local checks"
+- name: "area: community"
+  color: "C5DEF5"
+  description: "Wiki, Discussions, templates, governance"
+- name: "area: site"
+  color: "C5DEF5"
+  description: "Capability page (site/)"
+- name: "area: extras"
+  color: "C5DEF5"
+  description: "Helpers in extras/"
+
+# Panel
+- name: "panel: coolify"
+  color: "F9D0C4"
+  description: "Specific to Coolify"
+- name: "panel: dokploy"
+  color: "F9D0C4"
+  description: "Specific to Dokploy"
+- name: "panel: openship"
+  color: "F9D0C4"
+  description: "Specific to Openship"
+
+# Priority
+- name: "priority: critical"
+  color: "B60205"
+  description: "Breaks servers or security now: fix first"
+- name: "priority: high"
+  color: "D93F0B"
+  description: "Needed for the current phase"
+- name: "priority: medium"
+  color: "FBCA04"
+  description: "Important, not urgent"
+- name: "priority: low"
+  color: "0E8A16"
+  description: "Nice to have"
+
+# Size
+- name: "size: S"
+  color: "C2E0C6"
+  description: "Small: under a day"
+- name: "size: M"
+  color: "BFDADC"
+  description: "Medium: 1 to 3 days"
+- name: "size: L"
+  color: "D4C5F9"
+  description: "Large: more than 3 days, may be split"
+
+# Issue status
+- name: "status: needs-triage"
+  color: "EDEDED"
+  description: "New: a maintainer has not looked at it yet"
+- name: "status: needs-repro"
+  color: "EDEDED"
+  description: "Waiting for steps or output to reproduce"
+- name: "status: blocked"
+  color: "000000"
+  description: "Waiting on another issue or an outside change"
+- name: "stale"
+  color: "CCCCCC"
+  description: "No activity for 30 days"
+
+# Pull request state
+- name: "first-time contributor"
+  color: "D4C5F9"
+  description: "First pull request from this contributor"
+- name: "needs-ci-approval"
+  color: "FBCA04"
+  description: "CI is waiting for a maintainer to approve the workflow run"
+- name: "ci-failing"
+  color: "B60205"
+  description: "A required check fails on the latest commit"
+- name: "needs-rebase"
+  color: "E99695"
+  description: "Has merge conflicts with main"
+- name: "needs-changelog"
+  color: "F9D0C4"
+  description: "User-visible change without a CHANGELOG.md line"
+
+# Pull request review
+- name: "review: looks good"
+  color: "0E8A16"
+  description: "Claude's latest review of the current commit found nothing blocking"
+- name: "review: changes suggested"
+  color: "FBCA04"
+  description: "Claude's latest review of the current commit suggests changes"
+- name: "review: do not merge"
+  color: "B60205"
+  description: "Claude's latest review of the current commit found a blocking or security problem"
+
+# Other routine labels
+- name: "dependencies"
+  color: "0366D6"
+  description: "Updates a dependency or GitHub Action"
+- name: "needs-spec"
+  color: "c5def5"
+  description: "A maintainer asks the feature-planner routine to write the specification"

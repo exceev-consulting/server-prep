@@ -10,6 +10,8 @@ ADMIN_USER="admin"                       # created if missing (sudo group)
 ADMIN_PUBKEY="ssh-ed25519 AAAA... you@laptop"   # your public key (strongly recommended)
 
 # --- Deployment panel (Coolify, Dokploy, Openship...) ------------------------
+# The name is used in messages and the report. coolify also creates /data/coolify; openship also
+#   leaves Openship's deploy files out of AIDE and adds auditd watches on its SSH key folders
 PANEL="coolify"                          # name used in messages/report; empty = none
 # Public part of the SSH key the panel uses for servers
 #   (Coolify: Keys & Tokens -> Private Keys -> (your key) -> Public Key)
@@ -34,6 +36,7 @@ CROWDSEC_ENROLL_KEY=""                   # optional, from https://app.crowdsec.n
 CROWDSEC_LAPI_PORT="8091"                # default 8080 conflicts with Traefik dashboards
 INSTALL_DOCKER="yes"                     # install if missing + log rotation + UFW integration
 DOCKER_AUTO_UPDATE="yes"                 # Docker CE in unattended-upgrades
+THIRD_PARTY_AUTO_UPDATE="yes"            # CrowdSec, cloudflared, Telegraf, Tailscale in unattended-upgrades
 AUTO_REBOOT="no"                         # reboot automatically when updates need it
 AUTO_REBOOT_TIME="04:00"
 

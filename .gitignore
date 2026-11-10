@@ -1,3 +1,5 @@
+# scripts/check-files.sh fails when a tracked file matches the report, config, Claude Code and secret patterns below (or *.log): keep both lists in step.
+
 # Reports contain hostnames, IPs and server details
 *-report-*.txt
 *-report-*.md
@@ -5,8 +7,7 @@ server-audit-*
 audit.md
 audit.json
 audit.tsv
-server-prep-report-*.md
-server-prep-report-*.json
+server-prep-report-*
 *.log
 
 # Filled configs may contain keys and tokens

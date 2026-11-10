@@ -41,7 +41,7 @@ ALL_STEPS="update users docker firewall ssh ips unattended sysctl auth services 
 # ----------------------------------------------------------------------------
 ADMIN_USER="${ADMIN_USER:-}"
 ADMIN_PUBKEY="${ADMIN_PUBKEY:-}"
-PANEL="${PANEL:-}"                            # coolify, dokploy, openship... (used in messages; empty = none)
+PANEL="${PANEL:-}"                            # coolify, dokploy, openship... (messages; coolify and openship also set panel paths; empty = none)
 PANEL_PUBKEY="${PANEL_PUBKEY:-}"
 PANEL_ACCESS="${PANEL_ACCESS:-}"              # cloudflared,tailscale,public (comma list)
 PANEL_IP="${PANEL_IP:-}"                      # public IP of the panel server (public mode)
@@ -57,6 +57,7 @@ CROWDSEC_ENROLL_KEY="${CROWDSEC_ENROLL_KEY:-}"
 CROWDSEC_LAPI_PORT="${CROWDSEC_LAPI_PORT:-8091}"   # 8080 is used by Traefik dashboards (Coolify, Dokploy)
 INSTALL_DOCKER="${INSTALL_DOCKER:-yes}"
 DOCKER_AUTO_UPDATE="${DOCKER_AUTO_UPDATE:-yes}"
+THIRD_PARTY_AUTO_UPDATE="${THIRD_PARTY_AUTO_UPDATE:-yes}"   # CrowdSec, cloudflared, Telegraf, Tailscale in unattended-upgrades
 AUTO_REBOOT="${AUTO_REBOOT:-no}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-04:00}"
 DISABLE_SERVICES="${DISABLE_SERVICES:-}"      # filled interactively; default = all candidates
@@ -83,7 +84,7 @@ PROJECT_URL="https://github.com/exceev-consulting/server-prep"   # guides linked
 # into validate_values (tests/validate-config.sh fails on a yes/no setting it does not check).
 KNOWN_SETTINGS="ADMIN_USER ADMIN_PUBKEY PANEL PANEL_PUBKEY PANEL_ACCESS PANEL_IP CLOUDFLARED_TOKEN SSH_PORT ADMIN_IPS \
 EXPOSE_WEB EXTRA_PORTS TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_ENROLL_KEY CROWDSEC_LAPI_PORT INSTALL_DOCKER \
-DOCKER_AUTO_UPDATE AUTO_REBOOT AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER \
+DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER \
 INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF TELEGRAM_ENABLE TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS \
 SWAP_SIZE PTRACE_SCOPE AUDIT_SCRIPT AUDIT_URL ONLY SKIP COOLIFY_PUBKEY COOLIFY_ACCESS COOLIFY_IP"
 
@@ -406,7 +407,7 @@ validate_config() {
 # lists are split with read (no globbing) and ${!k} only reads fixed setting names.
 validate_values() {
     local k v l item bad has_public=0 has_tunnel=0 unchecked=0 secret=0 mode
-    local yesno="DOCKER_AUTO_UPDATE AUTO_REBOOT HEADLESS TELEGRAM_ENABLE EXPOSE_WEB"
+    local yesno="DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT HEADLESS TELEGRAM_ENABLE EXPOSE_WEB"
     local -a access=() list=() bad_list=()
 
     for k in $KNOWN_SETTINGS; do [[ $k == INSTALL_* ]] && yesno+=" $k"; done   # every INSTALL_* is yes/no
@@ -1064,7 +1065,9 @@ questions() {
     # ---------------------------------------------------------------- 2
     echo; echo "${C_BOLD}2. Deployment panel${C_0}"
     explain "A self-hosted PaaS panel (Coolify, Dokploy, Openship...) running on another server deploys" \
-            "apps here by connecting over SSH as root with its own key. The name is only used in messages."
+            "apps here by connecting over SSH as root with its own key. The name is used in messages, and two" \
+            "names also change settings: coolify creates /data/coolify; openship leaves Openship's deploy files" \
+            "out of AIDE and has auditd watch its SSH key folders."
     ask PANEL "Panel (coolify, dokploy, openship, other name; empty = none)" "${PANEL:-}"
     set_panel_label
     explain "${PANEL_LABEL^}'s SSH public key: open the SSH key the panel uses for servers and copy its" \
@@ -1146,6 +1149,11 @@ questions() {
     explain "Security updates are installed automatically every night. Including Docker means the" \
             "Docker engine is updated too; containers restart briefly when that happens."
     ask_yn DOCKER_AUTO_UPDATE "Include Docker in automatic updates" "$DOCKER_AUTO_UPDATE"
+    explain "CrowdSec, cloudflared, Telegraf and Tailscale come from their own repositories, which automatic" \
+            "security updates skip by default. Including them installs their security fixes with the daily" \
+            "update run (each restarts its service for a moment; SSH over Tailscale pauses a few seconds)." \
+            "'no' = you update them yourself."
+    ask_yn THIRD_PARTY_AUTO_UPDATE "Include CrowdSec, cloudflared, Telegraf and Tailscale in automatic updates" "$THIRD_PARTY_AUTO_UPDATE"
     explain "Some updates (kernel) only apply after a reboot. 'yes' reboots automatically at ${AUTO_REBOOT_TIME}" \
             "when needed (apps go down ~1 min). 'no' = you reboot yourself; the audit/report tells you when."
     ask_yn AUTO_REBOOT "Automatic reboot when required" "$AUTO_REBOOT"
@@ -1233,6 +1241,7 @@ summary_and_confirm() {
   Web 80/443 ........ $([[ $EXPOSE_WEB == yes ]] && echo "open to the internet" || echo "closed (tunnel/localhost only)") ${EXTRA_PORTS:+| extra: $EXTRA_PORTS}
   IPS ............... fail2ban: ${INSTALL_FAIL2BAN} | CrowdSec: ${INSTALL_CROWDSEC} (LAPI 127.0.0.1:${CROWDSEC_LAPI_PORT})
   Docker ............ ${INSTALL_DOCKER} | auto-update: ${DOCKER_AUTO_UPDATE} | auto-reboot: ${AUTO_REBOOT}
+  Tools auto-update . ${THIRD_PARTY_AUTO_UPDATE} (CrowdSec, cloudflared, Telegraf, Tailscale)
   Disable services .. ${DISABLE_SERVICES:-none}
   Laptop mode ....... $([[ $IS_LAPTOP == 1 ]] && echo "yes (lid/sleep off) | headless: ${HEADLESS}" || echo no)
   Extras ............ auditd: ${INSTALL_AUDITD} | rkhunter: ${INSTALL_RKHUNTER} | AIDE: ${INSTALL_AIDE} | endlessh: ${INSTALL_ENDLESSH} | telegraf: ${INSTALL_TELEGRAF} | telegram: ${TELEGRAM_ENABLE}
@@ -1249,7 +1258,7 @@ save_answers() {
         echo "# server-prep answers - ${TS} - reuse with: --config $f --yes"
         local v
         for v in ADMIN_USER ADMIN_PUBKEY PANEL PANEL_PUBKEY PANEL_ACCESS PANEL_IP SSH_PORT ADMIN_IPS EXPOSE_WEB EXTRA_PORTS \
-                 TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE AUTO_REBOOT \
+                 TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT \
                  AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS INSTALL_AUDITD INSTALL_RKHUNTER INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF \
                  TELEGRAM_ENABLE TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS SWAP_SIZE PTRACE_SCOPE; do
             printf '%s=%q\n' "$v" "${!v}"
@@ -1510,21 +1519,27 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
 # 'ufw allow/limit/route/default' exit 0 even when the rule or policy already exists, so compare the rule files instead.
 ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/dev/null | sha256sum; }
 
-ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
-    local port="$1" c="$2" ip any=1
+# ufw_status [verbose|numbered]: 'ufw status' in English, for every check that reads it and the report. ufw translates
+# "Status: active" and "Default:" (Python gettext reads LANGUAGE before LC_ALL, so both are set here).
+# Only this command: apt and the other tools keep the operator's language.
+ufw_status() { LC_ALL=C LANGUAGE='' ufw status "$@"; }
+
+# RUNNER is run (the default) or rollback_cmd, which only prints the commands for rollback.sh.
+ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT [RUNNER]
+    local port="$1" c="$2" r="${3:-run}" ip any=1
     for ip in ${ADMIN_IPS//,/ }; do
-        run ufw allow from "$ip" to any port "$port" proto tcp comment "$c admin"; any=0
+        "$r" ufw allow from "$ip" to any port "$port" proto tcp comment "$c admin"; any=0
     done
     if [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]]; then
-        run ufw allow from "$PANEL_IP" to any port "$port" proto tcp comment "$c panel"; any=0
+        "$r" ufw allow from "$PANEL_IP" to any port "$port" proto tcp comment "$c panel"; any=0
     fi
     if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
-        run ufw allow in on tailscale0 to any port "$port" proto tcp comment "$c tailscale"; any=0
+        "$r" ufw allow in on tailscale0 to any port "$port" proto tcp comment "$c tailscale"; any=0
     fi
     [[ "$PANEL_ACCESS" == *cloudflared* ]] && any=0   # tunnel arrives on loopback (always allowed)
     if [[ $any -eq 1 ]]; then
-        warn "no SSH source restriction given: allowing port ${port} from anywhere (rate-limited)"
-        run ufw limit "${port}/tcp" comment "$c"
+        [[ $r == run ]] && warn "no SSH source restriction given: allowing port ${port} from anywhere (rate-limited)"
+        "$r" ufw limit "${port}/tcp" comment "$c"
     fi
 }
 
@@ -1534,7 +1549,7 @@ step_firewall() {
     before="$(ufw_state)"
     # 'ufw default' reloads the whole firewall even when the policy does not change, and a reload
     # drops CrowdSec from DOCKER-USER: set the policies only when they differ.
-    if [[ "$(ufw status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
+    if [[ "$(ufw_status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
         run ufw default deny incoming
         run ufw default allow outgoing
     fi
@@ -1564,7 +1579,7 @@ step_firewall() {
     # nothing, so it keeps showing what it would do.
     if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
 
-    if ! ufw status 2>/dev/null | grep -q "Status: active"; then
+    if ! ufw_status 2>/dev/null | grep -q "Status: active"; then
         run ufw --force enable && { changed; note "UFW enabled"; }
     elif [[ "$(ufw_state)" != "$before" ]]; then
         ufw_reload
@@ -1663,7 +1678,7 @@ ssh_test_hint() {
     [[ -n "${ADMIN_IPS//[,[:space:]]/}" ]] && from=" from an ADMIN_IPS address"
     if [[ -z "$ts_ip" ]]; then
         echo "  Open a NEW terminal and test:  ${lan}"
-        if [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+        if [[ -z "$from" ]] && ufw_status 2>/dev/null | grep -q "Status: active"; then
             # With no ADMIN_IPS, ufw_allow_ssh allows SSH from anywhere only when no panel IP,
             # Tailscale or tunnel restricts it. Otherwise the local IP is blocked from your machine.
             if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
@@ -1684,7 +1699,7 @@ ssh_test_hint() {
                 fi
             fi
         fi
-    elif [[ -z "$from" ]] && ufw status 2>/dev/null | grep -q "Status: active"; then
+    elif [[ -z "$from" ]] && ufw_status 2>/dev/null | grep -q "Status: active"; then
         # No command for the local IP: with no ADMIN_IPS, ufw_allow_ssh never allows it.
         echo "  Open a NEW terminal and test over Tailscale:  ssh -p ${SSH_PORT} ${ADMIN_USER}@${ts_ip}"
         echo "  ADMIN_IPS is empty, so the firewall blocks SSH to the local IP from your machine. If this test fails, answer n."
@@ -1798,7 +1813,7 @@ EOF
         # The rollback timer is already stopped: a failed restart here would leave no sshd at all.
         restart_ssh || { bash "$rb"; note "phase B restart failed, rolled back"; return 1; }
         local nums
-        nums=$(ufw status numbered 2>/dev/null | grep 'server-prep-temp' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn)
+        nums=$(ufw_status numbered 2>/dev/null | grep 'server-prep-temp' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn)
         for p in $nums; do run ufw --force delete "$p"; done
         note "old SSH port(s) ${CURRENT_SSH_PORTS}closed"
     fi
@@ -1926,10 +1941,18 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
+    # Third-party repositories (origin and label of their Release files). The list is added to the
+    # distro's own origins; only installed packages are upgraded, and apt pins (crowdsec at 900) still apply.
+    local -a origins=()
+    yes_ "$DOCKER_AUTO_UPDATE" && origins+=('"origin=Docker,label=Docker CE";')
+    if yes_ "$THIRD_PARTY_AUTO_UPDATE"; then
+        origins+=('"origin=packagecloud.io/crowdsec/crowdsec,label=crowdsec";' '"origin=cloudflared,label=cloudflared";'
+                  '"origin=InfluxDB,label=InfluxDB";' '"origin=Tailscale,label=Tailscale";')
+    fi
     {
         echo "// Managed by server-prep.sh"
-        if yes_ "$DOCKER_AUTO_UPDATE"; then
-            echo 'Unattended-Upgrade::Origins-Pattern { "origin=Docker,label=Docker CE"; };'
+        if (( ${#origins[@]} )); then
+            echo "Unattended-Upgrade::Origins-Pattern { ${origins[*]} };"
         fi
         echo 'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";'
         echo 'Unattended-Upgrade::Remove-Unused-Dependencies "true";'
@@ -1941,7 +1964,7 @@ EOF
         fi
     } | write_file /etc/apt/apt.conf.d/52server-prep-unattended 644
     run systemctl enable --now unattended-upgrades
-    note "security updates daily$(yes_ "$DOCKER_AUTO_UPDATE" && echo ', Docker CE included')$(yes_ "$AUTO_REBOOT" && echo ", auto-reboot ${AUTO_REBOOT_TIME}")"
+    note "security updates daily$(yes_ "$DOCKER_AUTO_UPDATE" && echo ', Docker CE included')$(yes_ "$THIRD_PARTY_AUTO_UPDATE" && echo ', CrowdSec/cloudflared/Telegraf/Tailscale included')$(yes_ "$AUTO_REBOOT" && echo ", auto-reboot ${AUTO_REBOOT_TIME}")"
     return 0
 }
 
@@ -2158,10 +2181,39 @@ EOF
     return 0
 }
 
+# Openship (#54, moves into the panel profile with #46): the folders where the Openship API keeps
+# SSH private keys. It reads the keys it logs in to servers with from the first two and keeps its host
+# executor key in host-ssh, so they exist only on the server that runs the Openship API, not on the
+# servers it manages. step_aide keeps them checked (OPENSHIP_AIDE_EXCLUDES) and step_auditd watches
+# them; server-audit.sh has the same list (mon.auditd_panel).
+OPENSHIP_KEY_DIRS=(/etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh)
+
+# openship_key_dirs: prints the OPENSHIP_KEY_DIRS that exist on this server, one per line.
+# auditd refuses a watch whose parent folder is missing (ENOENT). augenrules (auditctl -R) then stops
+# at that line and loads none of the rules after it, and step_auditd ignores augenrules' exit code,
+# so a watch is written only for a folder that exists, after the other rules.
+openship_key_dirs() {
+    local dir
+    for dir in "${OPENSHIP_KEY_DIRS[@]}"; do
+        [[ ! -e $dir ]] || printf '%s\n' "$dir"
+    done
+    return 0
+}
+
 step_auditd() {
     yes_ "$INSTALL_AUDITD" || return $SKIP_RC
     pkg_install auditd audispd-plugins 2>/dev/null || pkg_install auditd || return 1
-    write_file /etc/audit/rules.d/50-server-prep.rules 640 <<'EOF'
+    local panel_rules="" dir
+    if [[ ${PANEL,,} == openship ]]; then
+        while IFS= read -r dir; do
+            panel_rules+="-w $dir -p wa -k panel"$'\n'
+        done < <(openship_key_dirs)
+        # No to-do: a server Openship manages never gets these folders, so it could never be cleared.
+        [[ -n $panel_rules ]] ||
+            note "no auditd watch for Openship: none of its SSH key folders (${OPENSHIP_KEY_DIRS[*]}) is here. Only the server that runs the Openship API has them: there, re-run --only auditd once Openship has created one"
+    fi
+    {
+        cat <<'EOF'
 ## Managed by server-prep.sh
 -w /etc/passwd -p wa -k identity
 -w /etc/group -p wa -k identity
@@ -2184,9 +2236,11 @@ step_auditd() {
 -w /sbin/modprobe -p x -k modules
 -a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=unset -k admin_root_cmd
 EOF
+        printf '%s' "$panel_rules"
+    } | write_file /etc/audit/rules.d/50-server-prep.rules 640
     run systemctl enable --now auditd
     run augenrules --load
-    note "auditd rules: identity, sudoers, ssh, docker, cron, firewall, admin root commands (ausearch -k <key>)"
+    note "auditd rules: identity, sudoers, ssh, docker, cron, firewall, admin root commands${panel_rules:+, Openship SSH keys (panel)} (ausearch -k <key>)"
     return 0
 }
 
@@ -2210,10 +2264,48 @@ EOF
     return 0
 }
 
+# AIDE's database, built by aideinit: present once this server has a baseline
+aide_baseline_exists() { [[ -e /var/lib/aide/aide.db ]]; }
+
+# Openship (#54, moves into the panel profile with #46): AIDE excludes for what it rewrites on every
+# deploy. AIDE (0.17 and later) reads each path as a PCRE regex anchored at the start only, so a plain
+# prefix also leaves out everything below it and every name that starts the same way: `(/|$)` makes a
+# line match a whole folder name only.
+# - /var/lib/openship minus the key folders of OPENSHIP_KEY_DIRS (the lookahead), which stay checked;
+# - of /etc/letsencrypt, only the folders certbot rewrites when it issues or renews a certificate.
+#   renewal/ (its confs can name hooks), renewal-hooks/ and cli.ini, which certbot runs or reads as
+#   root, stay checked: a renewal rewrites one renewal/ conf per domain, a small churn;
+# - the /etc/letsencrypt folder entry itself (the last line, not an exclude) stays checked without its
+#   timestamps, as aide-common does for /etc (`/etc$ d VarDir`): every certbot run creates and deletes
+#   /etc/letsencrypt/.certbot.lock, which changes the folder's mtime and ctime;
+# - never all of /etc/openship: /etc/openship/ssh-keys stays checked.
+# server-audit.sh (mon.aide_panel) looks for the /var/lib/openship line.
+OPENSHIP_AIDE_EXCLUDES='!/var/lib/openship/(?!(ssh-keys|host-ssh)(/|$))
+!/etc/openship/modules(/|$)
+!/etc/openresty(/|$)
+!/usr/local/openresty/nginx/conf(/|$)
+!/etc/letsencrypt/(live|archive|csr|keys)(/|$)
+/etc/letsencrypt$ d VarDir'
+
+# aide_has_openship_excludes FILE: true when FILE already has every line of OPENSHIP_AIDE_EXCLUDES
+aide_has_openship_excludes() {
+    local line
+    while IFS= read -r line; do
+        grep -qxF -- "$line" "$1" 2>/dev/null || return 1
+    done <<<"$OPENSHIP_AIDE_EXCLUDES"
+}
+
 step_aide() {
     yes_ "$INSTALL_AIDE" || return $SKIP_RC
     pkg_install aide aide-common || return 1
-    write_file /etc/aide/aide.conf.d/99_server-prep 644 <<'EOF'
+    local conf=/etc/aide/aide.conf.d/99_server-prep
+    # New excludes don't drop the old entries from an existing baseline: its checks may list them as
+    # removed until it is rebuilt. Rebuilding here would accept unreviewed changes, so ask the user.
+    if [[ ${PANEL,,} == openship ]] && aide_baseline_exists && ! aide_has_openship_excludes "$conf"; then
+        todo "AIDE now leaves out Openship's deploy files, but the existing baseline still lists them, so its next check may list them as removed. Review that check, then rebuild the baseline: sudo aideinit -y -f"
+    fi
+    {
+        cat <<'EOF'
 # Managed by server-prep.sh - exclude fast-changing container/app data
 !/var/lib/docker
 !/var/lib/containerd
@@ -2227,7 +2319,13 @@ step_aide() {
 !/var/lib/snapd
 !/swapfile
 EOF
-    if [[ ! -e /var/lib/aide/aide.db && $DRY_RUN -eq 0 ]]; then
+        if [[ ${PANEL,,} == openship ]]; then
+            echo "# Openship rewrites these on every deploy; its SSH key folders, certbot's renewal settings and hooks stay checked,"
+            echo "# and /etc/letsencrypt itself without its timestamps (certbot's lock file changes them on every run)"
+            printf '%s\n' "$OPENSHIP_AIDE_EXCLUDES"
+        fi
+    } | write_file "$conf" 644
+    if ! aide_baseline_exists && [[ $DRY_RUN -eq 0 ]]; then
         info "building the AIDE baseline in the background (takes a few minutes)"
         (umask 077; : > "$LOG_DIR/aideinit.log")   # 600 like the other logs (aideinit keeps its own umask)
         chmod 600 "$LOG_DIR/aideinit.log"
@@ -2363,7 +2461,7 @@ EOF
 h=$(hostname)
 up=$(uptime -p)
 disk=$(df -h / | awk 'NR==2{print $5" used ("$4" free)"}')
-mem=$(free -h | awk '/^Mem:/{print $7" available of "$2}')
+mem=$(LC_ALL=C free -h | awk '/^Mem:/{print $7" available of "$2}')   # free translates "Mem:"
 upd=$(apt-get -s dist-upgrade 2>/dev/null | grep -c '^Inst ')
 reboot=$([ -f /var/run/reboot-required ] && echo "YES" || echo "no")
 f2b=$(fail2ban-client status sshd 2>/dev/null | awk -F: '/Total banned/{gsub(/ /,"",$2);print $2}')
@@ -2451,25 +2549,132 @@ step_suid() {
 # ----------------------------------------------------------------------------
 # Rollback script & report
 # ----------------------------------------------------------------------------
+# Helpers for rollback.sh: they only print lines of the script, they run nothing.
+rollback_cmd() {   # rollback_cmd CMD ARGS...: one indented command, each argument shell-quoted
+    printf '   '
+    printf ' %q' "$@"
+    printf '\n'
+}
+rollback_say() {   # rollback_say TEXT: an echo of TEXT, single-quoted (TEXT can hold a quote)
+    local q="'\\''"
+    printf "echo '%s'\n" "${1//\'/$q}"
+}
+# rollback_step NAME [TEXT|ran]: step NAME changed something in this run, or failed part way,
+# with TEXT in its notes when given. With "ran", it only has to have run without being skipped.
+rollback_step() {
+    local i res
+    for i in "${!STEP_IDS[@]}"; do
+        [[ ${STEP_IDS[$i]} == "$1" ]] || continue
+        res="${STEP_RESULTS[$i]}"
+        [[ ${2:-} == ran ]] && { [[ $res != SKIPPED ]]; return; }
+        [[ ($res == CHANGED || $res == FAILED) && ${STEP_DETAILS[$i]} == *"${2:-}"* ]]
+        return
+    done
+    return 1
+}
+
 write_rollback() {
     [[ $DRY_RUN -eq 1 ]] && return 0
-    local rb="$BACKUP_DIR/rollback.sh" f
+    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=()
+    for f in "${CHANGED_FILES[@]}" "${NEW_FILES[@]}"; do
+        [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/00-server-prep.conf ]] && ssh_files=1
+    done
+    [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]] && endlessh=1
+    # The restored SSH files are this run's backups, so sshd goes back to the ports it had before
+    # the run. UFW, which this run left on, no longer allows them: phase B of the SSH step deleted
+    # their temporary rules. Rebuild those rules (same sources, same comment) before SSH restarts.
+    if [[ $ssh_files -eq 1 ]]; then
+        for p in $CURRENT_SSH_PORTS; do
+            [[ $p == "$SSH_PORT" ]] && continue
+            old_ports+=("$p")
+            [[ $p == 22 ]] && port22=1
+            r="$(ufw_allow_ssh "$p" server-prep-temp rollback_cmd)"
+            [[ -n $r ]] && allow+="$r"$'\n'
+        done
+    fi
+    # The Endlessh rule allows port 22 from anywhere: once Endlessh stops, it would let anyone reach
+    # the old SSH on 22 and make the rules above useless. Delete it when they replace it.
+    [[ $port22 -eq 1 && -n $allow ]] && drop_tarpit=1
     {
         echo "#!/bin/bash"
         echo "# Restore files changed by server-prep run ${TS}. Review before running!"
+        # Printed before set -x and before any change, so the trace does not hide it.
+        rollback_say "=== server-prep rollback of run ${TS} ==="
+        rollback_say "Run this from the console (the provider web console, IPMI/KVM or a screen), not over SSH: SSH restarts with its old settings and an SSH session can drop or lock you out."
+        rollback_say "It puts back the files this run changed and deletes the files it created."
+        if [[ ${#old_ports[@]} -gt 0 ]]; then
+            rollback_say "SSH goes back to port(s) ${old_ports[*]}."
+            if [[ $endlessh -eq 1 ]]; then
+                rollback_say "Endlessh stops first: this run put it on port 22."
+            elif [[ $port22 -eq 1 ]]; then
+                rollback_say "If Endlessh is on (another run put it on port 22), it stops first."
+            fi
+            if [[ $drop_tarpit -eq 1 ]]; then
+                rollback_say "UFW allows it first, from the same addresses as the run's SSH rule, and deletes the Endlessh rule (endlessh tarpit), which allowed port 22 from anywhere."
+            elif [[ -n $allow ]]; then
+                rollback_say "UFW allows it first, from the same addresses as the run's SSH rule."
+            else
+                rollback_say "UFW gets no rule for it: the run's SSH rule allowed only the Cloudflare Tunnel."
+                [[ $port22 -eq 1 ]] && rollback_say "If UFW has the Endlessh rule (endlessh tarpit), port 22 stays open to everyone: delete it once you have another way in (sudo ufw status numbered, then sudo ufw delete <number>)."
+            fi
+            [[ $PANEL_ACCESS == *cloudflared* ]] && rollback_say "A Cloudflare Tunnel SSH hostname still sends SSH to port ${SSH_PORT}: point it to port ${old_ports[0]} in Zero Trust."
+        fi
+        if [[ $ssh_files -eq 1 && -n $PANEL && ${PANEL,,} != none ]]; then
+            rollback_say "${PANEL_LABEL} loses its SSH access to this server: its port, root login and key go back to the old ones."
+        fi
+        # What this run may have changed outside the files it tracked, step by step
+        rollback_say "It does NOT undo:"
+        rollback_say "  - installed packages, and services it turned on or off"
+        rollback_say "  - UFW stays on, with every rule this run added (sudo ufw status numbered)"
+        rollback_say "  - the ufw-docker rules in /etc/ufw/after.rules and after6.rules"
+        [[ $endlessh -eq 1 && $drop_tarpit -eq 0 && $port22 -eq 0 ]] && rollback_say "  - the Endlessh rule that allows port 22 from anywhere"
+        # "ufw status numbered" lists no rule while UFW is off, so the delete below finds nothing then.
+        [[ $drop_tarpit -eq 1 ]] && rollback_say "  - the Endlessh rule (endlessh tarpit) if UFW is off now: it allows port 22 from anywhere again once UFW is on (sudo ufw show added)"
+        rollback_step users && rollback_say "  - users it created or added to the sudo group"
+        rollback_step update 'timezone ' && rollback_say "  - the timezone"
+        rollback_step services && rollback_say "  - Ctrl-Alt-Del turned off"
+        [[ " ${MANUAL_TODO[*]} " == *"switch to headless mode"* ]] &&
+            rollback_say "  - the boot without the desktop (sudo systemctl set-default graphical.target)"
+        rollback_step laptop && rollback_say "  - sleep, suspend and hibernate turned off"
+        [[ " ${CHANGED_FILES[*]} ${NEW_FILES[*]} " == *" /etc/fstab "* ]] &&
+            rollback_say "  - the swap file /swapfile: it stays on until the next reboot (then sudo rm /swapfile)"
+        rollback_step sysctl && rollback_say "  - kernel settings (sysctl): the ones only this run set stay until the next reboot"
+        rollback_step auditd && rollback_say "  - the auditd rules: they stay loaded until the next reboot"
+        { rollback_step aide || rollback_step rkhunter; } && rollback_say "  - the AIDE and rkhunter baselines (their databases)"
+        [[ -n ${CROWDSEC_ENROLL_KEY:-} ]] && rollback_step ips ran && rollback_say "  - the CrowdSec console enrollment (app.crowdsec.net)"
+        rollback_step cloudflared && rollback_say "  - the cloudflared tunnel service it installed"
+        # Waits only on a terminal: a run from a script or a unit never blocks here.
+        echo "if [ -t 0 ]; then read -r -p 'Press Enter to roll back, or Ctrl-C to stop: ' _; fi"
         echo "set -x"
         for f in "${CHANGED_FILES[@]}"; do echo "cp -a '$BACKUP_DIR$f' '$f'"; done
         for f in "${NEW_FILES[@]}"; do echo "rm -f '$f'"; done
         echo "systemctl daemon-reload"
-        # SSH goes back to its old port, often 22, where this run put the endlessh tarpit
-        if [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]]; then
+        # SSH goes back to its old port, often 22, where Endlessh may be: this run's (its config is
+        # deleted above, so it would fall back to its own default port), or another run's.
+        if [[ $endlessh -eq 1 ]]; then
             echo "systemctl disable --now endlessh 2>/dev/null"
+        elif [[ $port22 -eq 1 ]]; then
+            echo "if systemctl is-active --quiet endlessh 2>/dev/null || systemctl is-enabled --quiet endlessh 2>/dev/null; then systemctl disable --now endlessh; fi"
         fi
         echo "sysctl --system >/dev/null"
+        if [[ -n $allow ]]; then
+            echo "if command -v ufw >/dev/null 2>&1; then"
+            printf '%s' "$allow"
+            # highest number first, as phase B of the SSH step does: a delete renumbers the rules after it
+            [[ $drop_tarpit -eq 1 ]] && cat <<'EOF'
+    for n in $(ufw status numbered 2>/dev/null | grep 'endlessh tarpit' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn); do ufw --force delete "$n"; done
+EOF
+            echo "fi"
+        fi
+        # A failed restart would leave no sshd at all: check the restored files first, as the SSH step
+        # does. sshd -t needs /run/sshd, which a socket-started sshd may not have made yet.
+        echo "mkdir -p -m 0755 /run/sshd"
+        echo "sshd -t || { echo 'SSH is not restarted: sshd -t rejects the restored SSH configuration, so SSH keeps running as it is. Fix /etc/ssh until sudo sshd -t passes, then restart SSH.' >&2; exit 1; }"
         echo "if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then systemctl stop ssh.service; systemctl reset-failed ssh.socket; systemctl restart ssh.socket; systemctl start ssh.service; else systemctl restart ssh 2>/dev/null || systemctl restart sshd; fi"
         echo "ufw reload 2>/dev/null"
         echo "systemctl try-restart crowdsec-firewall-bouncer 2>/dev/null   # a UFW reload drops its DOCKER-USER rule"
-        echo "# Packages installed and services disabled are NOT reverted automatically."
+        echo "set +x"
+        rollback_say "Rollback done. Test a new SSH login before you leave the console."
     } > "$rb"
     chmod 700 "$rb"
 }
@@ -2543,7 +2748,7 @@ write_report() {
         echo "## Firewall"
         echo
         echo '```'
-        ufw status verbose 2>/dev/null || echo "ufw status unavailable"
+        ufw_status verbose 2>/dev/null || echo "ufw status unavailable"   # English, like the audit above
         echo '```'
         echo
         echo "## Listening ports"

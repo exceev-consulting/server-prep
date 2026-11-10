@@ -14,13 +14,19 @@
 #   - New checks: CrowdSec, fail2ban jail, kernel (sysctl) settings, AppArmor, auditd,
 #     rkhunter, AIDE, UID 0 accounts, empty passwords, world-writable /etc
 #     files, Docker hygiene, and a panel-readiness section (Coolify, Dokploy...)
-#   - Outputs: console, text report, Markdown (--md), JSON (--json), TSV (--tsv)
+#   - Outputs: console, text report, Markdown (--md), JSON (--json, format in docs/json-output.md), TSV (--tsv)
 #
 # Usage: sudo ./server-audit.sh [options]      (./server-audit.sh --help)
 # Exit code: 0 = no FAIL, 1 = at least one FAIL, 2 = usage error
 # =============================================================================
 
 set -u   # no pipefail: "cmd | grep -q" would report SIGPIPE as failure
+
+# Read every command's output in English, whatever language the server uses: ufw and free translate
+# the "Status: active", "Default:" and "Swap:" lines the checks look for. ufw is Python, whose gettext
+# reads LANGUAGE before LC_ALL, so LC_ALL=C alone is not enough. The audit's own text is English.
+export LC_ALL=C
+unset LANGUAGE
 
 AUDIT_VERSION="1.0.0"
 PROJECT_URL="https://github.com/exceev-consulting/server-prep"
@@ -57,7 +63,8 @@ Usage: sudo $0 [options]
   --out DIR        directory for the text report (default: current directory)
   --txt FILE       text report path (default: DIR/server-audit-<host>-<timestamp>.txt)
   --md FILE        also write a Markdown report
-  --json FILE      also write a JSON report
+  --json FILE      also write a JSON report, format described in
+                   ${PROJECT_URL}/blob/main/docs/json-output.md
   --tsv FILE       also write a TSV (id, status, title) - used by server-prep.sh
   --no-txt         do not write the text report
   --quiet          no console output (reports only)
@@ -190,6 +197,27 @@ release_status() {
     fi
 }
 
+# third_party_uncovered PKG...: reads `apt-config dump` on stdin and prints the PKGs (crowdsec,
+# cloudflared, telegraf, tailscale) whose repository is not in unattended-upgrades' Origins-Pattern
+# or Allowed-Origins, so their security fixes are never installed by themselves. Unknown names are
+# ignored. Origins are compared with their case, as unattended-upgrades does.
+third_party_uncovered() {
+    local dump pkg origin
+    local -a out=()
+    dump=$(grep -E '^Unattended-Upgrade::(Origins-Pattern|Allowed-Origins)' || true)
+    for pkg in "$@"; do
+        case $pkg in
+            crowdsec) origin='packagecloud\.io/crowdsec/crowdsec' ;;
+            cloudflared) origin='cloudflared' ;;
+            telegraf) origin='InfluxDB' ;;
+            tailscale) origin='Tailscale' ;;
+            *) continue ;;
+        esac
+        grep -qE "\"(o|origin)=${origin}(,|\")|Allowed-Origins:: \"${origin}:" <<<"$dump" || out+=("$pkg")
+    done
+    printf '%s' "${out[*]}"
+}
+
 # ----------------------------------------------------------------------------
 # Header / system info
 # ----------------------------------------------------------------------------
@@ -315,6 +343,27 @@ if have apt-get; then
         fi
     else
         result upd.unattended FAIL "Automatic security updates" "unattended-upgrades is not installed" "sudo apt install unattended-upgrades"
+    fi
+
+    # Tools from third-party repositories: their fixes come only if their origin is listed.
+    TP_INSTALLED=()
+    for p in crowdsec cloudflared telegraf tailscale; do
+        dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "ok installed" && TP_INSTALLED+=("$p")
+    done
+    if [[ ${#TP_INSTALLED[@]} -eq 0 ]]; then
+        result upd.third_party INFO "Third-party tool updates" "None of CrowdSec, cloudflared, Telegraf, Tailscale is installed"
+    else
+        TP_MISSING=$(apt-config dump 2>/dev/null | third_party_uncovered "${TP_INSTALLED[@]}")
+        if [[ -z "$TP_MISSING" ]]; then
+            result upd.third_party PASS "Third-party tool updates" "${TP_INSTALLED[*]}: security fixes installed automatically"
+        # the saved answers are root only (600): without root a turned-off setting looks like a WARN
+        elif grep -qsE "^THIRD_PARTY_AUTO_UPDATE=(no|\"no\"|'no')\$" /etc/server-prep/server-prep.conf; then
+            result upd.third_party INFO "Third-party tool updates" "Turned off (THIRD_PARTY_AUTO_UPDATE=no): update ${TP_MISSING} yourself" \
+                "sudo apt update && sudo apt install --only-upgrade ${TP_MISSING}"
+        else
+            result upd.third_party WARN "Third-party tool updates" "${TP_MISSING}: security fixes are not installed automatically (repository not in unattended-upgrades)$(need_root_note)" \
+                "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes"
+        fi
     fi
 fi
 
@@ -962,6 +1011,42 @@ else
     result mon.aide WARN "AIDE" "Not installed (file-integrity monitoring)" "apt install aide"
 fi
 
+# Openship (#54): with PANEL=openship, the auditd step watches the folders where the Openship API keeps
+# SSH private keys (OPENSHIP_KEY_DIRS in server-prep.sh), and the aide step leaves out its deploy files.
+# Optional, so INFO only. The key folders exist only on the server that runs the Openship API.
+OS_KEY_DIRS=()
+for os_dir in /etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh; do
+    [[ -e $os_dir ]] && OS_KEY_DIRS+=("$os_dir")
+done
+if [[ ${#OS_KEY_DIRS[@]} -gt 0 ]] && systemctl is-active --quiet auditd 2>/dev/null; then
+    if [[ $IS_ROOT -eq 1 ]]; then
+        AUDIT_RULES=$(auditctl -l 2>/dev/null)
+        OS_UNWATCHED=()
+        for os_dir in "${OS_KEY_DIRS[@]}"; do
+            # auditctl -l prints a watch as "-w PATH -p wa -k KEY"
+            awk -v d="$os_dir" '$1 == "-w" && ($2 == d || $2 == d "/") && / -k panel( |$)/ {f = 1} END {exit !f}' \
+                <<<"$AUDIT_RULES" || OS_UNWATCHED+=("$os_dir")
+        done
+        if [[ ${#OS_UNWATCHED[@]} -eq 0 ]]; then
+            result mon.auditd_panel INFO "Openship SSH keys" "Watched by auditd (ausearch -k panel): ${OS_KEY_DIRS[*]}"
+        else
+            result mon.auditd_panel INFO "Openship SSH keys" "Not watched by auditd: ${OS_UNWATCHED[*]}" \
+                "set PANEL=openship in /etc/server-prep/server-prep.conf, then: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only auditd --yes"
+        fi
+    else
+        result mon.auditd_panel INFO "Openship SSH keys" "Found ${OS_KEY_DIRS[*]}; whether auditd watches them is not checked$(need_root_note)"
+    fi
+fi
+# Openship's deploy files are on every server it manages; the aide step writes this drop-in.
+if [[ -d /var/lib/openship || -d /etc/openship ]] && have aide; then
+    if grep -qs '^!/var/lib/openship/' /etc/aide/aide.conf.d/99_server-prep; then
+        result mon.aide_panel INFO "AIDE and Openship" "Openship's deploy files are left out of AIDE; its SSH key folders stay checked"
+    else
+        result mon.aide_panel INFO "AIDE and Openship" "AIDE also checks Openship's deploy files, so its daily report lists the changes of every deploy" \
+            "set PANEL=openship in /etc/server-prep/server-prep.conf, then: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide --yes"
+    fi
+fi
+
 if [[ -d /var/log/journal ]] || grep -qsE '^[[:space:]]*Storage=persistent' /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf; then
     result mon.journal PASS "Persistent logs" "journald keeps logs across reboots"
 else
@@ -1297,7 +1382,7 @@ fi
 
 if [[ -n "$JSON_OUT" ]]; then
     {
-        printf '{"tool":"server-audit","version":"%s","host":"%s","os":"%s","kernel":"%s","public_ip":"%s","date":"%s","root":%s,' \
+        printf '{"tool":"server-audit","version":"%s","schema_version":1,"host":"%s","os":"%s","kernel":"%s","public_ip":"%s","date":"%s","root":%s,' \
             "$AUDIT_VERSION" "$(json_esc "$HOST")" "$(json_esc "$OS_PRETTY")" "$KERNEL" "$(json_esc "$PUBLIC_IP")" "$STARTED_AT" \
             "$([[ $IS_ROOT -eq 1 ]] && echo true || echo false)"
         printf '"score":%d,"summary":{"pass":%d,"warn":%d,"fail":%d,"info":%d},"checks":[' \

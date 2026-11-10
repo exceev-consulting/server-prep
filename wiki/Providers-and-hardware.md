@@ -32,9 +32,9 @@ See the [Glossary](Glossary) for other words.
 | any of the above | local VM | needs a report | needs a report | needs a report | needs a report |
 | other Debian / Ubuntu versions | any | needs a report | needs a report | needs a report | needs a report |
 
-What exists for each panel today is on the [Panels](Panels) page. In short: Coolify has its own code paths and two guides, Dokploy has a few, and Openship only changes the name in messages ([epic #10](https://github.com/exceev-consulting/server-prep/issues/10)).
+What exists for each panel today is on the [Panels](Panels) page. In short: Coolify has its own code paths and two guides, Dokploy has a few, and Openship gets its own AIDE and auditd paths and otherwise only changes the name in messages ([epic #10](https://github.com/exceev-consulting/server-prep/issues/10)).
 
-**Planned:** a matrix with one row per real run (OS, server type, provider or hardware, panel, version, audit result, notes, link), in [#29](https://github.com/exceev-consulting/server-prep/issues/29). Every supported system also runs end to end in CI, in a virtual machine booted from its official cloud image: the [latest report](https://exceev-consulting.github.io/server-prep/e2e/main/) shows the result on `main` ([how it works](https://github.com/exceev-consulting/server-prep/blob/main/docs/e2e-tests.md)). It does not replace reports from real providers and hardware.
+**Planned:** a matrix with one row per real run (OS, server type, provider or hardware, panel, version, audit result, notes, link), in [#29](https://github.com/exceev-consulting/server-prep/issues/29). Every supported system also runs end to end in CI, in a virtual machine booted from its official cloud image: the [latest report](https://server-prep.exceev.com/e2e/main/) shows the result on `main` ([how it works](https://github.com/exceev-consulting/server-prep/blob/main/docs/e2e-tests.md)). It does not replace reports from real providers and hardware.
 
 ## Known quirks by system
 
