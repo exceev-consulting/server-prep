@@ -163,10 +163,10 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 
 - Make sure you can reach a console before you start: the provider's web console, IPMI/KVM, rescue mode or a screen.
 - To undo a run, run its `rollback.sh` from the console, not over SSH: `sudo bash /var/lib/server-prep/backups/<date>/rollback.sh`.
-  It puts back the files the run changed and deletes the ones it created. Before SSH goes back to its old port, it stops
-  Endlessh if it holds port 22, allows that port in UFW from the run's SSH addresses and deletes the Endlessh rule, which
-  allowed port 22 from anywhere. It does not remove packages, undo service changes or turn UFW off: it prints what it
-  leaves in place.
+  It puts back the files the run changed and deletes the ones it created. Before SSH goes back to its old port, it allows
+  that port in UFW from the run's SSH addresses; when that port is 22, it also stops Endlessh and deletes the Endlessh
+  rule, which allowed port 22 from anywhere. It does not remove packages, undo service changes or turn UFW off: it
+  prints what it leaves in place.
 - Add your SSH key before the SSH step: password login is turned off.
 - `--dry-run` changes nothing, and every step can be re-run safely.
 - Found a security problem? Report it privately: see [SECURITY.md](SECURITY.md).
