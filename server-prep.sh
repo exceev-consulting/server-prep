@@ -1517,7 +1517,7 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
 # 'ufw allow/limit/route/default' exit 0 even when the rule or policy already exists, so compare the rule files instead.
 ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/dev/null | sha256sum; }
 
-# ufw_status [verbose|numbered]: 'ufw status' in English, for every check that reads it. ufw translates
+# ufw_status [verbose|numbered]: 'ufw status' in English, for every check that reads it and the report. ufw translates
 # "Status: active" and "Default:" (Python gettext reads LANGUAGE before LC_ALL, so both are set here).
 # Only this command: apt and the other tools keep the operator's language.
 ufw_status() { LC_ALL=C LANGUAGE='' ufw status "$@"; }
@@ -2547,7 +2547,7 @@ write_report() {
         echo "## Firewall"
         echo
         echo '```'
-        ufw status verbose 2>/dev/null || echo "ufw status unavailable"
+        ufw_status verbose 2>/dev/null || echo "ufw status unavailable"   # English, like the audit above
         echo '```'
         echo
         echo "## Listening ports"
