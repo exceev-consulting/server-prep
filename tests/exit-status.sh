@@ -499,3 +499,5 @@ bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
 bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
 # ... and the Openship AIDE excludes and auditd watch (issue #54).
 bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1
+# ... and the label taxonomy check on .github/labels.yml (issue #24).
+bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
