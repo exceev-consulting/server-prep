@@ -88,7 +88,7 @@ You should see the jail with a count of failed and banned addresses.
 
 ## Tailscale
 
-[Tailscale](https://tailscale.com) links your machines in a private network called a *tailnet*. Each machine gets an address in `100.64.0.0/10` (for example `100.101.102.103`). The traffic is encrypted, and it works behind a home or office router with no open port.
+[Tailscale](https://tailscale.com) links your machines in a private network called a *tailnet*. Each machine gets an address in `100.64.0.0/10`, which `tailscale ip -4` prints. The traffic is encrypted, and it works behind a home or office router with no open port.
 
 `server-preconfig.sh` installs Tailscale and logs the server in. With `PANEL_ACCESS=tailscale`, server-prep lets SSH in on the `tailscale0` interface and allows the panel's root login from tailnet addresses. The panel server must be in the same tailnet.
 

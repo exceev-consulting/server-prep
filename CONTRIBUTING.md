@@ -40,6 +40,11 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    ./scripts/check.sh                # every check
    ./scripts/check.sh --list         # the sections
    ./scripts/check.sh --only lint    # one section
+   scripts/check-files.sh            # after git add, before git commit (it reads only tracked and staged
+                                     # files): no report, filled config, key or CLAUDE.local.md is tracked,
+                                     # and every IPv4 address is an example
+   gitleaks git --redact --config .gitleaks.toml   # optional, if gitleaks is installed: no secret in the history
+                                                   # (no CI job runs it yet: the security workflow of #40 is to come)
    ```
    It prints one line per section (OK, FAIL or SKIP) and a summary, and exits with 1 when a section fails. The
    output of a failed section shows under its FAIL line. The sections:
@@ -53,7 +58,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 
    `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
    checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`),
-   `preconfig-json.sh`, `validate-config.sh`, `upgrade.sh`, `skills-sync.sh` and `report-json.sh`.
+   `preconfig-json.sh`, `validate-config.sh`, `upgrade.sh`, `skills-sync.sh`, `report-json.sh`, `labels.sh`
+   (`.github/labels.yml`, then broken copies of it) and `check-files.sh` (the committed-file guard on this
+   repository, then on temp repos).
    The `lint` section uses ShellCheck 0.11.0: `scripts/check.sh` downloads it once to
    `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its SHA-256 on every run, and stops when the checksum does not
    match. When a tool is missing, the sections that need it show SKIP on your machine: `data` and `e2e-report` need
@@ -88,7 +95,8 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
   `validate_values` when it has a format to check (a yes/no setting not named `INSTALL_*`, a port, a list...).
   `tests/validate-config.sh` fails when a setting is missing from `KNOWN_SETTINGS` or a yes/no setting is not checked.
 - **No secrets and no real infrastructure** in the repo: tokens, keys, real IPs or hostnames.
-  Use examples like `web-01` and `192.168.1.50`.
+  Use examples like `web-01` and `192.168.1.50`. `scripts/check-files.sh` flags a tracked report, filled config
+  or key, and any IPv4 address that is not an example. CI runs it through `tests/exit-status.sh`.
 - **Simple words** in messages and docs. Many users are not security experts.
 - Style: 4 spaces, `[[ ]]`, quote variables. `.editorconfig` has the basics.
 
@@ -129,6 +137,35 @@ wiki's web editor are overwritten by the next sync. Wiki links use the page name
 - Pull requests are **squash-merged**. You don't need to sign your commits: the merge commit on `main`
   is signed by GitHub.
 
+## Labels
+
+`.github/labels.yml` is the source of truth for labels: name, color and description. Change a label through a
+pull request that edits this file, never only in the web UI. `tests/labels.sh` checks the file (CI runs it through
+`tests/exit-status.sh`): every label has a name, a color of 6 hex digits and a description, no two names match
+ignoring case, and the five release-notes labels are there.
+
+Nothing syncs the file to GitHub yet: the sync workflow is still to come
+([#24](https://github.com/exceev-consulting/server-prep/issues/24)). After the merge, a maintainer applies each
+added or changed label by hand:
+
+```bash
+gh label create "<name>" --color <hex> --description "<text>" --force
+```
+
+To rename a label, run `gh label edit "<old>" --name "<new>"` by hand, in the same pull request. Removing a label
+from the file does not delete it on GitHub: nothing deletes labels.
+
+- The groups: GitHub defaults, release notes (`security`, `skip-changelog`), workflow (`needs-info`, `triaged`,
+  `claude`, `proposal`, `ready`, `agent-ready`, `epic`), `area: *`, `panel: *`, `priority: *`, `size: *`,
+  issue status (`status: *`, `stale`), pull request state and review, and a few routine labels.
+- Every issue needs a type from GitHub issue types (Bug, Feature or Task, not a label) and at least one
+  `area: *` label.
+- `agent-ready` goes on an issue only when it has acceptance criteria and verification commands.
+- `security`, `enhancement`, `bug`, `documentation` and `skip-changelog` sort the release notes (see *Changelog*
+  below). Never rename or remove them.
+
+Triage is described in the [Maintainer handbook](https://github.com/exceev-consulting/server-prep/wiki/Maintainer-handbook).
+
 ## Changelog
 
 If your change matters to users, add a line under `## [Unreleased]` in `CHANGELOG.md`, in simple words.
@@ -161,6 +198,24 @@ renaming a status, break the programs that read the file: then bump `schema_vers
 `server-audit.sh` and in the `const` of `docs/schemas/server-audit.schema.json`, update the doc and add a CHANGELOG
 line, in the same pull request.
 `AUDIT_VERSION` and `schema_version` change separately.
+
+## Repository settings (maintainers)
+
+These settings live in GitHub, not in a file, so no check sees them. Review them when a workflow
+or the repository's owner changes.
+
+- **Secret scanning** with **push protection** on (Settings → Code security), plus **Dependabot alerts**,
+  **Dependabot security updates** and **private vulnerability reporting** ([SECURITY.md](SECURITY.md) sends
+  reporters there).
+- **A ruleset on `main`:** a pull request with an approving review, the required status check `lint`, no force
+  push, no deletion, and the release GitHub App as the only bypass. `lint` already covers the committed-file
+  guard. Once the security workflow of #40 exists, make its `security` check required only when `release.yml`
+  also posts it on the release commit, or releases stop.
+- **Actions:** default workflow permissions read-only, Actions may not create or approve pull requests, and
+  workflows from first-time contributors need an approval.
+- **The `release` environment** can only be used from `main`.
+- **Code scanning** on, so the OpenSSF Scorecard results show in the Security tab once the security workflow
+  exists.
 
 ## License
 
