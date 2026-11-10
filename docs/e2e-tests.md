@@ -44,6 +44,7 @@ Each system (Debian 12 and 13, Ubuntu 22.04, 24.04 and 26.04) goes through these
 | `reboot` | The server comes back, root and the admin log in on 822, no unit failed, and the tarpit is back on port 22. |
 | `audit-rebooted` | Still 0 FAIL after the reboot, and the gotchas still hold (`log_martians`, `suid_dumpable`...). After `openship-paths`, the audit also sees the Openship watches, loaded again at boot, and the AIDE excludes. |
 | `preconfig-after` | `server-preconfig.sh --check` has no FAIL on the finished server. |
+| `rollback` | Last, because it undoes the run: prep-run's `rollback.sh`, started outside SSH as from a console, prints the console warning and what it does not undo, stops Endlessh, and SSH answers on port 22 again, with a UFW rule of its own for the admin address and without the Endlessh rule that allowed 22 from anywhere. |
 
 A scenario that needs a step that failed is skipped, with the reason in the report.
 

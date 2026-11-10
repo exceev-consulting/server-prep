@@ -7,6 +7,12 @@ Highlights of each release. The full list of merged pull requests is in each
 
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
+- `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
+  which the run turned on, no longer allowed that port, and Endlessh still held port 22 when another run had installed
+  it. Before it restarts SSH, it now stops Endlessh whenever it is on and SSH goes back to 22, allows the old SSH port in
+  UFW from the same addresses as the run's SSH rule, deletes the Endlessh rule, which would have left the old SSH open
+  to everyone on 22, and checks the restored files with `sshd -t`. It starts with a warning to run it from the console,
+  not over SSH, and prints what it does not undo.
 - With `PANEL=openship`, the daily AIDE check no longer fills with Openship's deploy changes: it now leaves out
   `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`,
   `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `csr` and `keys` under
