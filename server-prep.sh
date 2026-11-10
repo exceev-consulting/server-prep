@@ -41,7 +41,7 @@ ALL_STEPS="update users docker firewall ssh ips unattended sysctl auth services 
 # ----------------------------------------------------------------------------
 ADMIN_USER="${ADMIN_USER:-}"
 ADMIN_PUBKEY="${ADMIN_PUBKEY:-}"
-PANEL="${PANEL:-}"                            # coolify, dokploy, openship... (used in messages; empty = none)
+PANEL="${PANEL:-}"                            # coolify, dokploy, openship... (messages; coolify and openship also set panel paths; empty = none)
 PANEL_PUBKEY="${PANEL_PUBKEY:-}"
 PANEL_ACCESS="${PANEL_ACCESS:-}"              # cloudflared,tailscale,public (comma list)
 PANEL_IP="${PANEL_IP:-}"                      # public IP of the panel server (public mode)
@@ -1065,7 +1065,9 @@ questions() {
     # ---------------------------------------------------------------- 2
     echo; echo "${C_BOLD}2. Deployment panel${C_0}"
     explain "A self-hosted PaaS panel (Coolify, Dokploy, Openship...) running on another server deploys" \
-            "apps here by connecting over SSH as root with its own key. The name is only used in messages."
+            "apps here by connecting over SSH as root with its own key. The name is used in messages, and two" \
+            "names also change settings: coolify creates /data/coolify; openship leaves Openship's deploy files" \
+            "out of AIDE and has auditd watch its SSH key folders."
     ask PANEL "Panel (coolify, dokploy, openship, other name; empty = none)" "${PANEL:-}"
     set_panel_label
     explain "${PANEL_LABEL^}'s SSH public key: open the SSH key the panel uses for servers and copy its" \
@@ -2162,10 +2164,39 @@ EOF
     return 0
 }
 
+# Openship (#54, moves into the panel profile with #46): the folders where the Openship API keeps
+# SSH private keys. It reads the keys it logs in to servers with from the first two and keeps its host
+# executor key in host-ssh, so they exist only on the server that runs the Openship API, not on the
+# servers it manages. step_aide keeps them checked (OPENSHIP_AIDE_EXCLUDES) and step_auditd watches
+# them; server-audit.sh has the same list (mon.auditd_panel).
+OPENSHIP_KEY_DIRS=(/etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh)
+
+# openship_key_dirs: prints the OPENSHIP_KEY_DIRS that exist on this server, one per line.
+# auditd refuses a watch whose parent folder is missing (ENOENT). augenrules (auditctl -R) then stops
+# at that line and loads none of the rules after it, and step_auditd ignores augenrules' exit code,
+# so a watch is written only for a folder that exists, after the other rules.
+openship_key_dirs() {
+    local dir
+    for dir in "${OPENSHIP_KEY_DIRS[@]}"; do
+        [[ ! -e $dir ]] || printf '%s\n' "$dir"
+    done
+    return 0
+}
+
 step_auditd() {
     yes_ "$INSTALL_AUDITD" || return $SKIP_RC
     pkg_install auditd audispd-plugins 2>/dev/null || pkg_install auditd || return 1
-    write_file /etc/audit/rules.d/50-server-prep.rules 640 <<'EOF'
+    local panel_rules="" dir
+    if [[ ${PANEL,,} == openship ]]; then
+        while IFS= read -r dir; do
+            panel_rules+="-w $dir -p wa -k panel"$'\n'
+        done < <(openship_key_dirs)
+        # No to-do: a server Openship manages never gets these folders, so it could never be cleared.
+        [[ -n $panel_rules ]] ||
+            note "no auditd watch for Openship: none of its SSH key folders (${OPENSHIP_KEY_DIRS[*]}) is here. Only the server that runs the Openship API has them: there, re-run --only auditd once Openship has created one"
+    fi
+    {
+        cat <<'EOF'
 ## Managed by server-prep.sh
 -w /etc/passwd -p wa -k identity
 -w /etc/group -p wa -k identity
@@ -2188,9 +2219,11 @@ step_auditd() {
 -w /sbin/modprobe -p x -k modules
 -a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=unset -k admin_root_cmd
 EOF
+        printf '%s' "$panel_rules"
+    } | write_file /etc/audit/rules.d/50-server-prep.rules 640
     run systemctl enable --now auditd
     run augenrules --load
-    note "auditd rules: identity, sudoers, ssh, docker, cron, firewall, admin root commands (ausearch -k <key>)"
+    note "auditd rules: identity, sudoers, ssh, docker, cron, firewall, admin root commands${panel_rules:+, Openship SSH keys (panel)} (ausearch -k <key>)"
     return 0
 }
 
@@ -2214,10 +2247,48 @@ EOF
     return 0
 }
 
+# AIDE's database, built by aideinit: present once this server has a baseline
+aide_baseline_exists() { [[ -e /var/lib/aide/aide.db ]]; }
+
+# Openship (#54, moves into the panel profile with #46): AIDE excludes for what it rewrites on every
+# deploy. AIDE (0.17 and later) reads each path as a PCRE regex anchored at the start only, so a plain
+# prefix also leaves out everything below it and every name that starts the same way: `(/|$)` makes a
+# line match a whole folder name only.
+# - /var/lib/openship minus the key folders of OPENSHIP_KEY_DIRS (the lookahead), which stay checked;
+# - of /etc/letsencrypt, only the folders certbot rewrites when it issues or renews a certificate.
+#   renewal/ (its confs can name hooks), renewal-hooks/ and cli.ini, which certbot runs or reads as
+#   root, stay checked: a renewal rewrites one renewal/ conf per domain, a small churn;
+# - the /etc/letsencrypt folder entry itself (the last line, not an exclude) stays checked without its
+#   timestamps, as aide-common does for /etc (`/etc$ d VarDir`): every certbot run creates and deletes
+#   /etc/letsencrypt/.certbot.lock, which changes the folder's mtime and ctime;
+# - never all of /etc/openship: /etc/openship/ssh-keys stays checked.
+# server-audit.sh (mon.aide_panel) looks for the /var/lib/openship line.
+OPENSHIP_AIDE_EXCLUDES='!/var/lib/openship/(?!(ssh-keys|host-ssh)(/|$))
+!/etc/openship/modules(/|$)
+!/etc/openresty(/|$)
+!/usr/local/openresty/nginx/conf(/|$)
+!/etc/letsencrypt/(live|archive|csr|keys)(/|$)
+/etc/letsencrypt$ d VarDir'
+
+# aide_has_openship_excludes FILE: true when FILE already has every line of OPENSHIP_AIDE_EXCLUDES
+aide_has_openship_excludes() {
+    local line
+    while IFS= read -r line; do
+        grep -qxF -- "$line" "$1" 2>/dev/null || return 1
+    done <<<"$OPENSHIP_AIDE_EXCLUDES"
+}
+
 step_aide() {
     yes_ "$INSTALL_AIDE" || return $SKIP_RC
     pkg_install aide aide-common || return 1
-    write_file /etc/aide/aide.conf.d/99_server-prep 644 <<'EOF'
+    local conf=/etc/aide/aide.conf.d/99_server-prep
+    # New excludes don't drop the old entries from an existing baseline: its checks may list them as
+    # removed until it is rebuilt. Rebuilding here would accept unreviewed changes, so ask the user.
+    if [[ ${PANEL,,} == openship ]] && aide_baseline_exists && ! aide_has_openship_excludes "$conf"; then
+        todo "AIDE now leaves out Openship's deploy files, but the existing baseline still lists them, so its next check may list them as removed. Review that check, then rebuild the baseline: sudo aideinit -y -f"
+    fi
+    {
+        cat <<'EOF'
 # Managed by server-prep.sh - exclude fast-changing container/app data
 !/var/lib/docker
 !/var/lib/containerd
@@ -2231,7 +2302,13 @@ step_aide() {
 !/var/lib/snapd
 !/swapfile
 EOF
-    if [[ ! -e /var/lib/aide/aide.db && $DRY_RUN -eq 0 ]]; then
+        if [[ ${PANEL,,} == openship ]]; then
+            echo "# Openship rewrites these on every deploy; its SSH key folders, certbot's renewal settings and hooks stay checked,"
+            echo "# and /etc/letsencrypt itself without its timestamps (certbot's lock file changes them on every run)"
+            printf '%s\n' "$OPENSHIP_AIDE_EXCLUDES"
+        fi
+    } | write_file "$conf" 644
+    if ! aide_baseline_exists && [[ $DRY_RUN -eq 0 ]]; then
         info "building the AIDE baseline in the background (takes a few minutes)"
         (umask 077; : > "$LOG_DIR/aideinit.log")   # 600 like the other logs (aideinit keeps its own umask)
         chmod 600 "$LOG_DIR/aideinit.log"

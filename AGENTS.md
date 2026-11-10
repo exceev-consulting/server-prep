@@ -44,18 +44,12 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
 
 ## Commands
 
-Run these from the repo root. CI runs the same checks (`.github/workflows/lint.yml`).
+Run these from the repo root. `scripts/check.sh` runs the checks of CI (`.github/workflows/lint.yml`), with ShellCheck pinned to 0.11.0. CI may use another ShellCheck version until `lint.yml` runs this script.
 
 ```bash
-for script in server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh; do bash -n "$script" || exit 1; done
-shellcheck -S warning server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/*.sh scripts/*.sh tests/*.sh tests/e2e/*.sh tests/e2e/lib/*.sh
-for s in server-prep.sh server-preconfig.sh server-audit.sh; do ./"$s" --help >/dev/null; done
-scripts/gen-data.sh --check     # the site data matches the scripts (needs jq)
-scripts/check-tokens.sh         # the design token copies match site/tokens.css
-bash tests/exit-status.sh       # argument and exit-code checks, no system changes
-bash tests/swap.sh              # the swap file part of the logging step, with fake commands
-bash tests/e2e-report.sh        # the e2e report builder on fake results (needs jq)
-bash tests/e2e-pages.sh         # the e2e pages builder with a stub gh (needs jq, unzip, python3)
+./scripts/check.sh              # every CI lint check: bash -n, pinned ShellCheck -S warning, --help, site data, design tokens, tests
+./scripts/check.sh --list       # the sections
+./scripts/check.sh --only lint  # one section
 ./server-prep.sh --list-steps   # the step names, in run order
 ```
 
@@ -88,12 +82,13 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
 - **Panel-agnostic:** the panel is `PANEL` / `PANEL_PUBKEY` / `PANEL_ACCESS` / `PANEL_IP` (old `COOLIFY_*` names are mapped at load). Messages use `${PANEL_LABEL}`. Panel-specific behaviour must be guarded by `[[ ${PANEL,,} == <name> ]]`.
 - **Changes need matching updates in:** `server-prep.conf.example`, the README step table, and an audit check (INFO when optional).
 - **Checks after editing:** every check in *Commands* passes. When and why:
-  - ShellCheck: CI runs it on every push and PR, so keep it clean. It is not installed locally: download the static binary from the ShellCheck releases into a temporary folder outside the repo.
+  - ShellCheck: CI runs it on every push and PR, so keep it clean. `scripts/check.sh` runs the pinned ShellCheck (0.11.0). It downloads it once into `${XDG_CACHE_HOME:-~/.cache}/server-prep/` and checks its SHA-256 on every run. Update the version and the four hashes together.
   - Dry run: after changing a step, ask the operator to run it, since it needs sudo.
   - Site data: `scripts/gen-data.sh` after changing a step, a setting, an audit check or those README tables. CI runs `scripts/gen-data.sh --check`.
   - Design tokens: `scripts/check-tokens.sh` after changing `site/tokens.css`, a copy of it (the e2e report's `report.css`) or the brand page's colour ramps (2.2 and 2.4). Other values on that page are checked by eye. CI runs it.
   - Exit status: `bash tests/exit-status.sh` checks argument validation and the real main function with host-changing calls stubbed out.
   - Audit matchers: `bash tests/audit-docker-user.sh` checks the audit's DOCKER-USER matcher on sample `iptables -S` output, `bash tests/audit-logind-lid.sh` its lid-switch parser (`lid_ignored`, used by `sys.laptop`) on sample `systemd-analyze cat-config` output, and `bash tests/audit-ufw-ports.sh` the UFW port matcher (`ufw_port_access`) on sample `ufw status` output (no root). `tests/exit-status.sh` runs all three, so CI covers them.
+  - Audit JSON: `bash tests/audit-json.sh` checks the JSON writer's keys and `schema_version` against `docs/schemas/server-audit.schema.json` and that `docs/json-output.md` lists every check id in its category's table, with no stale row (no root). `tests/exit-status.sh` runs it too, so CI covers it.
   - Upgrade: `bash tests/upgrade.sh` checks `--upgrade` against a fake release served by a fake `curl` (no network, no root). `tests/exit-status.sh` runs it too, so CI covers it.
   - Skills: `bash tests/skills-sync.sh` checks that `.agents/skills` is the link to `.claude/skills` and that each `SKILL.md` frontmatter holds only `name` (its folder name) and `description`, each a one-line value YAML reads as a string. `tests/exit-status.sh` runs it too, so CI covers it.
   - End to end: `tests/e2e/run.sh --os <id>` after a change to a step (20 to 30 minutes, `--only <scenario>` for less). PRs run every system in CI and get a report comment. A new step or behaviour gets an assertion in `tests/e2e/scenarios.sh`.
@@ -104,7 +99,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
 ## Definition of done
 
 - **New or changed step:** every item of the `add-step` skill checklist (`.claude/skills/add-step/SKILL.md`, items 1-12; `/add-step` in Claude Code, `$add-step` in Codex), the *Commands* checks pass, and a CHANGELOG line.
-- **Audit check:** `result <cat>.<name> PASS|WARN|FAIL|INFO "Title" "detail" "fix hint"`, where `<cat>` is the prefix the section already uses (`sys`, `ssh`, `ips`, `acc`, `mon`...). The id must match `[a-z0-9_]+\.[a-z0-9_]+` so `scripts/gen-data.sh` finds it. Use INFO when the feature is optional. Never rename an id or change the TSV columns (id, status, title, message) that `run_audit()` and the before/after report in `server-prep.sh` read. Regenerate the site data.
+- **Audit check:** `result <cat>.<name> PASS|WARN|FAIL|INFO "Title" "detail" "fix hint"`, where `<cat>` is the prefix the section already uses (`sys`, `ssh`, `ips`, `acc`, `mon`...). The id must match `[a-z0-9_]+\.[a-z0-9_]+` so `scripts/gen-data.sh` finds it. Use INFO when the feature is optional. Never rename an id or change the TSV columns (id, status, title, message) that `run_audit()` and the before/after report in `server-prep.sh` read. List the id in `docs/json-output.md`, in its category's table (`tests/audit-json.sh` fails otherwise). Regenerate the site data.
 - **Doc:** examples use `example.com`, `web-01` and `192.168.1.50`, never real client names, domains, IPs or hostnames. Add a link in the README `## Documentation` table, then run `scripts/gen-data.sh` (that table feeds the setup console). The style rules are in `docs/AGENTS.md`.
 - **Code for one panel only:** behind `[[ ${PANEL,,} == <name> ]]` (see Panel-agnostic). A new panel gets its display name in `set_panel_label()` in `server-prep.sh`.
 
@@ -130,6 +125,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
 | apport keeps running after the services step on Ubuntu 22.04 | apport is an init-script unit: `systemctl disable --now` only disables it. `svc_disable` stops it in a second call |
 | Audit listed a port opened by a UFW app profile (`ufw allow OpenSSH`) as firewalled | `ufw status verbose` prints profile rules as `22/tcp (OpenSSH)`, the IPv6 copy as `22/tcp (OpenSSH (v6))` and a To value of 26 characters or more with one space before the action. `ufw_rule_fields` removes ` on <iface>`, ` (v6)` and the label, keeps the loaded ports, and splits on one or more spaces. Bare names (plain `ufw status`) are resolved once with `LC_ALL=C ufw app info` by `ufw_cache_apps`, in the main shell, because `ufw_port_access` runs in `$(...)`. Test: `tests/audit-ufw-ports.sh` (run by `tests/exit-status.sh`) |
 | SUID scan floods with container files | `find` prunes `/var/lib/docker` and `/var/lib/containerd` |
+| An AIDE exclude for Openship's deploy churn also hides its SSH keys and certbot's hooks | AIDE reads each `!` path as a PCRE regex anchored at the start only: `!/var/lib/openship` also leaves out `ssh-keys/` and `host-ssh/` there, and `!/etc/letsencrypt` leaves out `renewal-hooks/` and `cli.ini`, which certbot runs or reads as root. `OPENSHIP_AIDE_EXCLUDES` keeps the key folders with a lookahead and lists only the certbot folders that churn, each ending in `(/|$)`. The `/etc/letsencrypt` folder itself stays under aide-common's `/ 0 Full` (mtime, ctime), and every certbot run creates and deletes `.certbot.lock` in it: the list ends with `/etc/letsencrypt$ d VarDir`, as aide-common does for `/etc`. Test: `tests/openship-aide-auditd.sh`. E2E: `openship-paths` |
 | `docker ps` cannot reach `~/.docker/desktop/docker.sock` | Docker Desktop context: `docker context use default`, or remove Docker Desktop |
 | CrowdSec `console enroll` returns 401 while `capi status` is OK | The problem is on CrowdSec's side. Retry later or enroll from the web console |
 | GitHub runners OOM-killed the laptop | `extras/github-runners/limit-runners-memory.sh`: a slice capped at 40% of RAM, about 3G per runner |

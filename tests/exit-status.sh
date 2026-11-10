@@ -510,6 +510,8 @@ bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-locale.sh" || exit 1
 # ... and the audit's server-prep release check on sample release lists (hotfix lane, ADR 0003).
 bash "$SCRIPT_DIR/tests/audit-release.sh" || exit 1
+# ... and the audit's JSON format: writer keys, schema_version, the schema and every check id in its category's table in docs/json-output.md (issue #16).
+bash "$SCRIPT_DIR/tests/audit-json.sh" || exit 1
 # ... and server-prep.sh --upgrade against a fake release (no network).
 bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1
 # ... and the audit's third-party update matcher (issue #155).
@@ -519,3 +521,5 @@ bash "$SCRIPT_DIR/tests/audit-third-party.sh" || exit 1
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
 # ... and the JSON report test (issue #15).
 bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
+# ... and the Openship AIDE excludes and auditd watch (issue #54).
+bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1
