@@ -96,19 +96,19 @@ window.SERVER_PREP_DATA = {
       "name": "auditd",
       "title": "auditd",
       "gate": "INSTALL_AUDITD",
-      "details": "audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands"
+      "details": "audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands; with `PANEL=openship`, Openship's SSH key folders where they exist"
     },
     {
       "name": "rkhunter",
       "title": "rkhunter",
       "gate": "INSTALL_RKHUNTER",
-      "details": "rootkit scan + file-integrity baseline, daily"
+      "details": "rootkit scan + file-integrity baseline, daily; with `PANEL=openship`, AIDE leaves out Openship's deploy files (`/var/lib/openship` except its SSH keys, the OpenResty configs, certbot's certificates)"
     },
     {
       "name": "aide",
       "title": "AIDE",
       "gate": "INSTALL_AIDE",
-      "details": "rootkit scan + file-integrity baseline, daily"
+      "details": "rootkit scan + file-integrity baseline, daily; with `PANEL=openship`, AIDE leaves out Openship's deploy files (`/var/lib/openship` except its SSH keys, the OpenResty configs, certbot's certificates)"
     },
     {
       "name": "endlessh",
@@ -194,7 +194,7 @@ window.SERVER_PREP_DATA = {
       "example": "coolify",
       "default": null,
       "comment": "name used in messages/report; empty = none",
-      "help": null,
+      "help": "The name is used in messages and the report. coolify also creates /data/coolify; openship also leaves Openship's deploy files out of AIDE and adds auditd watches on its SSH key folders",
       "saved": true,
       "secret": false
     },
@@ -718,7 +718,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 61,
+    "checks": 63,
     "sections": [
       {
         "key": "system",
@@ -1094,6 +1094,20 @@ window.SERVER_PREP_DATA = {
             "statuses": [
               "PASS",
               "WARN"
+            ]
+          },
+          {
+            "id": "mon.auditd_panel",
+            "title": "Openship SSH keys",
+            "statuses": [
+              "INFO"
+            ]
+          },
+          {
+            "id": "mon.aide_panel",
+            "title": "AIDE and Openship",
+            "statuses": [
+              "INFO"
             ]
           },
           {

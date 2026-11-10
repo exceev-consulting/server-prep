@@ -41,8 +41,7 @@ Use the Telegraf step as the reference implementation: `grep -n -i telegraf serv
 
 ## Verify
 ```bash
-bash -n server-prep.sh server-audit.sh
-shellcheck -S warning server-prep.sh server-audit.sh   # CI fails on any warning
+./scripts/check.sh   # bash -n, ShellCheck -S warning (CI fails on any warning), --help, site data, tests
 sudo ./server-prep.sh --config <test.conf> --dry-run --only x   # user runs it
 ```
 Commit with a message that says *why*, for example "Pin X to its repo (ESM ships an old version)".

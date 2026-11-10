@@ -252,6 +252,8 @@ not a FAIL. The id's prefix is not always its category: `net.exposure` is in `fi
 | `mon.auditd` | auditd is running | PASS, WARN | always |
 | `mon.rkhunter` | rkhunter is installed | PASS, WARN | always |
 | `mon.aide` | the AIDE database exists | PASS, WARN | always |
+| `mon.auditd_panel` | auditd watches the Openship SSH key folders (`ausearch -k panel`) | INFO | an Openship SSH key folder exists and auditd is running |
+| `mon.aide_panel` | AIDE leaves out Openship's deploy files and still checks its SSH key folders | INFO | `/var/lib/openship` or `/etc/openship` exists and AIDE is installed |
 | `mon.journal` | the journal keeps logs across reboots | PASS, WARN | always |
 | `mon.prep_secrets` | server-prep's run logs are root only, and no bot token is on a command line | PASS, WARN | `/var/log/server-prep` or `/usr/local/sbin/server-prep-notify` exists |
 | `mon.telegraf` | Telegraf is installed, and whether it runs | INFO | Telegraf is installed |

@@ -1005,6 +1005,42 @@ else
     result mon.aide WARN "AIDE" "Not installed (file-integrity monitoring)" "apt install aide"
 fi
 
+# Openship (#54): with PANEL=openship, the auditd step watches the folders where the Openship API keeps
+# SSH private keys (OPENSHIP_KEY_DIRS in server-prep.sh), and the aide step leaves out its deploy files.
+# Optional, so INFO only. The key folders exist only on the server that runs the Openship API.
+OS_KEY_DIRS=()
+for os_dir in /etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh; do
+    [[ -e $os_dir ]] && OS_KEY_DIRS+=("$os_dir")
+done
+if [[ ${#OS_KEY_DIRS[@]} -gt 0 ]] && systemctl is-active --quiet auditd 2>/dev/null; then
+    if [[ $IS_ROOT -eq 1 ]]; then
+        AUDIT_RULES=$(auditctl -l 2>/dev/null)
+        OS_UNWATCHED=()
+        for os_dir in "${OS_KEY_DIRS[@]}"; do
+            # auditctl -l prints a watch as "-w PATH -p wa -k KEY"
+            awk -v d="$os_dir" '$1 == "-w" && ($2 == d || $2 == d "/") && / -k panel( |$)/ {f = 1} END {exit !f}' \
+                <<<"$AUDIT_RULES" || OS_UNWATCHED+=("$os_dir")
+        done
+        if [[ ${#OS_UNWATCHED[@]} -eq 0 ]]; then
+            result mon.auditd_panel INFO "Openship SSH keys" "Watched by auditd (ausearch -k panel): ${OS_KEY_DIRS[*]}"
+        else
+            result mon.auditd_panel INFO "Openship SSH keys" "Not watched by auditd: ${OS_UNWATCHED[*]}" \
+                "set PANEL=openship in /etc/server-prep/server-prep.conf, then: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only auditd --yes"
+        fi
+    else
+        result mon.auditd_panel INFO "Openship SSH keys" "Found ${OS_KEY_DIRS[*]}; whether auditd watches them is not checked$(need_root_note)"
+    fi
+fi
+# Openship's deploy files are on every server it manages; the aide step writes this drop-in.
+if [[ -d /var/lib/openship || -d /etc/openship ]] && have aide; then
+    if grep -qs '^!/var/lib/openship/' /etc/aide/aide.conf.d/99_server-prep; then
+        result mon.aide_panel INFO "AIDE and Openship" "Openship's deploy files are left out of AIDE; its SSH key folders stay checked"
+    else
+        result mon.aide_panel INFO "AIDE and Openship" "AIDE also checks Openship's deploy files, so its daily report lists the changes of every deploy" \
+            "set PANEL=openship in /etc/server-prep/server-prep.conf, then: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only aide --yes"
+    fi
+fi
+
 if [[ -d /var/log/journal ]] || grep -qsE '^[[:space:]]*Storage=persistent' /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf; then
     result mon.journal PASS "Persistent logs" "journald keeps logs across reboots"
 else

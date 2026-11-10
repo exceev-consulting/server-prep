@@ -14,7 +14,7 @@
 
 ## Verification output
 
-<!-- Paste the end of the `./scripts/check.sh` output (planned in #34). Until that script exists, paste the output of the `bash -n` loop and of `shellcheck -S warning` from CONTRIBUTING.md, step 1. They print nothing when they pass: then write "bash -n: ok" and "shellcheck: ok". -->
+<!-- Paste the end of the `./scripts/check.sh` output (the OK/FAIL/SKIP lines and the summary). -->
 
 ```text
 
@@ -22,7 +22,7 @@
 
 ## Checklist
 
-- [ ] `bash -n` and `shellcheck -S warning` pass
+- [ ] `./scripts/check.sh` passes
 - [ ] System changes go through `run` / `write_file` / `set_kv` / `backup_file` / `pkg_install`
 - [ ] A new or changed step also updates `server-prep.conf.example`, the README step table and an audit check
 - [ ] User-visible change: a line under `## [Unreleased]` in `CHANGELOG.md`
