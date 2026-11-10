@@ -89,13 +89,13 @@ A typical flow today:
 1. Pick an `agent-ready` issue and comment that you are on it.
 2. Ask the agent to read the issue and `AGENTS.md`, create a branch, and make the change.
 3. For a script change, use the `add-step` skill (`/add-step` in Claude Code, `$add-step` in Codex).
-4. Have it run the same checks as CI: `bash -n`, ShellCheck at `-S warning`, and `scripts/gen-data.sh --check`.
+4. Have it run `./scripts/check.sh`, which runs the checks of CI with a pinned ShellCheck.
 5. Run any `sudo` test yourself, on a throwaway VM, never on a server you care about.
 6. Open the PR and fill in the template, including what you tested.
 
 An agent did something wrong or confusing with server-prep? Tell us with the [agent experience form](https://github.com/exceev-consulting/server-prep/issues/new?template=agent_experience.yml). Remove tokens, keys, passwords and real IPs from the transcript first.
 
-Planned: a `/pick-issue` skill that does steps 2 to 6 ([#44](https://github.com/exceev-consulting/server-prep/issues/44)), one local check script ([#34](https://github.com/exceev-consulting/server-prep/issues/34)), and a "contribute with Claude Code or Codex" section in CONTRIBUTING ([#43](https://github.com/exceev-consulting/server-prep/issues/43)).
+Planned: a `/pick-issue` skill that does steps 2 to 6 ([#44](https://github.com/exceev-consulting/server-prep/issues/44)) and a "contribute with Claude Code or Codex" section in CONTRIBUTING ([#43](https://github.com/exceev-consulting/server-prep/issues/43)).
 
 ## Safety rules for agents
 
