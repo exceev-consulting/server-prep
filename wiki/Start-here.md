@@ -102,7 +102,7 @@ It changes nothing. It ends with a line like `Score: 65/100 - 20 PASS, 10 WARN, 
 
 `server-prep.sh` asks about 25 questions (more if you turn on extras). You can answer them one by one, or prepare them first.
 
-**Option A: the setup console.** Open the [setup console](https://exceev-consulting.github.io/server-prep/), pick your server type and panel, and copy the config file it makes. It holds no secrets: the script asks for them. Save it as `web-01.conf` on the server (in the `server-prep` folder), for example with `nano web-01.conf`. Never commit a filled config.
+**Option A: the setup console.** Open the [setup console](https://server-prep.exceev.com/), pick your server type and panel, and copy the config file it makes. It holds no secrets: the script asks for them. Save it as `web-01.conf` on the server (in the `server-prep` folder), for example with `nano web-01.conf`. Never commit a filled config.
 
 **Option B: the questions.** Just run the script. Each question has a short explanation.
 

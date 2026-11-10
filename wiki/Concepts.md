@@ -175,4 +175,4 @@ The last line shows the score, for example `Score: 92/100 - 43 PASS, 8 WARN, 0 F
 
 ## Read next
 
-[Glossary](Glossary) for the terms, [FAQ](FAQ) for lockouts, re-runs and undo, and the [setup console](https://exceev-consulting.github.io/server-prep/) to see the ports and logins for your setup.
+[Glossary](Glossary) for the terms, [FAQ](FAQ) for lockouts, re-runs and undo, and the [setup console](https://server-prep.exceev.com/) to see the ports and logins for your setup.

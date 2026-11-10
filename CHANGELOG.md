@@ -5,6 +5,8 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
+  the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - With `PANEL=openship`, the daily AIDE check no longer fills with Openship's deploy changes: it now leaves out
   `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`,
   `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `csr` and `keys` under

@@ -86,9 +86,11 @@ A release that breaks servers or opens a hole, found after it was published:
 
 ## Website and wiki
 
-- The [setup console](https://exceev-consulting.github.io/server-prep/) deploys from `site/` on every push to `main` that touches it, the scripts or the README.
+- The [setup console](https://server-prep.exceev.com/) deploys from `site/` on every push to `main` that touches it, the scripts or the README.
+- The site's domain, `server-prep.exceev.com`, is set in **Settings → Pages → Custom domain**, with **Enforce HTTPS** on. The site deploys through GitHub Actions, so the domain lives only in the settings: the repository has no `CNAME` file.
+- The domain's DNS record is a CNAME to `exceev-consulting.github.io` with the DNS proxy off (DNS only in Cloudflare): a proxied record sends visitors to another server and keeps GitHub from getting its certificate. Old `exceev-consulting.github.io/server-prep/` links redirect to the domain.
 - The wiki is published from the `wiki/` folder by `.github/workflows/wiki.yml`. Edit pages through pull requests, not in the web editor.
-- The [brand guidelines](https://exceev-consulting.github.io/server-prep/brand/) (`site/brand/`) cover the logo, colours, type and voice. When `site/social-preview.png` changes, upload it again in **Settings → General → Social preview**: GitHub has no API for the repository's preview image.
+- The [brand guidelines](https://server-prep.exceev.com/brand/) (`site/brand/`) cover the logo, colours, type and voice. When `site/social-preview.png` changes, upload it again in **Settings → General → Social preview**: GitHub has no API for the repository's preview image.
 
 ## Security reports
 

@@ -130,7 +130,7 @@ You see the checks scroll by in color, then a PASS / WARN / FAIL summary, and th
 
 ## Setup console: from scripts to GitHub Pages
 
-The [setup console](https://exceev-consulting.github.io/server-prep/) shows what server-prep does for your setup: VPS or dedicated, your panel, your access route. Its facts are not written by hand. They come from the scripts.
+The [setup console](https://server-prep.exceev.com/) shows what server-prep does for your setup: VPS or dedicated, your panel, your access route. Its facts are not written by hand. They come from the scripts.
 
 1. [`scripts/gen-data.sh`](https://github.com/exceev-consulting/server-prep/blob/main/scripts/gen-data.sh) reads `server-prep.sh`, `server-audit.sh`, `server-preconfig.sh`, the README tables and `server-prep.conf.example`.
 2. It writes `site/data.json` and `site/data.js` (the same data, loaded by the page so it also works offline). The output has no timestamps, so CI can compare it.

@@ -15,13 +15,13 @@
 <p align="center">
   <a href="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml/badge.svg" alt="lint"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/exceev-consulting/server-prep"><img src="https://api.scorecard.dev/projects/github.com/exceev-consulting/server-prep/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://exceev-consulting.github.io/server-prep/e2e/main/"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/e2e.yml/badge.svg?branch=main" alt="end-to-end tests"></a>
+  <a href="https://server-prep.exceev.com/e2e/main/"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/e2e.yml/badge.svg?branch=main" alt="end-to-end tests"></a>
   <a href="https://github.com/exceev-consulting/server-prep/releases/latest"><img src="https://img.shields.io/github/v/release/exceev-consulting/server-prep" alt="latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0B1117.svg" alt="MIT license"></a>
 </p>
 
 <p align="center">
-  <a href="https://exceev-consulting.github.io/server-prep/"><b>Setup console</b></a> ·
+  <a href="https://server-prep.exceev.com/"><b>Setup console</b></a> ·
   <a href="https://github.com/exceev-consulting/server-prep/wiki">Docs</a> ·
   <a href="https://github.com/exceev-consulting/server-prep/discussions">Discussions</a> ·
   <a href="https://github.com/orgs/exceev-consulting/projects/7">Roadmap</a> ·
@@ -55,7 +55,7 @@ sudo ./server-prep.sh --dry-run   # preview every change
 sudo ./server-prep.sh             # apply
 ```
 
-Not sure what to answer? Build your setup in the **[setup console](https://exceev-consulting.github.io/server-prep/)**:
+Not sure what to answer? Build your setup in the **[setup console](https://server-prep.exceev.com/)**:
 it shows the ports, the logins, the commands in order and a ready config file for your server and panel.
 New to servers? Follow **[Start here](https://github.com/exceev-consulting/server-prep/wiki/Start-here)**.
 
@@ -98,7 +98,7 @@ means `--config` is missing or the file cannot be read.
 Tested target: Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, on cloud VPS and on dedicated / on-premise servers.
 
 Each of these systems also runs end to end on every change to the scripts, in a VM booted from its official cloud image:
-[latest report](https://exceev-consulting.github.io/server-prep/e2e/main/) ([how it works](docs/e2e-tests.md)).
+[latest report](https://server-prep.exceev.com/e2e/main/) ([how it works](docs/e2e-tests.md)).
 
 ### VPS or dedicated server
 
