@@ -22,6 +22,12 @@
 
 set -u   # no pipefail: "cmd | grep -q" would report SIGPIPE as failure
 
+# Read every command's output in English, whatever language the server uses: ufw and free translate
+# the "Status: active", "Default:" and "Swap:" lines the checks look for. ufw is Python, whose gettext
+# reads LANGUAGE before LC_ALL, so LC_ALL=C alone is not enough. The audit's own text is English.
+export LC_ALL=C
+unset LANGUAGE
+
 AUDIT_VERSION="1.0.0"
 PROJECT_URL="https://github.com/exceev-consulting/server-prep"
 

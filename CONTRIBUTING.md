@@ -44,7 +44,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
                                  # (server-preconfig.sh --check --json with fake host commands, needs jq,
                                  # skipped without it), tests/validate-config.sh
                                  # (--validate on a good config and broken ones), tests/audit-ufw-ports.sh
-                                 # (audit UFW port matcher on sample ufw status output), tests/upgrade.sh
+                                 # (audit UFW port matcher on sample ufw status output),
+                                 # tests/audit-locale.sh (audit ufw and free checks on a server set to
+                                 # French, with fake ufw and free), tests/upgrade.sh
                                  # (--upgrade against a fake release served by a fake curl, no network),
                                  # tests/skills-sync.sh (the .agents/skills link for Codex, SKILL.md frontmatter)
                                  # and tests/report-json.sh (the JSON report next to the Markdown one, on fake
