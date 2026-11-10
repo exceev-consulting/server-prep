@@ -495,5 +495,7 @@ bash "$SCRIPT_DIR/tests/audit-third-party.sh" || exit 1
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
 # ... and the JSON report test (issue #15).
 bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
+# ... and the rollback.sh that write_rollback writes (issue #71).
+bash "$SCRIPT_DIR/tests/rollback.sh" || exit 1
 # ... and the Openship AIDE excludes and auditd watch (issue #54).
 bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1

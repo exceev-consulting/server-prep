@@ -1519,21 +1519,22 @@ ufw_docker_rules() {   # make published container ports obey UFW (DOCKER-USER ch
 # 'ufw allow/limit/route/default' exit 0 even when the rule or policy already exists, so compare the rule files instead.
 ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/dev/null | sha256sum; }
 
-ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT
-    local port="$1" c="$2" ip any=1
+# RUNNER is run (the default) or rollback_cmd, which only prints the commands for rollback.sh.
+ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT [RUNNER]
+    local port="$1" c="$2" r="${3:-run}" ip any=1
     for ip in ${ADMIN_IPS//,/ }; do
-        run ufw allow from "$ip" to any port "$port" proto tcp comment "$c admin"; any=0
+        "$r" ufw allow from "$ip" to any port "$port" proto tcp comment "$c admin"; any=0
     done
     if [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]]; then
-        run ufw allow from "$PANEL_IP" to any port "$port" proto tcp comment "$c panel"; any=0
+        "$r" ufw allow from "$PANEL_IP" to any port "$port" proto tcp comment "$c panel"; any=0
     fi
     if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
-        run ufw allow in on tailscale0 to any port "$port" proto tcp comment "$c tailscale"; any=0
+        "$r" ufw allow in on tailscale0 to any port "$port" proto tcp comment "$c tailscale"; any=0
     fi
     [[ "$PANEL_ACCESS" == *cloudflared* ]] && any=0   # tunnel arrives on loopback (always allowed)
     if [[ $any -eq 1 ]]; then
-        warn "no SSH source restriction given: allowing port ${port} from anywhere (rate-limited)"
-        run ufw limit "${port}/tcp" comment "$c"
+        [[ $r == run ]] && warn "no SSH source restriction given: allowing port ${port} from anywhere (rate-limited)"
+        "$r" ufw limit "${port}/tcp" comment "$c"
     fi
 }
 
@@ -2527,25 +2528,126 @@ step_suid() {
 # ----------------------------------------------------------------------------
 # Rollback script & report
 # ----------------------------------------------------------------------------
+# Helpers for rollback.sh: they only print lines of the script, they run nothing.
+rollback_cmd() {   # rollback_cmd CMD ARGS...: one indented command, each argument shell-quoted
+    printf '   '
+    printf ' %q' "$@"
+    printf '\n'
+}
+rollback_say() {   # rollback_say TEXT: an echo of TEXT, single-quoted (TEXT can hold a quote)
+    local q="'\\''"
+    printf "echo '%s'\n" "${1//\'/$q}"
+}
+# rollback_step NAME [TEXT|ran]: step NAME changed something in this run, or failed part way,
+# with TEXT in its notes when given. With "ran", it only has to have run without being skipped.
+rollback_step() {
+    local i res
+    for i in "${!STEP_IDS[@]}"; do
+        [[ ${STEP_IDS[$i]} == "$1" ]] || continue
+        res="${STEP_RESULTS[$i]}"
+        [[ ${2:-} == ran ]] && { [[ $res != SKIPPED ]]; return; }
+        [[ ($res == CHANGED || $res == FAILED) && ${STEP_DETAILS[$i]} == *"${2:-}"* ]]
+        return
+    done
+    return 1
+}
+
 write_rollback() {
     [[ $DRY_RUN -eq 1 ]] && return 0
-    local rb="$BACKUP_DIR/rollback.sh" f
+    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=()
+    for f in "${CHANGED_FILES[@]}" "${NEW_FILES[@]}"; do
+        [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/00-server-prep.conf ]] && ssh_files=1
+    done
+    [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]] && endlessh=1
+    # The restored SSH files are this run's backups, so sshd goes back to the ports it had before
+    # the run. UFW, which this run left on, no longer allows them: phase B of the SSH step deleted
+    # their temporary rules. Rebuild those rules (same sources, same comment) before SSH restarts.
+    if [[ $ssh_files -eq 1 ]]; then
+        for p in $CURRENT_SSH_PORTS; do
+            [[ $p == "$SSH_PORT" ]] && continue
+            old_ports+=("$p")
+            [[ $p == 22 ]] && port22=1
+            r="$(ufw_allow_ssh "$p" server-prep-temp rollback_cmd)"
+            [[ -n $r ]] && allow+="$r"$'\n'
+        done
+    fi
+    # The Endlessh rule allows port 22 from anywhere: once Endlessh stops, it would let anyone reach
+    # the old SSH on 22 and make the rules above useless. Delete it when they replace it.
+    [[ $port22 -eq 1 && -n $allow ]] && drop_tarpit=1
     {
         echo "#!/bin/bash"
         echo "# Restore files changed by server-prep run ${TS}. Review before running!"
+        # Printed before set -x and before any change, so the trace does not hide it.
+        rollback_say "=== server-prep rollback of run ${TS} ==="
+        rollback_say "Run this from the console (the provider web console, IPMI/KVM or a screen), not over SSH: SSH restarts with its old settings and an SSH session can drop or lock you out."
+        rollback_say "It puts back the files this run changed and deletes the files it created."
+        if [[ ${#old_ports[@]} -gt 0 ]]; then
+            rollback_say "SSH goes back to port(s) ${old_ports[*]}."
+            if [[ $endlessh -eq 1 ]]; then
+                rollback_say "Endlessh stops first: this run put it on port 22."
+            elif [[ $port22 -eq 1 ]]; then
+                rollback_say "If Endlessh is on (another run put it on port 22), it stops first."
+            fi
+            if [[ $drop_tarpit -eq 1 ]]; then
+                rollback_say "UFW allows it first, from the same addresses as the run's SSH rule, and deletes the Endlessh rule (endlessh tarpit), which allowed port 22 from anywhere."
+            elif [[ -n $allow ]]; then
+                rollback_say "UFW allows it first, from the same addresses as the run's SSH rule."
+            else
+                rollback_say "UFW gets no rule for it: the run's SSH rule allowed only the Cloudflare Tunnel."
+                [[ $port22 -eq 1 ]] && rollback_say "If UFW has the Endlessh rule (endlessh tarpit), port 22 stays open to everyone: delete it once you have another way in (sudo ufw status numbered, then sudo ufw delete <number>)."
+            fi
+            [[ $PANEL_ACCESS == *cloudflared* ]] && rollback_say "A Cloudflare Tunnel SSH hostname still sends SSH to port ${SSH_PORT}: point it to port ${old_ports[0]} in Zero Trust."
+        fi
+        if [[ $ssh_files -eq 1 && -n $PANEL && ${PANEL,,} != none ]]; then
+            rollback_say "${PANEL_LABEL} loses its SSH access to this server: its port, root login and key go back to the old ones."
+        fi
+        # What this run may have changed outside the files it tracked, step by step
+        rollback_say "It does NOT undo:"
+        rollback_say "  - installed packages, and services it turned on or off"
+        rollback_say "  - UFW stays on, with every rule this run added (sudo ufw status numbered)"
+        rollback_say "  - the ufw-docker rules in /etc/ufw/after.rules and after6.rules"
+        [[ $endlessh -eq 1 && $drop_tarpit -eq 0 && $port22 -eq 0 ]] && rollback_say "  - the Endlessh rule that allows port 22 from anywhere"
+        rollback_step users && rollback_say "  - users it created or added to the sudo group"
+        rollback_step update 'timezone ' && rollback_say "  - the timezone"
+        rollback_step services && rollback_say "  - Ctrl-Alt-Del turned off"
+        [[ " ${MANUAL_TODO[*]} " == *"switch to headless mode"* ]] &&
+            rollback_say "  - the boot without the desktop (sudo systemctl set-default graphical.target)"
+        rollback_step laptop && rollback_say "  - sleep, suspend and hibernate turned off"
+        [[ " ${CHANGED_FILES[*]} ${NEW_FILES[*]} " == *" /etc/fstab "* ]] &&
+            rollback_say "  - the swap file /swapfile: it stays on until the next reboot (then sudo rm /swapfile)"
+        rollback_step sysctl && rollback_say "  - kernel settings (sysctl): the ones only this run set stay until the next reboot"
+        rollback_step auditd && rollback_say "  - the auditd rules: they stay loaded until the next reboot"
+        { rollback_step aide || rollback_step rkhunter; } && rollback_say "  - the AIDE and rkhunter baselines (their databases)"
+        [[ -n ${CROWDSEC_ENROLL_KEY:-} ]] && rollback_step ips ran && rollback_say "  - the CrowdSec console enrollment (app.crowdsec.net)"
+        rollback_step cloudflared && rollback_say "  - the cloudflared tunnel service it installed"
+        # Waits only on a terminal: a run from a script or a unit never blocks here.
+        echo "if [ -t 0 ]; then read -r -p 'Press Enter to roll back, or Ctrl-C to stop: ' _; fi"
         echo "set -x"
         for f in "${CHANGED_FILES[@]}"; do echo "cp -a '$BACKUP_DIR$f' '$f'"; done
         for f in "${NEW_FILES[@]}"; do echo "rm -f '$f'"; done
         echo "systemctl daemon-reload"
-        # SSH goes back to its old port, often 22, where this run put the endlessh tarpit
-        if [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]]; then
+        # SSH goes back to its old port, often 22, where Endlessh may be: this run's (its config is
+        # deleted above, so it would fall back to its own default port), or another run's.
+        if [[ $endlessh -eq 1 ]]; then
             echo "systemctl disable --now endlessh 2>/dev/null"
+        elif [[ $port22 -eq 1 ]]; then
+            echo "if systemctl is-active --quiet endlessh 2>/dev/null || systemctl is-enabled --quiet endlessh 2>/dev/null; then systemctl disable --now endlessh; fi"
         fi
         echo "sysctl --system >/dev/null"
+        if [[ -n $allow ]]; then
+            echo "if command -v ufw >/dev/null 2>&1; then"
+            printf '%s' "$allow"
+            # highest number first, as phase B of the SSH step does: a delete renumbers the rules after it
+            [[ $drop_tarpit -eq 1 ]] && cat <<'EOF'
+    for n in $(ufw status numbered 2>/dev/null | grep 'endlessh tarpit' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn); do ufw --force delete "$n"; done
+EOF
+            echo "fi"
+        fi
         echo "if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then systemctl stop ssh.service; systemctl reset-failed ssh.socket; systemctl restart ssh.socket; systemctl start ssh.service; else systemctl restart ssh 2>/dev/null || systemctl restart sshd; fi"
         echo "ufw reload 2>/dev/null"
         echo "systemctl try-restart crowdsec-firewall-bouncer 2>/dev/null   # a UFW reload drops its DOCKER-USER rule"
-        echo "# Packages installed and services disabled are NOT reverted automatically."
+        echo "set +x"
+        rollback_say "Rollback done. Test a new SSH login before you leave the console."
     } > "$rb"
     chmod 700 "$rb"
 }

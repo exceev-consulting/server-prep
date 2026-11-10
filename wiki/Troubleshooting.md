@@ -60,14 +60,14 @@ To restore only the SSH config by hand, from the console:
 sudo bash /var/lib/server-prep/backups/<date>/rollback-ssh.sh
 ```
 
-**Full rollback.** Each run writes `rollback.sh` next to its backups. It copies back every file the run changed and deletes the files it created. It does **not** remove packages or turn services back on. Read it before you run it:
+**Full rollback.** Each run writes `rollback.sh` next to its backups. It copies back every file the run changed and deletes the files it created. When SSH goes back to its old port, it first stops Endlessh if it holds port 22, allows that port in UFW from the same addresses as the run's SSH rule, and deletes the Endlessh rule (`endlessh tarpit`), which allowed port 22 from anywhere. When the run's only SSH source was the Cloudflare Tunnel, UFW gets no rule and the Endlessh rule stays: the script says so. It does **not** remove packages, undo service changes or turn UFW off: when it starts, it prints what it leaves in place (the timezone, the swap file, the boot target, the AIDE and rkhunter baselines...). Read it before you run it:
 
 ```bash
 sudo less /var/lib/server-prep/backups/<date>/rollback.sh
 ```
 
 > [!CAUTION]
-> Run `rollback.sh` **from the console only**, never over SSH. After a full run, SSH goes back to port 22, but endlessh still holds port 22 and the firewall still only allows the new port, so you can be locked out ([#71](https://github.com/exceev-consulting/server-prep/issues/71)).
+> Run `rollback.sh` **from the console only**, never over SSH: SSH restarts with its old port and settings, and your panel loses its SSH access. A `rollback.sh` written by v1.1.1 or older does not stop Endlessh or open the old port in UFW ([#71](https://github.com/exceev-consulting/server-prep/issues/71)), so with SSH going back to 22, run `sudo systemctl disable --now endlessh` first, then allow the port, for example `sudo ufw allow from 192.168.1.50 to any port 22 proto tcp`. After the rollback, delete the Endlessh rule, which leaves port 22 open to everyone: `sudo ufw status numbered`, then `sudo ufw delete <number>` for each `endlessh tarpit` line, highest number first.
 
 ## Reaching a new server
 

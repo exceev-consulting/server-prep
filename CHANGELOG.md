@@ -5,6 +5,15 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
+  which the run turned on, no longer allowed that port, and Endlessh still held port 22 when another run had installed
+  it. Before it restarts SSH, it now stops Endlessh whenever it is on and SSH goes back to 22, allows the old SSH port in
+  UFW from the same addresses as the run's SSH rule, and deletes the Endlessh rule, which would have left the old SSH
+  open to everyone on 22. It starts with a warning to run it from the console, not over SSH (on a terminal it waits for
+  Enter), and prints what it does not undo: packages and services, UFW and its rules, the ufw-docker rules, and, for
+  the steps that changed them, users and the sudo group, the timezone, Ctrl-Alt-Del, the boot target, sleep, the swap
+  file, kernel settings and auditd rules until the next reboot, the AIDE and rkhunter baselines, the CrowdSec console
+  enrollment and the cloudflared tunnel service.
 - With `PANEL=openship`, the daily AIDE check no longer fills with Openship's deploy changes: it now leaves out
   `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`,
   `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `csr` and `keys` under

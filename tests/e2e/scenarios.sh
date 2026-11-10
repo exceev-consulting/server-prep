@@ -17,7 +17,8 @@ prep-rerun|server-prep|Second run changes nothing
 openship-paths|server-prep|PANEL=openship: AIDE skips the deploy files, auditd watches the SSH keys
 reboot|reboot|Reboot: SSH comes back on 822 and the settings stay
 audit-rebooted|audit|Audit after the reboot: still 0 FAIL
-preconfig-after|preconfig|server-preconfig.sh --check on the finished server'
+preconfig-after|preconfig|server-preconfig.sh --check on the finished server
+rollback|ssh|rollback.sh from the console: SSH back on port 22 and allowed in UFW'
 SCENARIOS=()
 declare -A SC_TITLE_OF=() SC_GROUP_OF=()
 while IFS='|' read -r _id _group _title; do
@@ -565,6 +566,63 @@ sc_preconfig_after() {
     log_to < "$log" > /dev/null
     fails="$(preconfig_fails "$log")"
     [[ -z "$fails" ]]; check "--check reports no FAIL" $? "${fails//$'\n'/; }"
+    finish
+}
+
+# Last, because it undoes the run (issue #71). prep-run's rollback.sh puts SSH back on 22, where
+# Endlessh was, while UFW stays on: it must stop Endlessh, allow 22 from the admin address and
+# delete the Endlessh rule (22 from anywhere) before SSH restarts.
+sc_rollback() {
+    begin rollback
+    local rb out v rule st
+    # prep-run's rollback.sh, not the one of a later run, which would not touch SSH
+    rb="$(jq -r '.paths.rollback // empty' "$OUT/first-report.json" 2>/dev/null)"
+    if [[ -z $rb ]] || ! as_root "test -f $(printf '%q' "$rb")" < /dev/null; then
+        check "prep-run wrote a rollback.sh" 1 "${rb:-no paths.rollback in first-report.json}"
+        finish; return 1
+    fi
+    check "prep-run wrote a rollback.sh" 0
+    fetch_file "$rb" rollback-sh.txt && attach rollback-sh.txt
+    # As from the console: a unit of its own, not a child of the SSH session the restart can drop.
+    # Its stdin is not a terminal, so it does not wait for Enter.
+    as_root "mkdir -p /var/tmp/e2e && rm -f /var/tmp/e2e/rollback.out /var/tmp/e2e/rollback.trace &&
+        systemd-run --quiet --unit=e2e-rollback -p StandardOutput=file:/var/tmp/e2e/rollback.out \
+        -p StandardError=file:/var/tmp/e2e/rollback.trace /bin/bash $(printf '%q' "$rb")" < /dev/null 2>&1 | log_to > /dev/null
+    check "rollback.sh starts in a unit of its own (systemd-run)" "${PIPESTATUS[0]}"
+    # sshd leaves 822 and root's panel key goes back to what it was: go on as the cloud-init user on 22
+    CHANNEL=ops
+    wait_ssh ops ops "$P22" 300; st=$?
+    check "after the rollback, the cloud-init user logs in on port 22 again" "$st"
+    # When it did not run, go back to the panel channel on 822 for the checks and the log collection
+    [[ $st -eq 0 ]] || use_new_port
+    SSH_LIMIT=180 as_root 'for i in $(seq 1 60); do grep -qs "Rollback done" /var/tmp/e2e/rollback.out && exit 0; sleep 2; done; exit 1' < /dev/null
+    check "rollback.sh runs to its end" $?
+    fetch_file /var/tmp/e2e/rollback.out rollback-out.log && attach rollback-out.log
+    fetch_file /var/tmp/e2e/rollback.trace rollback-trace.log && attach rollback-trace.log
+    head -n 3 "$OUT/rollback-out.log" 2>/dev/null | grep -qF 'from the console'
+    check "rollback.sh starts with the warning to run it from the console" $?
+    grep -qF 'does NOT undo' "$OUT/rollback-out.log" 2>/dev/null
+    check "rollback.sh prints what it does not undo" $?
+    out="$(as_root "ss -Hltnp 'sport = :22'" < /dev/null 2>&1)"
+    printf 'ss -Hltnp sport = :22:\n%s\n' "$out" >> "$OUT/$SC_ID.log"
+    [[ -n $out && $out != *endlessh* ]]
+    check "SSH, not Endlessh, listens on port 22" $? "${out:0:300}"
+    if as_root 'systemctl cat endlessh.service >/dev/null 2>&1' < /dev/null; then
+        v="$(as_root 'systemctl is-enabled endlessh; systemctl is-active endlessh' < /dev/null 2>/dev/null | paste -sd' ')"
+        check_eq "Endlessh is stopped and disabled" "$v" "disabled inactive"
+    fi
+    out="$(as_root 'ufw status' < /dev/null 2>&1)"
+    printf 'ufw status:\n%s\n' "$out" >> "$OUT/$SC_ID.log"
+    grep -q '^Status: active' <<<"$out"
+    check "UFW is still on" $?
+    # The rollback's own rule: phase B deleted the run's temporary rules, and Endlessh's rule
+    # from anywhere must not count.
+    rule="^22/tcp +ALLOW +$VM_HOST_IP +# server-prep-temp"   # each dot also matches itself
+    grep -qE "$rule" <<<"$out"
+    check "UFW allows port 22 from the admin address with the rollback's own rule" $? "$(grep '^22' <<<"$out" | paste -sd';')"
+    # Endlessh's rule allowed 22 from anywhere: left in place, it would open the old SSH to everyone
+    ! grep -qF 'endlessh tarpit' <<<"$out"
+    check "UFW no longer has the Endlessh rule, which allowed port 22 from anywhere" $? "$(grep 'endlessh' <<<"$out" | paste -sd';')"
     finish
 }
 
