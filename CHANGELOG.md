@@ -19,6 +19,11 @@ Highlights of each release. The full list of merged pull requests is in each
   format changes; the other keys do not change. The format is described in [docs/json-output.md](docs/json-output.md):
   every field, what PASS, WARN, FAIL and INFO mean, the score formula, the exit codes and every check id, with a JSON
   Schema in `docs/schemas/server-audit.schema.json`. `./server-audit.sh --help` links to it.
+- Fix: on a server set to another language (for example Ubuntu installed in French), `server-audit.sh` reported UFW as
+  inactive (FAIL), counted every port as reachable from the internet and found no swap, because `ufw` and `free`
+  print those lines in that language. The audit now reads every command's output in English. In `server-prep.sh`, the
+  firewall step no longer says CHANGED on every re-run there, the SSH test hint names the right address again, and
+  the report shows the firewall status in English, like the audit.
 - Each `server-prep.sh` run, applied or dry run, also writes the report as JSON next to the Markdown one
   (`server-prep-report-<host>-<date>.json`, root only, with a copy in your home). An agent or a script can read from it
   which steps changed or failed, the audit before and after, the files changed and what is still to do. Step results use

@@ -57,7 +57,8 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    - `consistency`: `scripts/check-consistency.sh`, once that file exists
 
    `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
-   checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`),
+   checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`;
+   `audit-locale.sh` runs the audit's ufw and free checks on a server set to French, with fake ufw and free),
    `preconfig-json.sh`, `validate-config.sh`, `upgrade.sh`, `skills-sync.sh`, `report-json.sh`, `labels.sh`
    (`.github/labels.yml`, then broken copies of it) and `check-files.sh` (the committed-file guard on this
    repository, then on temp repos).
