@@ -218,6 +218,61 @@ third_party_uncovered() {
     printf '%s' "${out[*]}"
 }
 
+# repo_status TEXT: reads `apt-cache policy PKG` on stdin and prints where the installed version comes from:
+# "pinned" when a source whose line contains TEXT offers it and a pin gives it priority 900, "unpinned" when such
+# a source offers it at another priority, "other" when none does, nothing when PKG is not installed. apt shows a
+# package pin (Package: crowdsec*) on the version line, never on the source lines below it.
+repo_status() {
+    awk -v t="$1" '
+        /^ \*\*\* / { inst = 1; prio = $3; next }
+        /^     [^ ]/ { inst = 0; next }
+        inst && index($0, t) { from = 1 }
+        END {
+            if (prio == "") exit
+            if (!from) print "other"; else if (prio == 900) print "pinned"; else print "unpinned"
+        }'
+}
+
+# repo_keys TEXT [ROOT]: the signed-by value of each apt source entry for TEXT (a repository URL without its
+# scheme), one per line: a key file, "-" for an entry without signed-by (any key apt trusts can sign it) or
+# "inline" for a key written in a .sources file. Reads one-line .list files and deb822 .sources files, and
+# skips commented and disabled entries. ROOT (tests) replaces /.
+repo_keys() {
+    local text="$1" root="${2:-}" f
+    for f in "$root"/etc/apt/sources.list "$root"/etc/apt/sources.list.d/*.list; do
+        [[ -f "$f" ]] || continue
+        awk -v t="$text" '
+            /^[[:space:]]*deb[[:space:]]/ && index($0, t) {
+                k = "-"
+                if (match($0, /signed-by=[^ \t]+/)) { k = substr($0, RSTART + 10, RLENGTH - 10); sub(/].*/, "", k) }
+                n = split(k, keys, ","); for (i = 1; i <= n; i++) print keys[i]
+            }' "$f"
+    done
+    for f in "$root"/etc/apt/sources.list.d/*.sources; do
+        [[ -f "$f" ]] || continue
+        awk -v t="$text" '
+            function stanza_end() { if (hit && on) print (key == "" ? "-" : key); hit = 0; key = ""; on = 1 }
+            BEGIN { on = 1 }
+            /^[[:space:]]*$/ { stanza_end(); next }
+            /^#/ { next }
+            tolower($0) ~ /^uris:/ { if (index($0, t)) hit = 1; next }
+            tolower($0) ~ /^signed-by:/ { key = $0; sub(/^[^:]*:[[:space:]]*/, "", key); sub(/[[:space:]].*/, "", key)
+                                          if (key == "") key = "inline"; next }
+            tolower($0) ~ /^enabled:[[:space:]]*no/ { on = 0 }
+            END { stanza_end() }' "$f"
+    done
+}
+
+# key_fpr GNUPGHOME FILE: the fingerprint of the key in FILE, or nothing when FILE holds no key, more than one
+# primary key or any secret key material: the test server-prep.sh's apt_repo_key makes before it trusts a key.
+# GNUPGHOME is a throwaway folder, so /root/.gnupg is never touched.
+key_fpr() {
+    local out
+    out=$(GNUPGHOME="$1" gpg --batch --no-autostart --show-keys --with-fingerprint --with-colons "$2" 2>/dev/null)
+    awk -F: '$1=="pub" || $1=="sec" {n++} $1=="sec" || $1=="ssb" {s=1} $1=="fpr" && f=="" {f=$10}
+             END {if (n==1 && !s) print f}' <<<"$out"
+}
+
 # ----------------------------------------------------------------------------
 # Header / system info
 # ----------------------------------------------------------------------------
@@ -364,6 +419,59 @@ if have apt-get; then
             result upd.third_party WARN "Third-party tool updates" "${TP_MISSING}: security fixes are not installed automatically (repository not in unattended-upgrades)$(need_root_note)" \
                 "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes"
         fi
+    fi
+
+    # The same tools (and Docker CE) come from their vendor's repository, pinned at 900 so an Ubuntu Pro (ESM) or
+    # distro build cannot replace them, and that repository is signed by a key with the fingerprint the vendor
+    # publishes (server-prep checks it; a guide's curl | gpg --dearmor does not). One line per tool:
+    # package, text of its apt source, key fingerprint, server-prep step.
+    REPO_SPECS=(
+        "docker-ce download.docker.com/linux/ 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 docker"
+        "crowdsec packagecloud.io/crowdsec/crowdsec/ 6A89E3C2303A901A889971D3376ED5326E93CD0C ips"
+        "cloudflared pkg.cloudflare.com/cloudflared CC94B39C77AE7342A68B89628A682D308D4E5E73 cloudflared"
+        "telegraf repos.influxdata.com/ 24C975CBA61A024EE1B631787C3D57159FC2F927 telegraf"
+    )
+    REPO_FROM=(); REPO_BAD=(); REPO_STEPS=()
+    REPO_HOME=""; have gpg && REPO_HOME=$(mktemp -d 2>/dev/null)
+    repo_gpg=""; [[ -n "$REPO_HOME" ]] || repo_gpg=" (keys not checked: gpg is missing or no temp folder)"
+    for spec in "${REPO_SPECS[@]}"; do
+        read -r rp rtext rfpr rstep <<<"$spec"
+        dpkg-query -W -f='${Status}' "$rp" 2>/dev/null | grep -q "ok installed" || continue
+        REPO_FROM+=("$rp")
+        rprob=()
+        case "$(apt-cache policy "$rp" 2>/dev/null | repo_status "$rtext")" in
+            pinned) ;;
+            unpinned) rprob+=("not pinned at 900") ;;
+            *) rprob+=("not from ${rtext%%/*}") ;;
+        esac
+        while read -r rkey; do
+            case "$rkey" in
+                '') ;;
+                -) rprob+=("a source without signed-by") ;;
+                inline) rprob+=("a key written in its .sources file, not checked") ;;
+                *) if [[ ! -s "$rkey" ]]; then
+                       rprob+=("key ${rkey} missing")
+                   elif [[ -n "$REPO_HOME" && "$(key_fpr "$REPO_HOME" "$rkey")" != "$rfpr" ]]; then
+                       rprob+=("key ${rkey} is not the published one")
+                   fi ;;
+            esac
+        done < <(repo_keys "$rtext" | sort -u)
+        if [[ ${#rprob[@]} -gt 0 ]]; then
+            rmsg=""; for rx in "${rprob[@]}"; do rmsg+="${rmsg:+, }${rx}"; done
+            REPO_BAD+=("${rp}: ${rmsg}")
+            [[ " ${REPO_STEPS[*]} " == *" ${rstep} "* ]] || REPO_STEPS+=("$rstep")
+        fi
+    done
+    [[ -n "$REPO_HOME" ]] && rm -rf "$REPO_HOME"
+    if [[ ${#REPO_FROM[@]} -eq 0 ]]; then
+        result upd.repo_keys INFO "Third-party repositories" "None of Docker CE, CrowdSec, cloudflared, Telegraf is installed"
+    elif [[ ${#REPO_BAD[@]} -eq 0 ]]; then
+        result upd.repo_keys PASS "Third-party repositories" "${REPO_FROM[*]}: from the vendor's repository, pinned at 900, key with the published fingerprint${repo_gpg}"
+    else
+        rmsg=""; for rx in "${REPO_BAD[@]}"; do rmsg+="${rmsg:+; }${rx}"; done
+        rsteps=""; for rx in "${REPO_STEPS[@]}"; do rsteps+="${rsteps:+,}${rx}"; done
+        result upd.repo_keys WARN "Third-party repositories" "${rmsg}${repo_gpg}" \
+            "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ${rsteps} --yes (checks the key, pins the repository and replaces a distro CrowdSec; a Docker CE or cloudflared installed from elsewhere is left as it is)"
     fi
 fi
 

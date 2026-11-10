@@ -35,7 +35,7 @@
       "name": "docker",
       "title": "Docker CE",
       "gate": "INSTALL_DOCKER",
-      "details": "Docker CE from download.docker.com if missing, container log rotation"
+      "details": "Docker CE from the official download.docker.com repo if missing (key fingerprint checked, pinned at 900; a Docker CE already installed from that repo gets the same check), container log rotation"
     },
     {
       "name": "firewall",
@@ -53,7 +53,7 @@
       "name": "ips",
       "title": "Intrusion prevention",
       "gate": null,
-      "details": "fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER), panel/admin IPs whitelisted, LAPI moved off 8080"
+      "details": "fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted, LAPI moved off 8080"
     },
     {
       "name": "unattended",
@@ -119,7 +119,7 @@
       "name": "telegraf",
       "title": "Telegraf (metrics agent)",
       "gate": "INSTALL_TELEGRAF",
-      "details": "Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md))"
+      "details": "Telegraf metrics agent from the official InfluxData repo (key fingerprint checked, pinned at 900); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md))"
     },
     {
       "name": "telegram",
@@ -131,7 +131,7 @@
       "name": "cloudflared",
       "title": "Cloudflare Tunnel",
       "gate": null,
-      "details": "install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md)"
+      "details": "install the Cloudflare Tunnel connector from Cloudflare's official repo (key fingerprint checked, pinned at 900) with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md)"
     },
     {
       "name": "suid",
@@ -717,7 +717,7 @@
     }
   ],
   "audit": {
-    "checks": 63,
+    "checks": 64,
     "sections": [
       {
         "key": "system",
@@ -788,6 +788,15 @@
           {
             "id": "upd.third_party",
             "title": "Third-party tool updates",
+            "statuses": [
+              "INFO",
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "upd.repo_keys",
+            "title": "Third-party repositories",
             "statuses": [
               "INFO",
               "PASS",

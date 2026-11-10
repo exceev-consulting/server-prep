@@ -120,10 +120,10 @@ Both work the same way. Only a few details change:
 |---|---|
 | `update` | apt full-upgrade, base tools (curl, git, jq, ufw, chrony, vim...), timezone |
 | `users` | admin user + your SSH key; the panel's key for root, restricted with `from="..."` to the panel's sources |
-| `docker` | Docker CE from download.docker.com if missing, container log rotation |
+| `docker` | Docker CE from the official download.docker.com repo if missing (key fingerprint checked, pinned at 900; a Docker CE already installed from that repo gets the same check), container log rotation |
 | `firewall` | UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched) |
 | `ssh` | port 822, keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works |
-| `ips` | fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER), panel/admin IPs whitelisted, LAPI moved off 8080 |
+| `ips` | fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted, LAPI moved off 8080 |
 | `unattended` | daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot |
 | `sysctl` | ~30 kernel/network parameters, rare protocols blacklisted (Docker/Tailscale compatible) |
 | `auth` | sudo log file (`/var/log/sudo.log`), pwquality minlen 12 + complexity, password dictionary built (`cracklib-runtime`) so `passwd` works |
@@ -133,9 +133,9 @@ Both work the same way. Only a few details change:
 | `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands; with `PANEL=openship`, Openship's SSH key folders where they exist |
 | `rkhunter` / `aide` | rootkit scan + file-integrity baseline, daily; with `PANEL=openship`, AIDE leaves out Openship's deploy files (`/var/lib/openship` except its SSH keys, the OpenResty configs, certbot's certificates) |
 | `endlessh` | SSH tarpit on port 22 once SSH has moved |
-| `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md)) |
+| `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked, pinned at 900); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md)) |
 | `telegram` | alert on every SSH login (except ignored users, e.g. the panel's root) + daily report at 09:00 |
-| `cloudflared` | install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) |
+| `cloudflared` | install the Cloudflare Tunnel connector from Cloudflare's official repo (key fingerprint checked, pinned at 900) with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md) |
 | `suid` | list SUID binaries outside standard paths (review only) |
 
 Where things go (root only): the report in `/root/server-prep-reports/` as Markdown and as JSON for scripts and agents
