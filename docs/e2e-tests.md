@@ -11,9 +11,9 @@ Why VMs and not containers: [docs/decisions/0002-e2e-test-platform.md](decisions
 
 | Report | Address |
 |---|---|
-| Last run on `main` | <https://exceev-consulting.github.io/server-prep/e2e/main/> |
-| A pull request | `https://exceev-consulting.github.io/server-prep/e2e/pr-<number>/` |
-| All reports | <https://exceev-consulting.github.io/server-prep/e2e/> |
+| Last run on `main` | <https://server-prep.exceev.com/e2e/main/> |
+| A pull request | `https://server-prep.exceev.com/e2e/pr-<number>/` |
+| All reports | <https://server-prep.exceev.com/e2e/> |
 
 - Every pull request that changes a script or the tests runs them. A comment on the pull request gives the link
   and the result. A pull request from a fork gets a report only when its author is an owner, member or

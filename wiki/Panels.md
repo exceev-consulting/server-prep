@@ -147,4 +147,4 @@ Until these land, if you try Openship:
 
 Any panel that logs in over SSH as root with a key should work: set `PANEL` to its name and follow the steps above. Code for one panel only is guarded by `[[ ${PANEL,,} == <name> ]]` in the scripts, so a new panel never changes what the others get. To add real support for a panel, read [CONTRIBUTING.md](https://github.com/exceev-consulting/server-prep/blob/main/CONTRIBUTING.md) and open an issue first. Questions about a panel go to [Discussions](https://github.com/exceev-consulting/server-prep/discussions).
 
-You can also see what each panel and access route opens, step by step, in the [setup console](https://exceev-consulting.github.io/server-prep/).
+You can also see what each panel and access route opens, step by step, in the [setup console](https://server-prep.exceev.com/).

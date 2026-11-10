@@ -28,4 +28,4 @@ server-prep runs the same way on a cloud VPS, a dedicated server and a laptop or
 - Expect a few extra WARN lines in the audit: a desktop runs more services than a server.
 - Self-hosted GitHub runners on the same machine? Cap their memory with [`extras/github-runners/limit-runners-memory.sh`](https://github.com/exceev-consulting/server-prep/blob/main/extras/github-runners/limit-runners-memory.sh).
 
-See the [setup console](https://exceev-consulting.github.io/server-prep/) to compare the commands for each machine type.
+See the [setup console](https://server-prep.exceev.com/) to compare the commands for each machine type.
