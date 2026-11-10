@@ -40,8 +40,9 @@ Highlights of each release. The full list of merged pull requests is in each
   allowed from" row now lists the sources on a run without the users and ssh steps too, as the JSON does.
 - The SSH safety check now warns when `ADMIN_IPS` is empty, the firewall is on and SSH is allowed only from the panel's
   IP (`PANEL_ACCESS=public` with `PANEL_IP`) or only through the Cloudflare tunnel (`PANEL_ACCESS=cloudflared`). The
-  firewall then blocks the test command with the local IP from your machine, so it says to test from the panel's host or
-  through the tunnel instead, or to add your IP to `ADMIN_IPS`. The test command itself is unchanged.
+  firewall then blocks the test command with the local IP from your machine, so it says to test from the panel's host
+  as root with the panel key or through the tunnel with `cloudflared access ssh` instead, or to add your IP to
+  `ADMIN_IPS` and re-run the firewall step. The test command itself is unchanged.
 - **Security:** CrowdSec, cloudflared, Telegraf and Tailscale now get their security fixes automatically. They come from
   their own repositories, which unattended-upgrades skipped, so a fix waited until someone upgraded by hand. The
   `unattended` step adds their repositories (new setting `THIRD_PARTY_AUTO_UPDATE`, `yes` by default), and the new audit
