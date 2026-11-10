@@ -381,6 +381,21 @@ run_rb 'no panel'
 grep -qF 'loses its SSH access' "$tmp/stdout" && fail 'PANEL=none: says a panel loses SSH'
 pass 'PANEL=none: no panel warning'
 
+# --- a run that changed only another sshd drop-in: its Port line commented out (issue #72) -------------
+setup
+CHANGED_FILES=(/etc/ssh/sshd_config.d/50-cloud-init.conf)
+NEW_FILES=()
+generate 'only a drop-in'
+run_rb 'only a drop-in'
+called "cp -a $BACKUP_DIR/etc/ssh/sshd_config.d/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf" ||
+    fail 'only a drop-in: the drop-in is not copied back'
+want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep-temp admin
+ufw allow from 203.0.113.10 to any port 22 proto tcp comment server-prep-temp panel
+ufw allow in on tailscale0 to any port 22 proto tcp comment server-prep-temp tailscale'
+[[ "$(rules)" == "$want" ]] || fail "only a drop-in: UFW rules for port 22: got '$(rules)', want '$want'"
+grep -qxF 'SSH goes back to port(s) 22.' "$tmp/stdout" || fail 'only a drop-in: the output does not name the restored SSH port'
+pass 'a run that changed only another sshd drop-in: copied back, port 22 allowed in UFW'
+
 # --- a dry run writes no rollback.sh -------------------------------------------------------------------
 setup
 DRY_RUN=1
