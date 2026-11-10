@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/lint.yml/badge.svg" alt="lint"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/exceev-consulting/server-prep"><img src="https://api.scorecard.dev/projects/github.com/exceev-consulting/server-prep/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://exceev-consulting.github.io/server-prep/e2e/main/"><img src="https://github.com/exceev-consulting/server-prep/actions/workflows/e2e.yml/badge.svg?branch=main" alt="end-to-end tests"></a>
   <a href="https://github.com/exceev-consulting/server-prep/releases/latest"><img src="https://img.shields.io/github/v/release/exceev-consulting/server-prep" alt="latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0B1117.svg" alt="MIT license"></a>
