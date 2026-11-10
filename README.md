@@ -128,8 +128,8 @@ Both work the same way. Only a few details change:
 | `services` | disable avahi, cups, bluetooth, ModemManager; mask Ctrl-Alt-Del; optional headless boot |
 | `laptop` | laptop used as a server: ignore lid close, mask sleep/suspend |
 | `logging` | persistent journald (1 GB cap), swap file if none |
-| `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands |
-| `rkhunter` / `aide` | rootkit scan + file-integrity baseline, daily |
+| `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands; with `PANEL=openship`, Openship's SSH key folders where they exist |
+| `rkhunter` / `aide` | rootkit scan + file-integrity baseline, daily; with `PANEL=openship`, AIDE leaves out Openship's deploy files (`/var/lib/openship` except its SSH keys, the OpenResty configs, certbot's certificates) |
 | `endlessh` | SSH tarpit on port 22 once SSH has moved |
 | `telegraf` | Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md)) |
 | `telegram` | alert on every SSH login (except ignored users, e.g. the panel's root) + daily report at 09:00 |
