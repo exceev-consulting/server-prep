@@ -5,6 +5,14 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- The saved answers (`/etc/server-prep/server-prep.conf`) now keep `LAPTOP_MODE`, so a re-run with `--config` keeps
+  laptop server mode on a machine without a battery (an older saved file gets the line at its next run). The file
+  overrides the environment, so the audit's `sys.laptop` fix hint now says to set `LAPTOP_MODE=yes` in it instead of
+  using `sudo env LAPTOP_MODE=yes`. `server-prep.conf.example` now lists `AUDIT_SCRIPT` (empty = found automatically).
+  The new `scripts/check-consistency.sh` fails when any of these drift apart: the step list, the `run_step` calls, the
+  step functions, the README step table, the config example, the saved answers, the plan summary, the secret prompts
+  and the audit checks (each step's check is marked with a `# step:` comment). `scripts/check.sh` and
+  `tests/exit-status.sh` run it (#35).
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,

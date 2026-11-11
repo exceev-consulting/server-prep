@@ -553,3 +553,6 @@ bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
 # ... and the committed-file guard (issue #40): on this repository first, so CI fails on a tracked
 # report, filled config or key, or an IPv4 address that is not an example; then on temp repos.
 bash "$SCRIPT_DIR/tests/check-files.sh" || exit 1
+# ... and the consistency check (issue #35): steps, README step table, config example, saved answers,
+# questions and audit checks agree on this repository, then broken copies fail.
+bash "$SCRIPT_DIR/tests/check-consistency.sh" || exit 1

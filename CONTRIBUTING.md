@@ -54,14 +54,17 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    - `data`: `scripts/gen-data.sh --check`, the setup console's data matches the scripts
    - `tokens`: `scripts/check-tokens.sh`, the design token copies match `site/tokens.css`
    - `exit-status`, `swap`, `e2e-report`, `e2e-pages`: the quick tests in `tests/`, with fake commands
-   - `consistency`: `scripts/check-consistency.sh`, once that file exists
+   - `consistency`: `scripts/check-consistency.sh`: ALL_STEPS, `--list-steps`, `main()` and the step functions, the
+     README step table, `server-prep.conf.example`, the saved answers, the plan summary, the secret prompts and the
+     audit's `# step:` comments agree
 
    `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
    checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`;
    `audit-locale.sh` runs the audit's ufw and free checks on a server set to French, with fake ufw and free),
    `preconfig-json.sh`, `validate-config.sh`, `upgrade.sh`, `skills-sync.sh`, `report-json.sh`, `labels.sh`
-   (`.github/labels.yml`, then broken copies of it) and `check-files.sh` (the committed-file guard on this
-   repository, then on temp repos).
+   (`.github/labels.yml`, then broken copies of it), `check-files.sh` (the committed-file guard on this
+   repository, then on temp repos) and `check-consistency.sh` (the consistency check on this repository, then on
+   broken copies; `./scripts/check.sh` therefore runs it twice, which takes well under a second).
    The `lint` section uses ShellCheck 0.11.0: `scripts/check.sh` downloads it once to
    `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its SHA-256 on every run, and stops when the checksum does not
    match. When a tool is missing, the sections that need it show SKIP on your machine: `data` and `e2e-report` need

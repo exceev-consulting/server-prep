@@ -51,6 +51,7 @@ Run these from the repo root. `scripts/check.sh` runs the checks of CI (`.github
 ./scripts/check.sh --list       # the sections
 ./scripts/check.sh --only lint  # one section
 scripts/check-files.sh          # after git add: no report, filled config, key or CLAUDE.local.md is tracked; every IPv4 is an example
+scripts/check-consistency.sh    # steps, README step table, config example, saved answers, questions and audit checks agree
 ./server-prep.sh --list-steps   # the step names, in run order
 ```
 
@@ -81,11 +82,12 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
   - Add a `signed-by` source.
   - Add an apt **pin at priority 900**. Ubuntu Pro ESM (priority 510) otherwise wins with old versions.
 - **Panel-agnostic:** the panel is `PANEL` / `PANEL_PUBKEY` / `PANEL_ACCESS` / `PANEL_IP` (old `COOLIFY_*` names are mapped at load). Messages use `${PANEL_LABEL}`. Panel-specific behaviour must be guarded by `[[ ${PANEL,,} == <name> ]]`.
-- **Changes need matching updates in:** `server-prep.conf.example`, the README step table, and an audit check (INFO when optional).
+- **Changes need matching updates in:** `server-prep.conf.example`, the README step table, and an audit check (INFO when optional). `scripts/check-consistency.sh` checks them.
 - **Checks after editing:** every check in *Commands* passes. When and why:
   - ShellCheck: CI runs it on every push and PR, so keep it clean. `scripts/check.sh` runs the pinned ShellCheck (0.11.0). It downloads it once into `${XDG_CACHE_HOME:-~/.cache}/server-prep/` and checks its SHA-256 on every run. Update the version and the four hashes together.
   - Dry run: after changing a step, ask the operator to run it, since it needs sudo.
   - Site data: `scripts/gen-data.sh` after changing a step, a setting, an audit check or those README tables. CI runs `scripts/gen-data.sh --check`.
+  - Consistency: `scripts/check-consistency.sh` after changing a step, a setting, a question, the README step table or an audit check. It fails when ALL_STEPS, `--list-steps`, the `run_step` lines of `main()` and the `step_<name>()` functions disagree, a step has no README row, a setting has no key in `server-prep.conf.example` or is missing from `save_answers()` (secrets excepted, and never saved), an `INSTALL_*` or `*_ENABLE` question is missing from the plan, or a step has no audit check. A secret is a name in the `# secrets (...) are not saved here` comment of `save_answers()`: it must also be in the secret list of `validate_values()` and be asked with `ask_secret`, and a name asked with `ask_secret`, or a setting whose name looks like a token or key, must be in that comment. Each step needs a `# step: <name>` comment right above one of its audit checks, and every entry of its `NOT_SAVED`, `NOT_SECRET` and `NO_AUDIT_CHECK` allowlists needs a reason. `bash tests/check-consistency.sh` runs it on the repository, then on broken copies; `tests/exit-status.sh` runs that test, so CI covers it.
   - Design tokens: `scripts/check-tokens.sh` after changing `site/tokens.css`, a copy of it (the e2e report's `report.css`) or the brand page's colour ramps (2.2 and 2.4). Other values on that page are checked by eye. CI runs it.
   - Exit status: `bash tests/exit-status.sh` checks argument validation and the real main function with host-changing calls stubbed out.
   - Audit matchers: `bash tests/audit-docker-user.sh` checks the audit's DOCKER-USER matcher on sample `iptables -S` output, `bash tests/audit-logind-lid.sh` its lid-switch parser (`lid_ignored`, used by `sys.laptop`) on sample `systemd-analyze cat-config` output, and `bash tests/audit-ufw-ports.sh` the UFW port matcher (`ufw_port_access`) on sample `ufw status` output (no root). `tests/exit-status.sh` runs all three, so CI covers them.
@@ -102,7 +104,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
 ## Definition of done
 
 - **New or changed step:** every item of the `add-step` skill checklist (`.claude/skills/add-step/SKILL.md`, items 1-12; `/add-step` in Claude Code, `$add-step` in Codex), the *Commands* checks pass, and a CHANGELOG line.
-- **Audit check:** `result <cat>.<name> PASS|WARN|FAIL|INFO "Title" "detail" "fix hint"`, where `<cat>` is the prefix the section already uses (`sys`, `ssh`, `ips`, `acc`, `mon`...). The id must match `[a-z0-9_]+\.[a-z0-9_]+` so `scripts/gen-data.sh` finds it. Use INFO when the feature is optional. Never rename an id or change the TSV columns (id, status, title, message) that `run_audit()` and the before/after report in `server-prep.sh` read. List the id in `docs/json-output.md`, in its category's table (`tests/audit-json.sh` fails otherwise). Regenerate the site data.
+- **Audit check:** `result <cat>.<name> PASS|WARN|FAIL|INFO "Title" "detail" "fix hint"`, where `<cat>` is the prefix the section already uses (`sys`, `ssh`, `ips`, `acc`, `mon`...). The id must match `[a-z0-9_]+\.[a-z0-9_]+` so `scripts/gen-data.sh` finds it. Use INFO when the feature is optional. Never rename an id or change the TSV columns (id, status, title, message) that `run_audit()` and the before/after report in `server-prep.sh` read. List the id in `docs/json-output.md`, in its category's table (`tests/audit-json.sh` fails otherwise). When it checks a step's work, put `# step: <name>` on the line above it. Regenerate the site data.
 - **Doc:** examples use `example.com`, `web-01` and `192.168.1.50`, never real client names, domains, IPs or hostnames. Add a link in the README `## Documentation` table, then run `scripts/gen-data.sh` (that table feeds the setup console). The style rules are in `docs/AGENTS.md`.
 - **Code for one panel only:** behind `[[ ${PANEL,,} == <name> ]]` (see Panel-agnostic). A new panel gets its display name in `set_panel_label()` in `server-prep.sh`.
 

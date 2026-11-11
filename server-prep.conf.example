@@ -60,4 +60,5 @@ TELEGRAM_IGNORE_USERS="root"             # the panel logs in as root all the tim
 TIMEZONE="Europe/Paris"
 SWAP_SIZE="2G"                           # created only if the server has no swap
 PTRACE_SCOPE="2"                         # 3 = stricter, cannot be lowered until reboot
+AUDIT_SCRIPT=""                          # path to server-audit.sh; empty = the one next to server-prep.sh, else /usr/local/sbin/server-audit
 AUDIT_URL=""                             # raw URL of server-audit.sh for single-file installs
