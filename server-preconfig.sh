@@ -17,6 +17,11 @@ APT_OPTS=(-y -q -o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o
 BACKUP_DIR="/var/lib/server-prep/backups/preconfig-$(date +%Y%m%d_%H%M%S)"
 NETFILE=""; NET_TOUCHED=(); WARNS=0; FAILS=0
 P_ID=(); P_STATUS=(); P_MSG=(); P_FIX=()   # check results (chk), printed by --check --json
+# What the hostname step reads and writes. Never taken from the environment: only tests change them.
+# The drop-in's name sorts after the usual cloud.cfg.d files (99-installer.cfg, 99_<provider>.cfg,
+# curtin-*.cfg): cloud-init reads them in name order and the last one wins.
+HOSTS_FILE=/etc/hosts; CLOUD_DIR=/etc/cloud; CLOUD_DROPIN=$CLOUD_DIR/cloud.cfg.d/zz-server-preconfig.cfg
+PROC_CMDLINE=/proc/cmdline
 
 usage() {
     sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
@@ -195,7 +200,15 @@ questions() {
     [[ -n $ADMIN ]] || ADMIN=$(default_admin)
     ask ADMIN "Admin user (gets sudo)" "$ADMIN"
     ask GH_KEYS "GitHub login whose public SSH keys to add (Enter = skip)" "$GH_KEYS"
-    ask HOSTNAME_NEW "Hostname" "${HOSTNAME_NEW:-$(hostname)}"
+    if [[ -z $HOSTNAME_NEW ]]; then
+        # The default must pass step_hostname's check: 'Web-01' or 'vps123.example.net' would FAIL as they are.
+        local hn; hn=$(hostname)
+        HOSTNAME_NEW=$(short_hostname "$hn")
+        if [[ $HOSTNAME_NEW != "$hn" ]]; then
+            info "current hostname '$hn': the default is '$HOSTNAME_NEW' (short name, lowercase)"
+        fi
+    fi
+    ask HOSTNAME_NEW "Hostname" "$HOSTNAME_NEW"
     if [[ $NET_MANAGER == ifupdown ]]; then
         local mode def=keep
         mode=$(iface_mode)
@@ -215,10 +228,21 @@ questions() {
 
 plan_and_confirm() {
     title "Plan"
+    # The same tests as step_hostname, so the plan only shows what the step changes.
+    local hosts hd hl cl="" over
+    hosts=$(cat "$HOSTS_FILE" 2>/dev/null)
+    hd=$(hosts_domain "$(hostname)" <<<"$hosts")
+    if hosts_is_set "$HOSTNAME_NEW" "$hd" <<<"$hosts"; then hl="/etc/hosts unchanged"
+    else hl="+ /etc/hosts: 127.0.1.1 ${hd:+$HOSTNAME_NEW.$hd }$HOSTNAME_NEW"; fi
+    if [[ -n $(cloud_init_undo) ]]; then
+        over=$(cloud_init_undo "$CLOUD_DROPIN")
+        if [[ -z $over ]]; then cl="; cloud-init drop-in keeps them at boot"
+        else cl="; cloud-init drop-in, but a file read after it still wins: $over"; fi
+    fi
     cat <<EOF
   Packages ...... openssh-server sudo curl ca-certificates jq iputils-ping (missing ones only)
   Admin ......... ${ADMIN:-none} -> sudo group${GH_KEYS:+, SSH keys from github.com/$GH_KEYS}
-  Hostname ...... $(hostname) -> $HOSTNAME_NEW (+ /etc/hosts)
+  Hostname ...... $(hostname) -> $HOSTNAME_NEW ($hl$cl)
   Network ....... $IFACE: $([[ $STATIC_IP == keep ]] && echo "unchanged ($NET_MANAGER)" || echo "$STATIC_IP${GATEWAY:+ via $GATEWAY}")
   Power ......... sleep/suspend/hibernate masked, logind ignores idle
   Tailscale ..... $DO_TAILSCALE
@@ -276,19 +300,144 @@ step_user() {
     return 0
 }
 
+# Hostname helpers. They only read (stdin, or the files under $CLOUD_DIR) and print, so tests run them
+# on fixtures. POSIX awk only: Debian and Ubuntu use mawk by default.
+short_hostname() {   # short_hostname NAME: the part before the first dot, lowercase (Web-01.example.com -> web-01)
+    local h=${1%%.*}
+    printf '%s\n' "${h,,}"
+}
+
+hosts_has_name() {   # hosts_has_name NAME < hosts: true when NAME is one of the names of a 127.0.1.1 line
+    awk -v n="$1" '
+        { sub(/#.*/, "") }
+        $1 == "127.0.1.1" { for (i = 2; i <= NF; i++) if ($i == n) f = 1 }
+        END { exit !f }'
+}
+
+hosts_domain() {   # hosts_domain CUR < hosts: the domain to keep on the 127.0.1.1 line, nothing when there is none
+    # The first name with a dot on the first 127.0.1.1 line (127.0.1.1 web-01.example.com web-01), else
+    # the current hostname CUR when it has one (vps123.example.net).
+    local d
+    d=$(awk '
+        { sub(/#.*/, "") }
+        $1 == "127.0.1.1" {
+            for (i = 2; i <= NF; i++) if (index($i, ".")) { print substr($i, index($i, ".") + 1); exit }
+            exit
+        }')
+    [[ -z $d && $1 == *.* ]] && d=${1#*.}
+    if [[ $d =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then printf '%s\n' "$d"; fi
+    return 0
+}
+
+hosts_is_set() {   # hosts_is_set NAME [DOMAIN] < hosts: true when the 127.0.1.1 lines already have what hosts_set_name writes:
+    # NAME, and NAME.DOMAIN when there is a DOMAIN. '127.0.1.1 web-01' is not enough when the domain is
+    # example.com: the step would set the hostname to web-01 and the FQDN would be lost.
+    local h; h=$(cat)
+    hosts_has_name "$1" <<<"$h" || return 1
+    [[ -z ${2:-} ]] || hosts_has_name "$1.$2" <<<"$h"
+}
+
+hosts_set_name() {   # hosts_set_name NAME [DOMAIN] < hosts: the same file, every 127.0.1.1 line set to "[NAME.DOMAIN ]NAME"
+    # Other lines (127.0.0.1 localhost, ::1 ...) stay byte for byte; the line is added when there is none.
+    # ENVIRON, not -v: awk would read backslashes in a -v value as escapes.
+    HOSTS_LINE="127.0.1.1"$'\t'"${2:+$1.$2 }$1" awk '
+        $1 == "127.0.1.1" { print ENVIRON["HOSTS_LINE"]; done = 1; next }
+        { print }
+        END { if (!done) print ENVIRON["HOSTS_LINE"] }'
+}
+
+cloud_cfg() {   # cloud_cfg KEY [AFTER]: "value<TAB>file" of a top-level KEY as cloud-init reads it, nothing when unset
+    # cloud-init reads cloud.cfg, then cloud.cfg.d/*.cfg in name order (Python sorts by code point, like
+    # LC_ALL=C sort): the last file that sets KEY wins. Only readable files: without root, the
+    # installer's mode 600 file would stop awk before the files after it.
+    # With AFTER (a cloud.cfg.d path), only the files read after it: what still wins over a drop-in there.
+    local f files=() list
+    list=$(printf '%s\n' "$CLOUD_DIR"/cloud.cfg.d/*.cfg | LC_ALL=C sort)
+    if [[ -n ${2:-} ]]; then list=$(LC_ALL=C awk -v a="$2" '$0 > a' <<<"$list")
+    else list="$CLOUD_DIR/cloud.cfg"$'\n'"$list"; fi
+    while IFS= read -r f; do
+        [[ -f $f && -r $f ]] && files+=("$f")
+    done <<<"$list"
+    (( ${#files[@]} )) || return 0
+    awk -v k="$1:" -v q="'" '
+        index($0, k) == 1 {
+            v = substr($0, length(k) + 1)
+            sub(/[ \t]+#.*/, "", v)
+            gsub("[\"" q " \t\r]", "", v)
+            val = tolower(v); file = FILENAME; found = 1
+        }
+        END { if (found) printf "%s\t%s\n", val, file }' "${files[@]}" 2>/dev/null
+}
+
+cloud_init_off() {   # cloud_init_off: why cloud-init does not run at boot, nothing when it runs
+    # The same order as cloud-init's systemd generator: the last cloud-init= of the kernel command line
+    # (=enabled wins over the file), then /etc/cloud/cloud-init.disabled. Ubuntu installed from the ISO
+    # keeps the package and its stock cloud.cfg, but its installer creates that file.
+    local toks=() t val=""
+    { read -ra toks < "$PROC_CMDLINE"; } 2>/dev/null
+    for t in "${toks[@]}"; do
+        if [[ $t == cloud-init=* ]]; then val=${t#cloud-init=}; fi
+    done
+    case $val in
+        disabled) printf '%s\n' "cloud-init=disabled on the kernel command line" ;;
+        enabled) ;;
+        *) if [[ -f $CLOUD_DIR/cloud-init.disabled ]]; then printf '%s\n' "$CLOUD_DIR/cloud-init.disabled exists"; fi ;;
+    esac
+    return 0
+}
+
+cloud_init_undo() {   # cloud_init_undo [AFTER]: why cloud-init can reset the hostname or /etc/hosts at the next boot, nothing when it can't
+    # Nothing without cloud-init (no cloud.cfg) or when it is disabled. With AFTER (the drop-in's path),
+    # only what the files read after it set: what a drop-in there would not fix.
+    [[ -f $CLOUD_DIR/cloud.cfg && -z $(cloud_init_off) ]] || return 0
+    local r v f why="" after=${1:-}
+    r=$(cloud_cfg preserve_hostname "$after"); v=${r%%$'\t'*}; f=${r#*$'\t'}
+    case $v in
+        true|yes|on|1) ;;
+        *) if [[ -n $r ]]; then why="preserve_hostname: ${v:-(empty)} in $f"
+           elif [[ -z $after ]]; then why="preserve_hostname is not set (cloud-init's default: false)"; fi ;;
+    esac
+    r=$(cloud_cfg manage_etc_hosts "$after"); v=${r%%$'\t'*}; f=${r#*$'\t'}
+    case $v in
+        true|yes|on|1|template) why+="${why:+; }manage_etc_hosts: $v in $f" ;;
+    esac
+    if [[ -n $why ]]; then printf '%s\n' "$why"; fi
+    return 0
+}
+
 step_hostname() {
     title "Hostname"
-    local cur; cur=$(hostname)
+    local cur hosts domain; cur=$(hostname)
     [[ $HOSTNAME_NEW =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { fail "invalid hostname '$HOSTNAME_NEW' (a-z, 0-9, -)"; HOSTNAME_NEW=$cur; return; }
-    # /etc/hosts first, so sudo never warns "unable to resolve host"
-    if ! grep -qE "^127\.0\.1\.1[[:space:]]+$HOSTNAME_NEW([[:space:]]|$)" /etc/hosts; then
-        backup /etc/hosts
-        if grep -q '^127\.0\.1\.1' /etc/hosts; then run sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$HOSTNAME_NEW/" /etc/hosts
-        else run sh -c "printf '127.0.1.1\t%s\n' '$HOSTNAME_NEW' >> /etc/hosts"; fi
-        ok "/etc/hosts: 127.0.1.1 $HOSTNAME_NEW"
+    # /etc/hosts first, so sudo never warns "unable to resolve host". The domain stays:
+    # 127.0.1.1 web-01.example.com web-01, also when only the current hostname has it (vps123.example.net
+    # with '127.0.1.1 vps123'). Left alone when that line is already there.
+    hosts=$(cat "$HOSTS_FILE" 2>/dev/null)
+    domain=$(hosts_domain "$cur" <<<"$hosts")
+    if ! hosts_is_set "$HOSTNAME_NEW" "$domain" <<<"$hosts"; then
+        printf '%s' "$hosts" | hosts_set_name "$HOSTNAME_NEW" "$domain" | write_file "$HOSTS_FILE" 644 \
+            && ok "/etc/hosts: 127.0.1.1 ${domain:+$HOSTNAME_NEW.$domain }$HOSTNAME_NEW"
     fi
     if [[ $cur != "$HOSTNAME_NEW" ]]; then run hostnamectl set-hostname "$HOSTNAME_NEW" && ok "hostname: $cur -> $HOSTNAME_NEW"
     else ok "hostname: $cur (unchanged)"; fi
+    # Cloud images: preserve_hostname: false or manage_etc_hosts: true make cloud-init put the
+    # provider's name back at the next boot. Nothing to do when cloud-init is disabled (cloud_init_undo is
+    # empty). The drop-in wins over the files read before it; one read after it still wins, so say so.
+    if [[ -n $(cloud_init_undo) ]]; then
+        local over left wrote=0
+        over=$(cloud_init_undo "$CLOUD_DROPIN")
+        printf '%s\n' "# Managed by server-preconfig.sh - cloud-init keeps the hostname and /etc/hosts set on this server" \
+            "preserve_hostname: true" "manage_etc_hosts: false" | write_file "$CLOUD_DROPIN" 644 && wrote=1
+        # A dry run writes nothing: what the files after the drop-in set is what would be left.
+        if (( DRY_RUN )); then left=$over; else left=$(cloud_init_undo); fi
+        if [[ -n $left ]]; then
+            warn "cloud-init can still reset the hostname or /etc/hosts at the next boot: $left"
+            if [[ -n $over ]]; then info "cloud-init reads that file after $CLOUD_DROPIN, so it wins: edit or remove the setting there"; fi
+        elif (( wrote )); then
+            ok "cloud-init keeps the hostname and /etc/hosts at boot ($CLOUD_DROPIN)"
+        fi
+    fi
+    return 0
 }
 
 disable_other_stanzas() {   # comment out other ifupdown definitions of $IFACE (duplicates break ifup)
@@ -398,14 +547,34 @@ step_tailscale() {
 }
 
 # ---------------------------------------------------------------------------- checks
+check_cloud_init() {   # check_cloud_init SHORT-NAME: pre.cloud_init_hostname, when cloud-init is installed
+    # Never a FAIL: the server still boots, cloud-init only puts the provider's name back.
+    [[ -f $CLOUD_DIR/cloud.cfg ]] || return 0
+    local off undo over fix=""
+    off=$(cloud_init_off)
+    if [[ -n $off ]]; then
+        chk pre.cloud_init_hostname INFO "cloud-init is disabled ($off): it leaves the hostname and /etc/hosts alone at boot"
+        return 0
+    fi
+    undo=$(cloud_init_undo)
+    if [[ -z $undo ]]; then chk pre.cloud_init_hostname PASS "cloud-init keeps the hostname and /etc/hosts at boot"; return 0; fi
+    # A re-run writes the drop-in, which fixes what the files read before it set (undo differs from over).
+    # What a file read after the drop-in sets, only an edit of that file fixes.
+    over=$(cloud_init_undo "$CLOUD_DROPIN")
+    [[ $undo == "$over" ]] || fix="sudo ./server-preconfig.sh --hostname $1 (writes $CLOUD_DROPIN)"
+    [[ -z $over ]] || fix+="${fix:+, then }edit or remove $over: cloud-init reads it after $CLOUD_DROPIN, so it wins"
+    chk pre.cloud_init_hostname WARN "cloud-init can reset the hostname and /etc/hosts at the next boot: $undo" "$fix"
+}
+
 run_checks() {
     title "Checks: will it come back on its own after a reboot?"
-    local h; h=$(hostname)
-    if grep -qE "^127\.0\.1\.1[[:space:]]+$h([[:space:]]|$)" /etc/hosts; then chk pre.hostname PASS "hostname $h (in /etc/hosts)"
+    local h hs; h=$(hostname); hs=$(short_hostname "$h")
+    if hosts_has_name "$h" <<<"$(cat "$HOSTS_FILE" 2>/dev/null)"; then chk pre.hostname PASS "hostname $h (in /etc/hosts)"
     else
         chk pre.hostname WARN "hostname $h missing from /etc/hosts: sudo will warn 'unable to resolve host'" \
-            "sudo ./server-preconfig.sh --hostname $h"
+            "sudo ./server-preconfig.sh --hostname $hs"
     fi
+    check_cloud_init "$hs"
 
     if [[ $NET_MANAGER == ifupdown ]]; then
         local mode saved; mode=$(iface_mode)

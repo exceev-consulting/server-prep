@@ -520,10 +520,12 @@ unset -f jq docker
 DRY_RUN=0
 
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69), the
-# audit's lid-switch parser test (issue #80) and the server-preconfig.sh --check --json test (issue #13).
+# audit's lid-switch parser test (issue #80), the server-preconfig.sh --check --json test (issue #13)
+# and the server-preconfig.sh hostname, /etc/hosts and cloud-init test (issue #81).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-logind-lid.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
+bash "$SCRIPT_DIR/tests/preconfig-hostname.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1

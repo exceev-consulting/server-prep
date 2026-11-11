@@ -6,7 +6,7 @@ Run `server-preconfig.sh` **once, right after installing Debian/Ubuntu, before `
 |---|---|
 | Installs `openssh-server sudo curl jq iputils-ping` (only the missing ones), and starts and enables SSH | A Debian install without the "SSH server" option refuses connections |
 | Puts the admin user in the `sudo` group, and can add its SSH keys from `github.com/<login>.keys` | If a root password is set during install, Debian creates the user **without** sudo |
-| Sets the hostname, plus `/etc/hosts` and the Tailscale name | Your panel, monitoring (host/bucket) and Tailscale all use it. `/etc/hosts` stops the "unable to resolve host" warning |
+| Sets the hostname, plus `/etc/hosts` and the Tailscale name. The `127.0.1.1` line of `/etc/hosts` keeps its domain (`127.0.1.1 web-01.example.com web-01`), also when only the current hostname has one (`web-01.example.com`). When cloud-init runs at boot, it also writes `/etc/cloud/cloud.cfg.d/zz-server-preconfig.cfg` (`preserve_hostname: true`, `manage_etc_hosts: false`) | Your panel, monitoring (host/bucket) and Tailscale all use it. `/etc/hosts` stops the "unable to resolve host" warning. Without the drop-in, cloud-init can put the provider's name back at the next boot |
 | Saves the network in `/etc/network/interfaces.d/<iface>` (fixed IP or DHCP) and disables older definitions | An IP set by hand is **lost at reboot**, which means no internet, no Tailscale and no SSH |
 | Masks sleep, suspend and hibernate, and makes logind ignore idle | A server must never go to sleep |
 | Installs Tailscale and logs it in (login URL, or `TS_AUTHKEY`) | The panel and the admins reach the server through the tailnet, whatever the LAN IP |
@@ -15,6 +15,11 @@ Run `server-preconfig.sh` **once, right after installing Debian/Ubuntu, before `
 **VPS or dedicated server:**
 - **On a VPS**, the provider manages the network (netplan / cloud-init). The script doesn't touch it: press Enter (`keep`) at the network question. You mostly get SSH + sudo, the hostname and Tailscale.
 - **On a dedicated or on-premise server**, saving the network and disabling sleep are what make it come back after a reboot or a power cut.
+
+**cloud-init drop-in:** a server cloned from this server's image keeps this name instead of getting the provider's.
+Settings in the provider's user-data or vendor-data still win over the drop-in, and `--check` cannot see them. A
+`cloud.cfg.d` file whose name sorts after the drop-in's wins too: the run and `--check` name it. Ubuntu installed from
+the ISO keeps the cloud-init package but disables it (`/etc/cloud/cloud-init.disabled`): no drop-in there.
 
 It only changes what is needed and can be re-run. Changed files are backed up to `/var/lib/server-prep/backups/preconfig-<date>/`.
 
@@ -43,7 +48,7 @@ sudo ./server-preconfig.sh            # no sudo yet? su - -c "$HOME/server-prep/
 |---|---|
 | Admin user | your user (default: the one running sudo) |
 | GitHub login | e.g. `octocat` to add your workstation's key (it must be on GitHub), or Enter to skip and use `ssh-copy-id` |
-| Hostname | e.g. `web-01` (a-z, 0-9, hyphens) |
+| Hostname | e.g. `web-01` (a-z, 0-9, hyphens). The default is the current short name in lowercase (`Web-01.example.com` gives `web-01`), and the script says so when it differs from the current name. `--hostname` still needs a-z, 0-9 and hyphens |
 | Network to save | `current` = keep the current IP as a fixed IP · `192.168.1.50/24` · `dhcp` · `keep`. The default is `current` when the IP isn't saved, otherwise `keep` |
 | Gateway | default: the current one |
 | Tailscale | `yes`. Open the printed URL on your workstation and approve the machine |
@@ -67,6 +72,7 @@ When a `WARN` or `FAIL` has a known fix, a `fix:` line under it says what to do.
 | `OK sleep/suspend/hibernate masked` | it never goes to sleep |
 | `WARN Tailscale key expires <date>` | Tailscale admin console → Machines → the server → `…` → **Disable key expiry**, otherwise access is cut on that date |
 | `WARN <user> has no SSH key` | from your workstation: `ssh-copy-id <user>@<tailscale-ip>` (needed: server-prep disables password login) |
+| `WARN cloud-init can reset the hostname and /etc/hosts at the next boot` | re-run with `--hostname web-01`: it writes the cloud-init drop-in. When the `fix:` line names a file that cloud-init reads after the drop-in, edit or remove that setting in it |
 
 **Two things the script can't do:**
 1. **BIOS:** set *Restore on AC Power Loss* to **Power On**, or the server stays off after a power cut.
@@ -108,7 +114,8 @@ A fact that was not found, and a check without a fix, is `""`.
 
 | Id | What it checks | Statuses | When it appears |
 |---|---|---|---|
-| `pre.hostname` | the hostname is in `/etc/hosts` | PASS, WARN | always |
+| `pre.hostname` | the hostname is one of the names on a `127.0.1.1` line of `/etc/hosts` | PASS, WARN | always |
+| `pre.cloud_init_hostname` | cloud-init keeps the hostname and `/etc/hosts` at boot: the effective `preserve_hostname` is true and `manage_etc_hosts` is not true or `template`, read from `/etc/cloud/cloud.cfg` and then `/etc/cloud/cloud.cfg.d/*.cfg` (the last file wins). The provider's user-data is not read | PASS, WARN, INFO | cloud-init installed (`/etc/cloud/cloud.cfg` exists). INFO `cloud-init is disabled` when `/etc/cloud/cloud-init.disabled` exists (as on Ubuntu installed from the ISO) or the last `cloud-init=` of the kernel command line is `cloud-init=disabled` (`cloud-init=enabled` wins over the file) |
 | `pre.net_saved` | the network is saved for reboots | PASS, FAIL | always, except when `pre.net_valid` FAILs. On netplan, NetworkManager or systemd-networkd it is the only network check: `network managed by <name>` |
 | `pre.net_valid` | ifupdown accepts the interface config | FAIL | ifupdown, only when it fails |
 | `pre.net_ip_match` | the saved fixed IP is the IP the server has now | WARN | ifupdown, only when they differ |
@@ -190,6 +197,7 @@ If that works, the server comes back on its own. Continue with `server-prep.sh` 
 | `Could not open lock file … are you root?` | `sudo a && b`: only `a` runs as root | `sudo a && sudo b` |
 | `Authentication failed` at `[sudo: authenticate]` | a token or the next command was typed or pasted at **sudo's** prompt | type the server password, and run commands one at a time |
 | `sudo: unable to resolve host <name>` | hostname changed before `/etc/hosts` | harmless. The script updates `/etc/hosts` first |
+| hostname or `/etc/hosts` back to the provider's name after a reboot | cloud-init (`preserve_hostname: false` / `manage_etc_hosts: true`) | re-run `sudo ./server-preconfig.sh --hostname web-01`. If `--check` still WARNs, the file it names or the provider's user-data sets it again |
 | No internet or SSH after a power cut | IP set by hand, never saved | `sudo ./server-preconfig.sh --static-ip current` |
 | `Some peers are advertising routes but --accept-routes is false` | another device shares a subnet | ignore. Don't enable `--accept-routes` on a LAN server |
 | Machine not visible in Tailscale | logged in with another account, or waiting for approval | `tailscale switch --list`, or approve it in Machines |

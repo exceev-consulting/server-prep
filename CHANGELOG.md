@@ -5,6 +5,14 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `server-preconfig.sh` no longer fails with `--yes` (or Enter) when the server's current name has capitals or a
+  domain, such as `Web-01` or `vps123.example.net`. The default hostname is now the short name in lowercase (`web-01`,
+  `vps123`), and the script says when it differs from the current name. The `127.0.1.1` line of `/etc/hosts` keeps its
+  domain (`127.0.1.1 web-01.example.com web-01`), also when only the current hostname had it. When cloud-init runs at
+  boot, the script writes `/etc/cloud/cloud.cfg.d/zz-server-preconfig.cfg` (`preserve_hostname: true`,
+  `manage_etc_hosts: false`) so the next boot does not undo the hostname or `/etc/hosts`, and `--check` reports it
+  (`pre.cloud_init_hostname`, INFO when cloud-init is disabled, as on Ubuntu installed from the ISO). A `cloud.cfg.d`
+  file read after the drop-in still wins: the run and `--check` name it.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
