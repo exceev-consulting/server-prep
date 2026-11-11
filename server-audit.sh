@@ -248,7 +248,7 @@ repo_keys() {
                 if (match($0, /signed-by=[^ \t]+/)) { k = substr($0, RSTART + 10, RLENGTH - 10); sub(/].*/, "", k) }
                 n = split(k, keys, ","); for (i = 1; i <= n; i++) print keys[i]
                 o = ""; if (index($0, "[")) { o = substr($0, index($0, "[")); o = substr(o, 1, index(o, "]")) }
-                if (o ~ /trusted=yes/) print "trusted"
+                if (tolower(o) ~ /trusted=yes/) print "trusted"
             }' "$f"
     done
     for f in "$root"/etc/apt/sources.list.d/*.sources; do

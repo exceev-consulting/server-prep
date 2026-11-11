@@ -120,6 +120,12 @@ printf '%s\n' 'Types: deb' 'URIs: https://repos.influxdata.com/debian' 'Suites: 
     'Enabled: no' 'Trusted: yes' 'Signed-By: /etc/apt/keyrings/influxdata-archive.gpg' > "$D/influxdata.sources"
 expect "a disabled stanza with Trusted: yes" "" "$(repo_keys repos.influxdata.com/ "$R")"
 rm "$D/influxdata.sources"
+# apt reads the value whatever its case, so [trusted=YES] skips the check too
+printf '%s\n' 'deb [trusted=YES signed-by=/etc/apt/keyrings/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+    > "$D/influxdata.list"
+expect "a .list entry with [trusted=YES]" "/etc/apt/keyrings/influxdata-archive.gpg trusted" \
+    "$(repo_keys repos.influxdata.com/ "$R" | tr '\n' ' ' | sed 's/ $//')"
+rm "$D/influxdata.list"
 expect "a source without trusted=yes gives no 'trusted'" /etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg \
     "$(repo_keys packagecloud.io/crowdsec/crowdsec/ "$R")"
 
