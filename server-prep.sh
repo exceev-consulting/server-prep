@@ -1625,8 +1625,10 @@ restart_ssh() {
 # wins. So only 00-server-prep.conf may set one. These helpers only read stdin or files.
 # An active Port line, in any case, "Port 22", "Port=22" or "Port = 22": never a comment, GatewayPorts or Ports.
 SSHD_PORT_RE='^[[:space:]]*[Pp][Oo][Rr][Tt]([[:space:]]*=|[[:space:]])'
-# sshd_ports_in: sshd config text on stdin, one port per active Port line (\2: SSHD_PORT_RE has a group)
-sshd_ports_in() { sed -nE "s/${SSHD_PORT_RE}[[:space:]=]*([^[:space:]]+).*/\2/p"; }
+# sshd_ports_in: sshd config text on stdin, one port per active Port line (\2: SSHD_PORT_RE has a group).
+# Digits only: "Port abc" or "Port *" would otherwise be written to 00-server-prep.conf, where sshd -t
+# rejects it and the step rolls back with a confusing message.
+sshd_ports_in() { sed -nE "s/${SSHD_PORT_RE}[[:space:]=]*([0-9]+)([[:space:]].*)?$/\2/p"; }
 # sshd_comment_ports: the same text with each active Port line commented out. Idempotent, and
 # every other byte is kept, a missing final newline too.
 sshd_comment_ports() { sed -E "s/${SSHD_PORT_RE}/# server-prep: &/"; }

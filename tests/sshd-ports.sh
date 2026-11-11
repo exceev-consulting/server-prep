@@ -57,6 +57,9 @@ got="$(printf '%s\n' "$sample" | sshd_ports_in | paste -sd' ' -)"
 got="$(printf '#Port 22\nGatewayPorts yes\n' | sshd_ports_in)"
 [[ -z $got ]] || fail "sshd_ports_in: a comment or GatewayPorts gave '$got'"
 pass 'sshd_ports_in reads Port in any case, with spaces, a tab or "=", and skips comments, GatewayPorts and Ports'
+got="$(printf 'Port abc\nPort *\nPort 22abc\nPort 2204 # old port\nPort 2205\r\n' | sshd_ports_in | paste -sd' ' -)"
+[[ $got == '2204 2205' ]] || fail "sshd_ports_in: values that are not numbers gave '$got', want '2204 2205'"
+pass 'sshd_ports_in keeps only numbers, with a trailing comment or a CRLF ending'
 
 # --- sshd_comment_ports: those five lines commented out, every other byte kept ------------------------
 printf '%s\n' "$sample" | sshd_comment_ports > "$tmp/once"
