@@ -195,7 +195,8 @@ cp "$D/docker.list" "$tmp/docker.list.orig"
 
 CHANGED_FILES=(); NEW_FILES=()
 DRY_RUN=1
-expect_drop 'in a dry run removes nothing' 0
+expect_drop 'in a dry run removes nothing' 0 "would remove $D/docker.list, another source for $DOCKER"
+[[ "$STEP_NOTES" != *"removed "* ]] || fail "sources: a dry run says a file was removed: $STEP_NOTES"
 [[ -e "$D/docker.list" && -e "$D/docker-ce.sources" ]] || fail "sources: a dry run removed a file"
 [[ ${#CHANGED_FILES[@]} -eq 0 ]] || fail "sources: a dry run listed files for rollback.sh: ${CHANGED_FILES[*]}"
 DRY_RUN=0

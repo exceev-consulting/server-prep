@@ -960,7 +960,9 @@ drop_other_sources() {
         run rm -f "$f" || { note "cannot remove ${f}"; return 1; }
         # listed with the changed files, so rollback.sh copies the backup back and the report lists it
         [[ $DRY_RUN -eq 1 ]] || CHANGED_FILES+=("$f")
-        note "removed ${f}, another source for ${text} (backed up)"; changed
+        if [[ $DRY_RUN -eq 1 ]]; then note "would remove ${f}, another source for ${text}"
+        else note "removed ${f}, another source for ${text} (backed up)"; fi
+        changed
     done
     return 0
 }
