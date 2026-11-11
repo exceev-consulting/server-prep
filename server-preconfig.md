@@ -48,7 +48,7 @@ sudo ./server-preconfig.sh            # no sudo yet? su - -c "$HOME/server-prep/
 |---|---|
 | Admin user | your user (default: the one running sudo) |
 | GitHub login | e.g. `octocat` to add your workstation's key (it must be on GitHub), or Enter to skip and use `ssh-copy-id` |
-| Hostname | e.g. `web-01` (a-z, 0-9, hyphens). The default is the current short name in lowercase (`Web-01.example.com` gives `web-01`), and the script says so when it differs from the current name. `--hostname` still needs a-z, 0-9 and hyphens |
+| Hostname | e.g. `web-01` (a-z, 0-9, hyphens). The default is the current short name in lowercase (`Web-01.example.com` gives `web-01`), and the script says so when it differs from the current name. When that short name is not valid either (`Web_01`), there is no default: type one, or pass `--hostname` with `--yes`. `--hostname` still needs a-z, 0-9 and hyphens |
 | Network to save | `current` = keep the current IP as a fixed IP · `192.168.1.50/24` · `dhcp` · `keep`. The default is `current` when the IP isn't saved, otherwise `keep` |
 | Gateway | default: the current one |
 | Tailscale | `yes`. Open the printed URL on your workstation and approve the machine |

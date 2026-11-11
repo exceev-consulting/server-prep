@@ -204,7 +204,11 @@ questions() {
         # The default must pass step_hostname's check: 'Web-01' or 'vps123.example.net' would FAIL as they are.
         local hn; hn=$(hostname)
         HOSTNAME_NEW=$(short_hostname "$hn")
-        if [[ $HOSTNAME_NEW != "$hn" ]]; then
+        if ! valid_hostname "$HOSTNAME_NEW"; then
+            # 'Web_01' or '-edge' have no valid short form: no default, so the operator types one.
+            info "current hostname '$hn' is not a valid name (a-z, 0-9, -): type one (--hostname with --yes)"
+            HOSTNAME_NEW=""
+        elif [[ $HOSTNAME_NEW != "$hn" ]]; then
             info "current hostname '$hn': the default is '$HOSTNAME_NEW' (short name, lowercase)"
         fi
     fi
@@ -305,6 +309,10 @@ step_user() {
 short_hostname() {   # short_hostname NAME: the part before the first dot, lowercase (Web-01.example.com -> web-01)
     local h=${1%%.*}
     printf '%s\n' "${h,,}"
+}
+
+valid_hostname() {   # valid_hostname NAME: true when step_hostname accepts NAME (a-z, 0-9, -, 1 to 63, no - at either end)
+    [[ $1 =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]
 }
 
 hosts_has_name() {   # hosts_has_name NAME < hosts: true when NAME is one of the names of a 127.0.1.1 line
@@ -408,7 +416,7 @@ cloud_init_undo() {   # cloud_init_undo [AFTER]: why cloud-init can reset the ho
 step_hostname() {
     title "Hostname"
     local cur hosts domain; cur=$(hostname)
-    [[ $HOSTNAME_NEW =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { fail "invalid hostname '$HOSTNAME_NEW' (a-z, 0-9, -)"; HOSTNAME_NEW=$cur; return; }
+    valid_hostname "$HOSTNAME_NEW" || { fail "invalid hostname '$HOSTNAME_NEW' (a-z, 0-9, -)"; HOSTNAME_NEW=$cur; return; }
     # /etc/hosts first, so sudo never warns "unable to resolve host". The domain stays:
     # 127.0.1.1 web-01.example.com web-01, also when only the current hostname has it (vps123.example.net
     # with '127.0.1.1 vps123'). Left alone when that line is already there.
@@ -569,6 +577,8 @@ check_cloud_init() {   # check_cloud_init SHORT-NAME: pre.cloud_init_hostname, w
 run_checks() {
     title "Checks: will it come back on its own after a reboot?"
     local h hs; h=$(hostname); hs=$(short_hostname "$h")
+    # The fix hints pass hs to --hostname: 'Web_01' has no valid short form, so they ask for a name.
+    valid_hostname "$hs" || hs='<name>'
     if hosts_has_name "$h" <<<"$(cat "$HOSTS_FILE" 2>/dev/null)"; then chk pre.hostname PASS "hostname $h (in /etc/hosts)"
     else
         chk pre.hostname WARN "hostname $h missing from /etc/hosts: sudo will warn 'unable to resolve host'" \

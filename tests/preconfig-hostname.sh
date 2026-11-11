@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PRE="$SCRIPT_DIR/server-preconfig.sh"
 
 # server-preconfig.sh runs main on load, so it cannot be sourced: load only the functions under test.
-FNS="short_hostname hosts_has_name hosts_domain hosts_is_set hosts_set_name cloud_cfg cloud_init_off cloud_init_undo
+FNS="short_hostname valid_hostname hosts_has_name hosts_domain hosts_is_set hosts_set_name cloud_cfg cloud_init_off cloud_init_undo
     ask questions plan_and_confirm write_file backup step_hostname chk check_cloud_init"
 for fn in $FNS; do
     eval "$(sed -n "/^$fn() {/,/^}/p" "$PRE")"
@@ -85,6 +85,14 @@ is_set() { printf '%s' "$3" | hosts_is_set "$1" "$2"; }   # is_set NAME DOMAIN H
 expect_eq "short_hostname Web-01" "$(short_hostname Web-01)" web-01
 expect_eq "short_hostname vps123.example.net" "$(short_hostname vps123.example.net)" vps123
 expect_eq "short_hostname web-01 stays web-01" "$(short_hostname web-01)" web-01
+expect_true "valid_hostname web-01" valid_hostname web-01
+expect_true "valid_hostname a single character" valid_hostname w
+expect_false "valid_hostname web_01: no underscore" valid_hostname web_01
+expect_false "valid_hostname -edge: no leading hyphen" valid_hostname -edge
+expect_false "valid_hostname edge-: no trailing hyphen" valid_hostname edge-
+expect_false "valid_hostname Web-01: no capitals" valid_hostname Web-01
+expect_false "valid_hostname: not empty" valid_hostname ""
+expect_false "valid_hostname: 64 characters is too long" valid_hostname "$(printf 'a%.0s' {1..64})"
 
 # (b) questions(): under --yes the default goes through as is, so it must be valid, and the operator
 # is told when it differs from the current name.
@@ -103,6 +111,14 @@ if grep -q 'current hostname' "$tmp/q.out"; then not_ok "questions: 'current hos
 printf 'ok: questions: no line when the name does not change\n'
 run_questions vps123.example.net
 expect_eq "questions: vps123.example.net gives vps123" "$HOSTNAME_NEW" vps123
+# No valid short form: no default (an invalid one would FAIL under --yes), and the operator is told why.
+for bad in Web_01 -edge.example.com; do
+    run_questions "$bad"
+    expect_eq "questions: $bad gives no default" "$HOSTNAME_NEW" ""
+    grep -qF "current hostname '$bad' is not a valid name" "$tmp/q.out" \
+        || not_ok "questions: no 'not a valid name' line for $bad" "$tmp/q.out"
+    printf "ok: questions: says '%s' is not a valid name\n" "$bad"
+done
 run_questions web-01 Web-01
 expect_eq "questions: an explicit --hostname Web-01 is kept as given" "$HOSTNAME_NEW" Web-01
 printf '127.0.0.1\tlocalhost\n' > "$tmp/hosts.orig"
