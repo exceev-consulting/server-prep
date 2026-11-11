@@ -149,6 +149,8 @@ write_file() {   # write_file PATH MODE < content ; returns 1 when the file is a
         printf '  [dry-run] write %s:\n' "$path"; sed 's/^/            | /' <<<"$content"; return 0
     fi
     backup "$path"; mkdir -p "$(dirname "$path")"
+    # In place, not a temp file + mv: the inode stays, so a bind-mounted file (a container's /etc/hosts)
+    # keeps working. The cost: a reader can see the file empty for an instant while it is rewritten.
     printf '%s\n' "$content" > "$path" && chmod "$mode" "$path"
 }
 
@@ -324,7 +326,9 @@ hosts_has_name() {   # hosts_has_name NAME < hosts: true when NAME is one of the
 
 hosts_domain() {   # hosts_domain CUR < hosts: the domain to keep on the 127.0.1.1 line, nothing when there is none
     # The first name with a dot on the first 127.0.1.1 line (127.0.1.1 web-01.example.com web-01), else
-    # the current hostname CUR when it has one (vps123.example.net).
+    # the current hostname CUR when it has one (vps123.example.net). When both have a domain and they
+    # differ (127.0.1.1 old.lan old, hostname old.example.com), the hosts file wins: Debian keeps the FQDN
+    # there, and hostname -f reads it for the short name the step sets.
     local d
     d=$(awk '
         { sub(/#.*/, "") }
@@ -347,6 +351,8 @@ hosts_is_set() {   # hosts_is_set NAME [DOMAIN] < hosts: true when the 127.0.1.1
 
 hosts_set_name() {   # hosts_set_name NAME [DOMAIN] < hosts: the same file, every 127.0.1.1 line set to "[NAME.DOMAIN ]NAME"
     # Other lines (127.0.0.1 localhost, ::1 ...) stay byte for byte; the line is added when there is none.
+    # The 127.0.1.1 line is replaced whole: extra names and a trailing comment on it are not kept
+    # (127.0.1.1 old.example.com old panel loses panel), as with the sed this replaced.
     # ENVIRON, not -v: awk would read backslashes in a -v value as escapes.
     HOSTS_LINE="127.0.1.1"$'\t'"${2:+$1.$2 }$1" awk '
         $1 == "127.0.1.1" { print ENVIRON["HOSTS_LINE"]; done = 1; next }
