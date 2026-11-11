@@ -31,6 +31,7 @@ VM_CFG=/home/ops/ci.cfg         # tests/e2e/ci.cfg plus the keys of this run
 # Where the Openship API keeps SSH keys (OPENSHIP_KEY_DIRS in server-prep.sh, issue #54)
 OPENSHIP_KEY_DIRS="/etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh"
 OPENSHIP_PATHS=0                # 1 once openship-paths has re-run aide and auditd with PANEL=openship
+PRECONFIG_HOST=""               # set once preconfig renamed the VM: the reboot checks the name stays (issue #81)
 
 # --------------------------------------------------------------------------- helpers
 
@@ -310,7 +311,7 @@ preconfig_fails() {   # preconfig_fails LOG: the FAIL lines that are not explain
 
 sc_preconfig() {
     begin preconfig
-    local rc fails log="$WORK/preconfig.out"
+    local rc fails host line out log="$WORK/preconfig.out"
     if as_root 'ping -c1 -W3 1.1.1.1 >/dev/null 2>&1'; then NO_ICMP=0; else NO_ICMP=1; fi
     as_root 'curl -fsS -o /dev/null --max-time 20 https://deb.debian.org/'
     check "the VM reaches the internet over HTTPS" $? "ICMP blocked: $NO_ICMP"
@@ -326,7 +327,18 @@ sc_preconfig() {
     rc=$?; log_to < "$log" > /dev/null
     fails="$(preconfig_fails "$log")"
     [[ -z "$fails" ]]; check "--check after the run reports no FAIL" $? "${fails//$'\n'/; }"
-    check_eq "the hostname is e2e-web-01" "$(as_root 'hostname')" e2e-web-01
+    host="$(as_root 'hostname')"
+    check_eq "the hostname is e2e-web-01" "$host" e2e-web-01
+    [[ $host == e2e-web-01 ]] && PRECONFIG_HOST=$host
+    # issue #81: /etc/hosts maps the new name, and cloud-init will not put the VM's name back at boot.
+    # The OK line, not the drop-in file: an image whose stock config is already safe gets no drop-in.
+    line="$(as_root "awk '\$1 == \"127.0.1.1\"' /etc/hosts")"
+    [[ " $line " == *[[:space:]]e2e-web-01[[:space:]]* ]]
+    check "/etc/hosts maps e2e-web-01 on 127.0.1.1" $? "${line//$'\n'/; }"
+    out="$(ansi_strip < "$log")"
+    grep -q '^  OK    cloud-init keeps the hostname and /etc/hosts at boot' <<<"$out"
+    check "--check: cloud-init keeps the hostname and /etc/hosts at boot" $? \
+        "$(grep -m1 'cloud-init' <<<"$out" || true)"
     finish
 }
 
@@ -537,7 +549,7 @@ sc_openship_paths() {
 
 sc_reboot() {
     begin reboot
-    local failed
+    local failed line
     vm_reboot "$BOOT_TIMEOUT"; check "the server reboots and root logs in again on 822" $?
     as_root 'systemctl is-system-running --wait >/dev/null 2>&1; systemctl --failed --no-legend --plain' \
         > "$WORK/failed-units" 2>&1
@@ -546,6 +558,14 @@ sc_reboot() {
     check_eq "the admin logs in on 822" "$(ssh_as admin admin "$P822" 'id -un' 2>&1)" admin
     no_ssh_banner "$P22"; check "port 22 still gives no SSH login" $?
     check_tarpit
+    # issue #81: the seed's user-data sets the VM's name. The cloud-init drop-in of preconfig
+    # must keep the new hostname and its /etc/hosts line across the reboot.
+    if [[ -n $PRECONFIG_HOST ]]; then
+        check_eq "the hostname is still $PRECONFIG_HOST" "$(as_root 'hostname')" "$PRECONFIG_HOST"
+        line="$(as_root "awk '\$1 == \"127.0.1.1\"' /etc/hosts")"
+        [[ " $line " == *[[:space:]]"$PRECONFIG_HOST"[[:space:]]* ]]
+        check "/etc/hosts still maps $PRECONFIG_HOST on 127.0.1.1" $? "${line//$'\n'/; }"
+    fi
     finish
 }
 

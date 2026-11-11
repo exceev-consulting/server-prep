@@ -168,6 +168,21 @@ expect_jq running "running: key expiry WARN with its fix apart" \
     '.checks[] | select(.id == "pre.tailscale_expiry") | .status == "WARN" and (.fix | contains("Disable key expiry")) and (.message | contains("Disable key expiry") | not)'
 grep -q '^        fix: .*Disable key expiry' "$tmp/running.err" || not_ok running "the fix line for people is missing"
 printf 'ok: running: people still see the fix line\n'
+# Only on a machine with cloud-init (/etc/cloud/cloud.cfg), and never a FAIL (issue #81).
+expect_jq running "running: the cloud-init hostname check is PASS, INFO, or WARN with a fix" \
+    '[.checks[] | select(.id == "pre.cloud_init_hostname")] | all(.status == "PASS" or .status == "INFO" or (.status == "WARN" and (.fix | length > 0)))'
+if [[ -f /etc/cloud/cloud.cfg ]]; then
+    expect_jq running "running: cloud-init is installed here, so its hostname check ran" \
+        '[.checks[].id] | index("pre.cloud_init_hostname")'
+    # Ubuntu installed from the ISO keeps the package but disables it: INFO, never a WARN about the next boot.
+    if [[ -f /etc/cloud/cloud-init.disabled ]] && ! grep -q 'cloud-init=' /proc/cmdline 2>/dev/null; then
+        expect_jq running "running: cloud-init is disabled here, so its hostname check is INFO" \
+            '.checks[] | select(.id == "pre.cloud_init_hostname") | .status == "INFO" and (.message | startswith("cloud-init is disabled"))'
+    fi
+else
+    expect_jq running "running: no cloud-init here, so no cloud-init hostname check" \
+        '[.checks[].id] | index("pre.cloud_init_hostname") | not'
+fi
 expect_same_as_text running "$status"
 
 # Tailscale not logged in: FAIL with its fix, exit 1 with and without --json.
