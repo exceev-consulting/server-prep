@@ -1991,8 +1991,14 @@ EOF
                 note "packagecloud.io offers no crowdsec package - not installing the distro one (re-run with --only ips)"; return 1
             fi
             # may report an error if 8080 is taken - fixed just below
+            local cs_before
+            cs_before="$(dpkg-query -W -f='${Status} ${Version}' crowdsec 2>/dev/null)"
             run apt-get install "${APT_OPTS[@]}" crowdsec || warn "crowdsec install reported an error, fixing the LAPI port and retrying"
-            changed
+            # CHANGED only when apt did something: when packagecloud no longer lists the installed version and
+            # offers no newer one, apt-get install leaves crowdsec as it is, and a re-run must not say CHANGED
+            if [[ $DRY_RUN -eq 1 || "$(dpkg-query -W -f='${Status} ${Version}' crowdsec 2>/dev/null)" != "$cs_before" ]]; then
+                changed
+            fi
         fi
         # Move the local API away from 8080 (Traefik dashboards use it)
         if [[ -f /etc/crowdsec/config.yaml ]] && grep -q '127.0.0.1:8080' /etc/crowdsec/config.yaml; then

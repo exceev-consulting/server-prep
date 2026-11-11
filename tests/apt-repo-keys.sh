@@ -235,6 +235,8 @@ apt_repo_key() { KEYS+=("$*"); return "$KEY_RC"; }
 run() {
     RAN+=("$*")
     [[ "$*" == "apt-get "*" update"* ]] && return "$UPDATE_RC"
+    # INSTALL_SETS="pkg version": what apt-get install leaves installed (unset: nothing changes)
+    [[ "$*" == "apt-get install"* && -n "${INSTALL_SETS:-}" ]] && INSTALLED=("$INSTALL_SETS" "${INSTALLED[@]:1}")
     return 0
 }
 write_file() { cat > "$tmp/written-${1##*/}"; }
@@ -412,6 +414,21 @@ ran "rm -f $APT_SOURCES_D/crowdsec.list" || fail "ips: crowdsec.list not removed
 rm -f "$APT_SOURCES_D/crowdsec.list"
 pass 'ips: another source is removed only after the key check passed'
 DRY_RUN=0
+
+# A crowdsec from packagecloud whose version it no longer lists, with no newer one for apt to install: apt-get
+# install changes nothing, so the step must not say CHANGED on every re-run. When apt does install, it does.
+INSTALLED=("crowdsec 1.8.3" "crowdsec-firewall-bouncer-iptables 0.0.31")
+MADISON="$PC_CS"
+STEP_CHANGED=0; RAN=()
+step_ips > "$tmp/out" 2>&1
+ran_exact "$cs_install" || fail "ips: no apt-get install for a crowdsec version packagecloud no longer lists"
+[[ $STEP_CHANGED -eq 0 ]] || fail "ips: an apt-get install that changed nothing makes the step CHANGED"
+INSTALLED=("crowdsec 1.8.1" "crowdsec-firewall-bouncer-iptables 0.0.31"); INSTALL_SETS="crowdsec 1.8.2"
+STEP_CHANGED=0; RAN=()
+step_ips > "$tmp/out" 2>&1
+[[ $STEP_CHANGED -eq 1 ]] || fail "ips: an apt-get install that upgraded crowdsec does not make the step CHANGED"
+unset INSTALL_SETS
+pass 'ips: CHANGED only when apt-get install changed the installed crowdsec'
 INSTALLED=(); MADISON=""
 
 # Telegraf: the same key check as the other repositories, on every run
