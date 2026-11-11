@@ -1625,6 +1625,9 @@ restart_ssh() {
 # wins. So only 00-server-prep.conf may set one. These helpers only read stdin or files.
 # An active Port line, in any case, "Port 22", "Port=22" or "Port = 22": never a comment, GatewayPorts or Ports.
 SSHD_PORT_RE='^[[:space:]]*[Pp][Oo][Rr][Tt]([[:space:]]*=|[[:space:]])'
+# The ports SSH had before this run as step_ssh found them: sshd -T plus the Port lines it comments out.
+# Empty until step_ssh gets there; write_rollback then falls back to CURRENT_SSH_PORTS.
+SSH_OLD_PORTS=""
 # sshd_ports_in: sshd config text on stdin, one port per active Port line (\2: SSHD_PORT_RE has a group).
 # Digits only: "Port abc" or "Port *" would otherwise be written to 00-server-prep.conf, where sshd -t
 # rejects it and the step rolls back with a confusing message.
@@ -1847,6 +1850,7 @@ step_ssh() {
     local drops=() old_ports need_two=0 p
     mapfile -t drops < <(sshd_port_dropins /etc/ssh/sshd_config.d)
     old_ports="$({ printf '%s\n' "$CURRENT_SSH_PORTS"; cat /etc/ssh/sshd_config "${drops[@]}" 2>/dev/null | sshd_ports_in; } | uniq_ports)"
+    SSH_OLD_PORTS="$old_ports"   # rollback.sh restores these files, so write_rollback allows these ports
     for p in $old_ports; do [[ "$p" != "$SSH_PORT" ]] && need_two=1; done
 
     # rollback script for the safety timer
@@ -2714,8 +2718,10 @@ write_rollback() {
     # The restored SSH files are this run's backups, so sshd goes back to the ports it had before
     # the run. UFW, which this run left on, no longer allows them: phase B of the SSH step deleted
     # their temporary rules. Rebuild those rules (same sources, same comment) before SSH restarts.
+    # step_ssh's list also has the ports of the Port lines it commented out, which the restored files
+    # bring back even when preflight could not run sshd -T (CURRENT_SSH_PORTS is then 22).
     if [[ $ssh_files -eq 1 ]]; then
-        for p in $CURRENT_SSH_PORTS; do
+        for p in ${SSH_OLD_PORTS:-$CURRENT_SSH_PORTS}; do
             [[ $p == "$SSH_PORT" ]] && continue
             old_ports+=("$p")
             [[ $p == 22 ]] && port22=1

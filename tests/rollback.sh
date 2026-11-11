@@ -77,6 +77,7 @@ setup() {   # a fresh applied run that moved SSH from 22 to 822 and installed En
     mkdir -p "$BACKUP_DIR"
     rb="$BACKUP_DIR/rollback.sh"
     CURRENT_SSH_PORTS='22 '   # as preflight reads it from sshd -T, with its trailing space
+    SSH_OLD_PORTS=''          # step_ssh's list, empty: write_rollback uses CURRENT_SSH_PORTS
     ADMIN_IPS=192.168.1.50
     PANEL=coolify
     PANEL_ACCESS=tailscale,public
@@ -257,6 +258,18 @@ ufw allow from 198.51.100.0/24 to any port 2222 proto tcp comment server-prep-te
 [[ "$(rules)" == "$want" ]] || fail "two old ports: got '$(rules)', want '$want'"
 grep -qxF 'SSH goes back to port(s) 22 2222.' "$tmp/stdout" || fail 'two old ports: the ports are not named'
 pass 'two old ports and two admin sources: one rule per port and source'
+
+# --- a port only a commented-out Port line had: preflight could not run sshd -T and assumed 22 --------
+setup
+SSH_OLD_PORTS='22 2222 822 '   # step_ssh: 22 from preflight, 2222 from a drop-in, 822 already there
+PANEL_ACCESS=''
+generate 'port from a Port line'
+run_rb 'port from a Port line'
+want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep-temp admin
+ufw allow from 192.168.1.50 to any port 2222 proto tcp comment server-prep-temp admin'
+[[ "$(rules)" == "$want" ]] || fail "port from a Port line: got '$(rules)', want '$want'"
+grep -qxF 'SSH goes back to port(s) 22 2222.' "$tmp/stdout" || fail 'port from a Port line: the ports are not named'
+pass "a port from a Port line step_ssh commented out gets its UFW rule back, the run's port none"
 
 # --- SSH was already on the run's port: nothing to allow ---------------------------------------------
 setup
