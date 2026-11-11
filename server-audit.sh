@@ -115,6 +115,17 @@ CURRENT_CAT="general"
 
 out() { [[ $QUIET -eq 1 ]] || printf '%s\n' "$*"; }
 
+# tty_safe TEXT: TEXT for the terminal. Tabs and newlines become spaces and any other control character a '?',
+# as ls shows them, so an escape sequence in a file or process name never reaches the screen. Under LC_ALL=C,
+# [[:cntrl:]] matches the C0 controls and DEL only, so the C1 controls in UTF-8 (U+0080 to U+009F, the bytes
+# C2 80 to C2 9F) are replaced first: xterm and VTE terminals read U+009B as CSI and U+009D as OSC. Other UTF-8
+# characters, such as 'é' or a no-break space, stay.
+tty_safe() {
+    local s="${1//[$'\t\n']/ }"
+    s=${s//$'\xc2'[$'\x80'-$'\x9f']/?}
+    printf '%s' "${s//[[:cntrl:]]/?}"
+}
+
 section() {
     CURRENT_CAT="$1"
     out ""
@@ -129,9 +140,9 @@ result() {
     case "$status" in
         PASS) color=$C_GREEN ;; WARN) color=$C_YELLOW ;; FAIL) color=$C_RED ;; *) color=$C_GRAY ;;
     esac
-    out "${color}[${status}]${C_0} ${title} ${C_GRAY}- ${msg}${C_0}"
+    out "${color}[${status}]${C_0} $(tty_safe "$title") ${C_GRAY}- $(tty_safe "$msg")${C_0}"
     if [[ -n "$fix" && "$status" != "PASS" && "$status" != "INFO" ]]; then
-        out "       ${C_GRAY}fix: ${fix}${C_0}"
+        out "       ${C_GRAY}fix: $(tty_safe "$fix")${C_0}"
     fi
 }
 
@@ -1325,8 +1336,18 @@ out ""
 out "${C_BOLD}Score: ${SCORE}/100${C_0} - ${C_GREEN}${N_PASS} PASS${C_0}, ${C_YELLOW}${N_WARN} WARN${C_0}, ${C_RED}${N_FAIL} FAIL${C_0}, ${N_INFO} INFO"
 
 json_esc() {
-    local s="$1"
+    local s="$1" i hex c rep
     s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}
+    # JSON forbids raw 0x01-0x1F and a file name can hold ESC, so each one left becomes \u00XX.
+    if [[ $s == *[[:cntrl:]]* ]]; then
+        for ((i = 1; i < 32; i++)); do
+            printf -v hex '%02x' "$i"
+            printf -v c '%b' "\\x$hex"
+            [[ $s == *"$c"* ]] || continue
+            printf -v rep '\\u%04x' "$i"
+            s=${s//"$c"/"$rep"}
+        done
+    fi
     printf '%s' "$s"
 }
 
