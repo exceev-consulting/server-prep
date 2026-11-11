@@ -56,7 +56,8 @@ Highlights of each release. The full list of merged pull requests is in each
   as it is. Another source for the same repository, such as the `docker.list` of an older Docker guide, is removed
   (backed up first, and `rollback.sh` puts it back): apt refuses one repository listed with two keys. The new audit check `upd.repo_keys` warns when
   an installed Docker CE, CrowdSec, cloudflared or Telegraf is not from its vendor's repository, not pinned at 900,
-  or signed by a key without the published fingerprint. On a server prepared before, run
+  or signed by a key without the published fingerprint, when a source has `trusted=yes` (apt then checks no
+  signature), and when `gpg` is missing so the keys cannot be checked. On a server prepared before, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only docker,ips,telegraf,cloudflared --yes`.
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step

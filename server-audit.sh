@@ -473,8 +473,12 @@ if have apt-get; then
     [[ -n "$REPO_HOME" ]] && rm -rf "$REPO_HOME"
     if [[ ${#REPO_FROM[@]} -eq 0 ]]; then
         result upd.repo_keys INFO "Third-party repositories" "None of Docker CE, CrowdSec, cloudflared, Telegraf is installed"
+    elif [[ ${#REPO_BAD[@]} -eq 0 && -z "$repo_gpg" ]]; then
+        result upd.repo_keys PASS "Third-party repositories" "${REPO_FROM[*]}: from the vendor's repository, pinned at 900, key with the published fingerprint"
     elif [[ ${#REPO_BAD[@]} -eq 0 ]]; then
-        result upd.repo_keys PASS "Third-party repositories" "${REPO_FROM[*]}: from the vendor's repository, pinned at 900, key with the published fingerprint${repo_gpg}"
+        # Without gpg the keys were not checked: a PASS would claim more than the audit saw.
+        result upd.repo_keys WARN "Third-party repositories" "${REPO_FROM[*]}: from the vendor's repository, pinned at 900${repo_gpg}" \
+            "sudo apt-get install gnupg, then run the audit again"
     else
         rmsg=""; for rx in "${REPO_BAD[@]}"; do rmsg+="${rmsg:+; }${rx}"; done
         rsteps=""; for rx in "${REPO_STEPS[@]}"; do rsteps+="${rsteps:+,}${rx}"; done
