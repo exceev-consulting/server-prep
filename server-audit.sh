@@ -235,7 +235,8 @@ repo_status() {
 
 # repo_keys TEXT [ROOT]: the signed-by value of each apt source entry for TEXT (a repository URL without its
 # scheme), one per line: a key file, "-" for an entry without signed-by (any key apt trusts can sign it) or
-# "inline" for a key written in a .sources file. Reads one-line .list files and deb822 .sources files, and
+# "inline" for a key written in a .sources file, plus "trusted" for an entry with trusted=yes (Trusted: yes), which
+# makes apt skip the signature check whatever the key. Reads one-line .list files and deb822 .sources files, and
 # skips commented and disabled entries. ROOT (tests) replaces /.
 repo_keys() {
     local text="$1" root="${2:-}" f
@@ -246,12 +247,17 @@ repo_keys() {
                 k = "-"
                 if (match($0, /signed-by=[^ \t]+/)) { k = substr($0, RSTART + 10, RLENGTH - 10); sub(/].*/, "", k) }
                 n = split(k, keys, ","); for (i = 1; i <= n; i++) print keys[i]
+                o = ""; if (index($0, "[")) { o = substr($0, index($0, "[")); o = substr(o, 1, index(o, "]")) }
+                if (o ~ /trusted=yes/) print "trusted"
             }' "$f"
     done
     for f in "$root"/etc/apt/sources.list.d/*.sources; do
         [[ -f "$f" ]] || continue
         awk -v t="$text" '
-            function stanza_end() { if (hit && on) print (key == "" ? "-" : key); hit = 0; key = ""; on = 1 }
+            function stanza_end() {
+                if (hit && on) { print (key == "" ? "-" : key); if (trusted) print "trusted" }
+                hit = 0; key = ""; on = 1; trusted = 0
+            }
             BEGIN { on = 1 }
             /^[[:space:]]*$/ { stanza_end(); next }
             /^#/ { next }
@@ -259,6 +265,7 @@ repo_keys() {
             tolower($0) ~ /^signed-by:/ { key = $0; sub(/^[^:]*:[[:space:]]*/, "", key); sub(/[[:space:]].*/, "", key)
                                           if (key == "") key = "inline"; next }
             tolower($0) ~ /^enabled:[[:space:]]*no/ { on = 0 }
+            tolower($0) ~ /^trusted:[[:space:]]*yes/ { trusted = 1 }
             END { stanza_end() }' "$f"
     done
 }
@@ -449,6 +456,7 @@ if have apt-get; then
                 '') ;;
                 -) rprob+=("a source without signed-by") ;;
                 inline) rprob+=("a key written in its .sources file, not checked") ;;
+                trusted) rprob+=("a source with trusted=yes, signatures not checked") ;;
                 *) if [[ ! -s "$rkey" ]]; then
                        rprob+=("key ${rkey} missing")
                    elif [[ -n "$REPO_HOME" && "$(key_fpr "$REPO_HOME" "$rkey")" != "$rfpr" ]]; then

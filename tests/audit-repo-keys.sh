@@ -105,6 +105,24 @@ expect "CrowdSec's source" /etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.g
     "$(repo_keys packagecloud.io/crowdsec/crowdsec/ "$R")"
 expect "no source for the repository" "" "$(repo_keys pkg.cloudflare.com/cloudflared "$R")"
 
+# trusted=yes makes apt skip the signature check, whatever the key: one-line and deb822 forms, a disabled
+# stanza left out
+printf '%s\n' 'deb [arch=amd64 trusted=yes signed-by=/etc/apt/keyrings/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+    > "$D/influxdata.list"
+printf '%s\n' 'Types: deb' 'URIs: https://repos.influxdata.com/debian' 'Suites: stable' 'Components: main' \
+    'Trusted: yes' 'Signed-By: /etc/apt/keyrings/influxdata-archive.gpg' > "$D/influxdata.sources"
+expect "a .list entry with [trusted=yes]" "/etc/apt/keyrings/influxdata-archive.gpg trusted" \
+    "$(repo_keys repos.influxdata.com/ "$R" | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/ $//')"
+rm "$D/influxdata.list"
+expect "a .sources stanza with Trusted: yes" "/etc/apt/keyrings/influxdata-archive.gpg trusted" \
+    "$(repo_keys repos.influxdata.com/ "$R" | tr '\n' ' ' | sed 's/ $//')"
+printf '%s\n' 'Types: deb' 'URIs: https://repos.influxdata.com/debian' 'Suites: stable' 'Components: main' \
+    'Enabled: no' 'Trusted: yes' 'Signed-By: /etc/apt/keyrings/influxdata-archive.gpg' > "$D/influxdata.sources"
+expect "a disabled stanza with Trusted: yes" "" "$(repo_keys repos.influxdata.com/ "$R")"
+rm "$D/influxdata.sources"
+expect "a source without trusted=yes gives no 'trusted'" /etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg \
+    "$(repo_keys packagecloud.io/crowdsec/crowdsec/ "$R")"
+
 # --- key_fpr: one public key only ------------------------------------------------------------------------------
 # Fake gpg --show-keys: each line of the file is a key, a fingerprint (public) or SEC:<fingerprint> (secret).
 gpg() {
