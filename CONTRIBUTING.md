@@ -83,8 +83,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
   `set_kv`, `backup_file`, `pkg_install` (installs only what is missing), `svc_disable`.
 - **A step can run twice safely.** Check the current state first and only change what is missing.
 - **apt:** always pass `"${APT_OPTS[@]}"`. A fresh server often runs apt in the background at boot.
-- **Third-party apt repos:** download the key, **check its fingerprint**, store it in `/etc/apt/keyrings/`,
-  use `signed-by`, and pin the repo at priority 900.
+- **Third-party apt repos:** download the key, **check its fingerprint**, store it in `/etc/apt/keyrings/`
+  (`apt_repo_key` does all three), use `signed-by`, and pin the repo at priority 900. The audit's `upd.repo_keys`
+  checks all of it for each tool in its list.
 - **Downloads** (like ufw-docker): pin a version and check a SHA-256.
 - **Works with any panel:** use `PANEL`, `PANEL_PUBKEY`, `PANEL_ACCESS`, `PANEL_IP` and `${PANEL_LABEL}` in messages.
   Code for one panel only goes behind `[[ ${PANEL,,} == <name> ]]`.

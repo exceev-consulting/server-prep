@@ -184,7 +184,7 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
     check_eq "the audit exits 0" "$1" 0
     for id in ssh.root_login ssh.password_auth ssh.port ssh.max_auth ssh.allow_users fw.status \
         fw.docker_bypass net.exposure ips.fail2ban ips.crowdsec ips.crowdsec_bouncer ips.f2b_sshd_jail \
-        upd.unattended upd.third_party acc.sudo_log acc.password_policy acc.password_dict kern.sysctl mon.auditd \
+        upd.unattended upd.third_party upd.repo_keys acc.sudo_log acc.password_policy acc.password_dict kern.sysctl mon.auditd \
         dock.log_rotation res.swap panel.root_key; do
         st="$(audit_status "$id")"
         check_eq "$id passes" "$st" PASS
@@ -208,9 +208,20 @@ check_regressions() {   # the "hard-won gotchas" of AGENTS.md that a reboot or a
     check "/etc/ufw/sysctl.conf does not turn log_martians off" $?
     as_root 'iptables -S DOCKER-USER 2>/dev/null | grep -q ufw-user-forward'
     check "the DOCKER-USER chain sends traffic through UFW (ufw-docker)" $?
+    # Issue #70: the installed crowdsec and docker-ce come from their vendor's repository and are pinned at 900,
+    # whatever their version string says (a distro crowdsec 1.4.6-10.1 has no ubuntu, deb or esm in it). apt shows a
+    # package pin on the installed version's line (" *** 1.8.2 900"), not on the repository line below it.
+    local installed_from='/^ \*\*\* / { i = 1; p = $3; next } /^     [^ ]/ { i = 0 } i && index($0, t) { f = 1 }
+        END { exit !(f && p == 900) }'
     v="$(as_root 'dpkg-query -W -f "\${Version}" crowdsec 2>/dev/null')"
-    [[ -n "$v" && ! "$v" =~ ubuntu|deb|esm ]]
-    check "CrowdSec comes from packagecloud, not an old distro or ESM build" $? "version '$v'"
+    as_root "apt-cache policy crowdsec | awk -v t=packagecloud.io/crowdsec/crowdsec/ '$installed_from'"
+    check "CrowdSec comes from packagecloud, pinned at 900, not an old distro or ESM build" $? "version '$v'"
+    v="$(as_root 'dpkg-query -W -f "\${Version}" docker-ce 2>/dev/null')"
+    as_root "apt-cache policy docker-ce | awk -v t=download.docker.com/linux/ '$installed_from'"
+    check "Docker CE comes from download.docker.com, pinned at 900" $? "version '$v'"
+    # the names of Docker's guide and of CrowdSec's install script, so a source they left names the same key
+    as_root 'test -s /etc/apt/keyrings/docker.asc && test -s /etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg'
+    check "the Docker and CrowdSec keys are checked into /etc/apt/keyrings" $?
     as_root 'ss -Hltn "sport = :8091" | grep -q LISTEN'
     check "the CrowdSec API listens on 8091, away from Traefik's 8080" $?
     as_root 'test -e /var/cache/cracklib/cracklib_dict.pwd'

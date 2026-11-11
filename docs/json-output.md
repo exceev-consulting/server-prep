@@ -190,6 +190,7 @@ not a FAIL. The id's prefix is not always its category: `net.exposure` is in `fi
 | `upd.security` | pending security updates (FAIL) and regular updates (WARN) | PASS, WARN, FAIL | `apt-get` exists |
 | `upd.unattended` | unattended-upgrades is installed and enabled | PASS, WARN, FAIL | `apt-get` exists |
 | `upd.third_party` | CrowdSec, cloudflared, Telegraf and Tailscale get their security fixes from unattended-upgrades (their repository is in its origins) | PASS, WARN, INFO | `apt-get` exists (INFO when none of them is installed, or with `THIRD_PARTY_AUTO_UPDATE=no`) |
+| `upd.repo_keys` | Docker CE, CrowdSec, cloudflared and Telegraf come from their vendor's repository, pinned at 900, and every source of that repository names a key with the fingerprint the vendor publishes (one key, no secret key) and none has `trusted=yes` | PASS, WARN, INFO | `apt-get` exists (INFO when none of them is installed) |
 | `upd.server_prep` | a newer server-prep release, WARN when it fixes a security problem | INFO, WARN | always (INFO with `--no-network`) |
 
 #### ssh
