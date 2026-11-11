@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034   # LOG_FILE, SSH_SOCKET, DRY_RUN... are read by the sourced functions
 # Tests the helpers the SSH step uses for sshd's Port lines (issue #72) on sample text: sshd listens
 # on every Port line it reads, so the step comments out the ones outside 00-server-prep.conf (in the
 # file a symlinked drop-in points to), keeps each port once, and after the move reads "sshd -T" and
