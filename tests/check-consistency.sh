@@ -226,6 +226,12 @@ fresh
 replace server-prep.sh ' | telegraf: ${INSTALL_TELEGRAF}' ''
 expect 1 'flags an INSTALL_* setting missing from the plan' 'INSTALL_TELEGRAF is asked in questions()' 'not shown in summary_and_confirm()'
 
+fresh
+edit server-prep.sh '{ print } /ask_secret TELEGRAM_BOT_TOKEN/ {
+    print "        explain \"Text only: ask_secret TELEGRAM_CHAT_ID is not a call here.\" \\"
+    print "                \"ask INSTALL_FOO is not one either.\"" }'
+expect 0 'ignores ask words inside an explain text' ': consistent'
+
 # 6. Audit: a step comment removed, misspelt, malformed, or with no check after it
 fresh
 edit server-audit.sh '!/^[[:space:]]*# step: telegram$/'

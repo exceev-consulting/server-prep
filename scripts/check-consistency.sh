@@ -20,7 +20,9 @@
 #      unless it is in NOT_SECRET below.
 #   4. Questions: every INSTALL_* or *_ENABLE setting asked in questions() shows in the plan of
 #      summary_and_confirm(), every secret is asked with ask_secret, never ask or ask_yn, and every
-#      name asked with ask_secret is a secret.
+#      name asked with ask_secret is a secret. A call counts only at the start of its line (after an
+#      optional VAR=...; assignment, as in a=$def; ask_yn a ...), so the word ask in an explain
+#      text is never read as a question.
 #   5. Audit: every step maps to at least one `result <cat>.<id>` call in server-audit.sh through a
 #      '# step: <name>' comment above the check (several names allowed, separated by one space).
 #      The comment marks the first result call after it; a section call, another step comment or
@@ -269,7 +271,9 @@ parse vsecrets "the secret list of validate_values() (the for k in line under it
     }
     want { exit 3 }'
 
-# (d) Questions: "function VAR line" for each ask, ask_yn or ask_secret call of questions()
+# (d) Questions: "function VAR line" for each ask, ask_yn or ask_secret call of questions(). A call
+# counts at the start of its line, after an optional VAR=...; assignment (a=$def; ask_yn a ...):
+# the words of an explain "..." text or its continuation lines are never read as a call.
 parse asks "the ask, ask_yn and ask_secret calls of questions()" "$PREP" '
     /^questions[(][)]/ { infn = 1; next }
     !infn { next }
@@ -277,11 +281,9 @@ parse asks "the ask, ask_yn and ask_secret calls of questions()" "$PREP" '
     /^[[:space:]]*#/ { next }
     {
         l = $0
-        while (match(l, /(^|[^A-Za-z0-9_])(ask|ask_yn|ask_secret)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/)) {
-            m = substr(l, RSTART, RLENGTH)
-            l = substr(l, RSTART + RLENGTH)
-            sub(/^[^A-Za-z0-9_]/, "", m)
-            split(m, p, " ")
+        sub(/^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^;]*;[[:space:]]*)?/, "", l)
+        if (match(l, /^(ask|ask_yn|ask_secret)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/)) {
+            split(substr(l, 1, RLENGTH), p, " ")
             print p[1], p[2], FNR
         }
     }'
