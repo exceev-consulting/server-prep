@@ -178,6 +178,14 @@ replace server-prep.sh ' PTRACE_SCOPE; do' ' PTRACE_SCOPE TAILSCALE_AUTHKEY; do'
 expect 1 'flags a saved setting that looks like a secret' "setting 'TAILSCALE_AUTHKEY' looks like a secret" \
     "comment of save_answers() in server-prep.sh does not name it"
 
+for name in SMTP_PASS MAIL_APIKEY BACKUP_CREDENTIALS; do
+    fresh
+    NAME="$name" edit server-prep.sh '{ print } /^AUDIT_URL=/ { n = ENVIRON["NAME"]; print n "=\"${" n ":-}\"" }'
+    NAME="$name" edit server-prep.conf.example '{ print } END { print ENVIRON["NAME"] "=\"\"" }'
+    replace server-prep.sh ' PTRACE_SCOPE; do' " PTRACE_SCOPE $name; do"
+    expect 1 "flags a saved setting named like a secret ($name)" "setting '$name' looks like a secret"
+done
+
 fresh
 edit server-prep.sh '{ print } /^AUDIT_URL=/ { print "INFLUX_TOKEN=\"${INFLUX_TOKEN:-}\"" }
     /ask_secret TELEGRAM_BOT_TOKEN/ { print "        ask INFLUX_TOKEN \"InfluxDB token\"" }'

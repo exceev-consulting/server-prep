@@ -16,8 +16,8 @@
 #      the same comment): it is never in the save_answers() list (the saved answers stay
 #      secret-free) and it is in the secret list of validate_values(), the for k in line under its
 #      '# Secrets:' comment. A setting whose name looks like a secret (TOKEN, SECRET, PASSWORD,
-#      PASSWD or AUTHKEY in it, or a _KEY ending other than a public key) must be in that comment,
-#      unless it is in NOT_SECRET below.
+#      PASSWD, APIKEY, CREDENTIAL or AUTHKEY in it, a _PASS ending, or a _KEY ending other than a
+#      public key) must be in that comment, unless it is in NOT_SECRET below.
 #   4. Questions: every INSTALL_* or *_ENABLE setting asked in questions() shows in the plan of
 #      summary_and_confirm(), every secret is asked with ask_secret, never ask or ask_yn, and every
 #      name asked with ask_secret is a secret. A call counts only at the start of its line (after an
@@ -107,7 +107,7 @@ has() { [[ $1 == *" $2 "* ]]; }
 looks_secret() {
     case "$1" in
         *PUBKEY | *PUB_KEY | *PUBLIC_KEY) return 1 ;;
-        *TOKEN* | *SECRET* | *PASSWORD* | *PASSWD* | *AUTHKEY* | *_KEY) return 0 ;;
+        *TOKEN* | *SECRET* | *PASSWORD* | *PASSWD* | *_PASS | *APIKEY* | *CREDENTIAL* | *AUTHKEY* | *_KEY) return 0 ;;
     esac
     return 1
 }
