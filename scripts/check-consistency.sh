@@ -171,12 +171,19 @@ all_steps_line="" runs="" fns="" rows="" settings="" keys="" saved="" secrets=""
 parse all_steps_line "ALL_STEPS" "$PREP" '
     /^ALL_STEPS="/ { s = $0; sub(/^ALL_STEPS="/, "", s); sub(/".*/, "", s); print s; exit }'
 
-# "name function line" for each run_step call of main(); the run_step() definition is outside main()
+# "name function line" for each run_step call of main(); the run_step() definition is outside main().
+# The function is the last word after the quoted title, a trailing # comment left out.
 parse runs "main() and its run_step lines" "$PREP" '
     /^main[(][)]/ { inmain = 1; found = 1; next }
     !inmain { next }
     /^}/ { exit }
-    /^[[:space:]]*run_step[[:space:]]+[a-z][a-z0-9_]*[[:space:]]+"/ { print $2, $NF, FNR }
+    /^[[:space:]]*run_step[[:space:]]+[a-z][a-z0-9_]*[[:space:]]+"/ {
+        rest = $0
+        sub(/^[[:space:]]*run_step[[:space:]]+[a-z][a-z0-9_]*[[:space:]]+"[^"]*"/, "", rest)
+        sub(/#.*/, "", rest)
+        n = split(rest, w, " ")
+        print $2, (n > 0 ? w[n] : "nothing"), FNR
+    }
     END { if (!found) exit 3 }'
 
 # "step_name line" for each step function (helpers included, they are left out below)

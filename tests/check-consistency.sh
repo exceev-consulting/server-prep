@@ -105,6 +105,10 @@ edit server-prep.sh '/^[[:space:]]*run_step suid[[:space:]]/ { sub(/step_suid$/,
 expect 1 'flags a run_step line that calls the wrong function' 'run_step suid calls step_aide'
 
 fresh
+edit server-prep.sh '/^[[:space:]]*run_step suid[[:space:]]/ { $0 = $0 "  # last: lists what the steps installed" } { print }'
+expect 0 'reads a run_step line with a trailing comment' ': consistent'
+
+fresh
 edit server-prep.sh '{ sub(/^step_suid[(][)]/, "step_suidx()"); print }'
 expect 1 'flags a renamed step function' "step 'suid' has no step_suid() function" 'step_suidx() (server-prep.sh:'
 
