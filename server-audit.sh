@@ -252,6 +252,7 @@ else
     result sys.reboot PASS "Reboot required" "No reboot pending"
 fi
 
+# step: update
 if have timedatectl; then
     if [[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" == "yes" ]]; then
         result sys.time PASS "Time sync" "Clock is NTP-synchronized"
@@ -280,6 +281,7 @@ lid_ignored() {
 # Laptop server mode (the laptop step). server-preconfig.sh masks the same sleep targets and sets
 # HandleLidSwitch=ignore on every server, so the check runs only on a machine with a battery or with
 # the laptop step's own drop-in (LAPTOP_MODE=yes), never as a "laptop" line on a VPS.
+# step: laptop
 HAS_BAT=0; ls /sys/class/power_supply/BAT* >/dev/null 2>&1 && HAS_BAT=1
 if [[ $HAS_BAT -eq 1 || -f /etc/systemd/logind.conf.d/50-server-prep-lid.conf ]]; then
     # the configured files, not the running logind: the laptop step applies the lid setting at the next reboot
@@ -304,9 +306,10 @@ if [[ $HAS_BAT -eq 1 || -f /etc/systemd/logind.conf.d/50-server-prep-lid.conf ]]
     if [[ $LID_OK -eq 1 && ${#LAPTOP_BAD[@]} -eq 0 ]]; then
         result sys.laptop INFO "Laptop server mode" "$laptop_msg"
     else
-        # without a battery the step runs only with LAPTOP_MODE=yes, and the saved answers do not keep it
-        laptop_env=""; [[ $HAS_BAT -eq 1 ]] || laptop_env="env LAPTOP_MODE=yes "
-        result sys.laptop INFO "Laptop server mode" "$laptop_msg" "sudo ${laptop_env}./server-prep.sh --config /etc/server-prep/server-prep.conf --only laptop --yes"
+        # without a battery the step runs only with LAPTOP_MODE=yes. The saved answers keep it, and --config
+        # overrides the environment, so the hint sets it in the file (older files lack the line)
+        laptop_set=""; [[ $HAS_BAT -eq 1 ]] || laptop_set="set LAPTOP_MODE=yes in /etc/server-prep/server-prep.conf (add the line if it is missing), then: "
+        result sys.laptop INFO "Laptop server mode" "$laptop_msg" "${laptop_set}sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only laptop --yes"
     fi
 fi
 
@@ -327,6 +330,7 @@ if have apt-get; then
         [[ -n "$newest" ]] && LISTS_AGE=$(( ( $(date +%s) - ${newest%.*} ) / 3600 ))
     fi
     age_note=""; [[ -n "$LISTS_AGE" ]] && age_note=" (package lists ${LISTS_AGE}h old)"
+    # step: update
     if [[ $SEC_UPD -gt 0 ]]; then
         result upd.security FAIL "Security updates" "${SEC_UPD} security update(s) pending, ${TOTAL_UPD} total${age_note}" "sudo apt update && sudo apt full-upgrade"
     elif [[ $TOTAL_UPD -gt 0 ]]; then
@@ -335,6 +339,7 @@ if have apt-get; then
         result upd.security PASS "Security updates" "System is up to date${age_note}"
     fi
 
+    # step: unattended
     if dpkg-query -W -f='${Status}' unattended-upgrades 2>/dev/null | grep -q "ok installed"; then
         if apt-config dump 2>/dev/null | grep -q 'APT::Periodic::Unattended-Upgrade "1"'; then
             result upd.unattended PASS "Automatic security updates" "unattended-upgrades is installed and enabled"
@@ -412,6 +417,7 @@ sshd_grep() {
 if ! have sshd && [[ ! -f /etc/ssh/sshd_config ]]; then
     result ssh.installed INFO "SSH server" "OpenSSH server is not installed"
 else
+    # step: ssh
     EXT_SPEC="user=root,host=audit.example,addr=198.51.100.7"
     LO_SPEC="user=root,host=localhost,addr=127.0.0.1"
     if [[ -n "$SSHD_T" ]]; then
@@ -489,6 +495,7 @@ else
         result ssh.allow_users WARN "SSH user allow-list" "No AllowUsers/AllowGroups - every account with a key can log in" "AllowUsers <admin> root@<trusted-ip>"
     fi
 
+    # step: users
     if [[ $IS_ROOT -eq 1 && -s /root/.ssh/authorized_keys ]]; then
         nkeys=$(grep -cE '^[^#[:space:]]' /root/.ssh/authorized_keys || true)
         nfrom=$(grep -cE '^[^#]*from="' /root/.ssh/authorized_keys || true)
@@ -505,6 +512,7 @@ fi
 # ----------------------------------------------------------------------------
 section firewall "Firewall & network exposure"
 
+# step: firewall
 UFW_ACTIVE=0
 UFW_STATUS=""
 if have ufw && [[ $IS_ROOT -eq 1 ]]; then
@@ -540,6 +548,7 @@ docker_user_filtered() {
         grep -qE -- '^-A DOCKER-USER( .*)? -j ufw-docker-logging-deny( |$)' <<<"$rules"
 }
 
+# step: firewall
 # Is Docker prevented from bypassing the firewall?
 DOCKER_ACTIVE=0
 DOCKER_PROTECTED=1
@@ -733,6 +742,7 @@ fi
 # ----------------------------------------------------------------------------
 section ips "Intrusion prevention"
 
+# step: ips
 F2B=0; CS=0
 if have fail2ban-client || dpkg-query -W fail2ban >/dev/null 2>&1; then
     if systemctl is-active --quiet fail2ban 2>/dev/null; then
@@ -851,6 +861,7 @@ fi
 # ----------------------------------------------------------------------------
 section accounts "Accounts & authentication"
 
+# step: auth
 if sudo --version 2>/dev/null | head -1 | grep -qi 'sudo-rs'; then
     result acc.sudo_log PASS "Sudo logging" "sudo-rs logs every command to the journal (journalctl _COMM=sudo)"
 elif grep -qsE '^[[:space:]]*Defaults.*logfile' /etc/sudoers /etc/sudoers.d/* 2>/dev/null; then
@@ -914,6 +925,7 @@ fi
 # ----------------------------------------------------------------------------
 section kernel "Kernel & system settings"
 
+# step: sysctl
 # key expected (">=N" means numeric minimum, "a|b" means any of)
 SYSCTL_EXPECT=(
     "net.ipv4.tcp_syncookies 1"
@@ -970,6 +982,7 @@ if [[ $IS_ROOT -eq 1 ]]; then
         result kern.world_writable PASS "World-writable files in /etc" "None"
     fi
 
+    # step: suid
     COMMON_SUID='^/usr/bin/|^/bin/|^/sbin/|^/usr/sbin/|^/usr/lib|^/usr/libexec'
     mapfile -t SUIDS < <(find / -xdev \( -path /var/lib/docker -o -path /var/lib/containerd \) -prune -o -type f -perm -4000 -print 2>/dev/null | grep -vE "$COMMON_SUID")
     UNOWNED=()
@@ -989,6 +1002,7 @@ fi
 # ----------------------------------------------------------------------------
 section monitoring "Logging & monitoring"
 
+# step: auditd
 if systemctl is-active --quiet auditd 2>/dev/null; then
     rules=""
     [[ $IS_ROOT -eq 1 ]] && rules=$(auditctl -l 2>/dev/null | grep -vc '^No rules' || true)
@@ -997,12 +1011,14 @@ else
     result mon.auditd WARN "auditd" "Not running - no audit trail of sensitive changes" "apt install auditd"
 fi
 
+# step: rkhunter
 if have rkhunter; then
     result mon.rkhunter PASS "rkhunter" "Installed"
 else
     result mon.rkhunter WARN "rkhunter" "Not installed (rootkit scanner)" "apt install rkhunter"
 fi
 
+# step: aide
 if ls /var/lib/aide/aide.db* >/dev/null 2>&1; then
     result mon.aide PASS "AIDE" "File-integrity database present"
 elif have aide; then
@@ -1014,6 +1030,7 @@ fi
 # Openship (#54): with PANEL=openship, the auditd step watches the folders where the Openship API keeps
 # SSH private keys (OPENSHIP_KEY_DIRS in server-prep.sh), and the aide step leaves out its deploy files.
 # Optional, so INFO only. The key folders exist only on the server that runs the Openship API.
+# step: auditd
 OS_KEY_DIRS=()
 for os_dir in /etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh; do
     [[ -e $os_dir ]] && OS_KEY_DIRS+=("$os_dir")
@@ -1038,6 +1055,7 @@ if [[ ${#OS_KEY_DIRS[@]} -gt 0 ]] && systemctl is-active --quiet auditd 2>/dev/n
     fi
 fi
 # Openship's deploy files are on every server it manages; the aide step writes this drop-in.
+# step: aide
 if [[ -d /var/lib/openship || -d /etc/openship ]] && have aide; then
     if grep -qs '^!/var/lib/openship/' /etc/aide/aide.conf.d/99_server-prep; then
         result mon.aide_panel INFO "AIDE and Openship" "Openship's deploy files are left out of AIDE; its SSH key folders stay checked"
@@ -1047,6 +1065,7 @@ if [[ -d /var/lib/openship || -d /etc/openship ]] && have aide; then
     fi
 fi
 
+# step: logging
 if [[ -d /var/log/journal ]] || grep -qsE '^[[:space:]]*Storage=persistent' /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf; then
     result mon.journal PASS "Persistent logs" "journald keeps logs across reboots"
 else
@@ -1083,6 +1102,7 @@ if [[ -d "$PREP_LOGS" || -f "$PREP_NOTIFY" ]]; then
 fi
 
 # metrics agent: informational only (optional component)
+# step: telegraf
 if have telegraf; then
     TG_VER=$(telegraf --version 2>/dev/null | awk '{print $2}')
     if systemctl is-active --quiet telegraf 2>/dev/null; then
@@ -1096,6 +1116,7 @@ fi
 # Telegram alerts (the telegram step): informational only. /etc/server-prep is root only (mode 700),
 # so the step is found by its world-readable traces. telegram.env holds the bot token: stat it, never
 # read or source it.
+# step: telegram
 TG_ENV=/etc/server-prep/telegram.env TG_HOOK=0
 grep -qsE '^[[:space:]]*-?session[[:space:]].*pam_exec\.so.*server-prep-ssh-alert' /etc/pam.d/sshd && TG_HOOK=1
 if [[ $TG_HOOK -eq 1 || -f /usr/local/sbin/server-prep-ssh-alert || -f /etc/systemd/system/server-prep-daily-report.timer || -f $TG_ENV ]]; then
@@ -1154,6 +1175,7 @@ else
     result svc.count FAIL "Running services" "${SERVICES} running - large attack surface"
 fi
 
+# step: services
 UNNEEDED=()
 for s in $UNNEEDED_SERVICES; do
     systemctl is-active --quiet "$s" 2>/dev/null && UNNEEDED+=("$s")
@@ -1164,6 +1186,7 @@ else
     result svc.unneeded PASS "Unneeded services" "None of the usual desktop/legacy services are running"
 fi
 
+# step: endlessh
 if systemctl is-active --quiet endlessh 2>/dev/null || systemctl is-active --quiet endlessh-go 2>/dev/null; then
     result svc.endlessh INFO "Endlessh" "SSH tarpit is running"
 fi
@@ -1187,6 +1210,7 @@ elif [[ $MEM_PCT -lt $RESOURCE_FAIL ]]; then result res.memory WARN "Memory usag
 else result res.memory FAIL "Memory usage" "${MEM_PCT}% (${MEM_TXT})"
 fi
 
+# step: logging
 SWAP_TOTAL=$(free | awk '/^Swap:/ {print $2}')
 if [[ ${SWAP_TOTAL:-0} -gt 0 ]]; then
     result res.swap PASS "Swap" "$(free -h | awk '/^Swap:/ {print $2}') configured"
@@ -1209,6 +1233,7 @@ fi
 # ----------------------------------------------------------------------------
 if have docker; then
     section docker "Docker"
+    # step: docker
     if [[ $DOCKER_ACTIVE -eq 1 ]]; then
         dver=$(docker version --format '{{.Server.Version}}' 2>/dev/null | head -1)
         result dock.running PASS "Docker engine" "Running${dver:+ (v${dver})}"
@@ -1262,6 +1287,7 @@ else
     result panel.docker INFO "Docker + Compose" "Docker not running - most panels install it when the server is added"
 fi
 
+# step: users
 if [[ $IS_ROOT -eq 1 ]]; then
     if [[ -s /root/.ssh/authorized_keys ]]; then
         result panel.root_key PASS "Panel SSH access" "root has authorized key(s) - use the matching private key in the panel"
@@ -1283,6 +1309,7 @@ fi
 # Cloudflare Tunnel (the cloudflared step): informational only. For apps, cloudflared usually runs as
 # a panel Service, a container that Coolify gives a generated name, so match the image
 # (cloudflare/cloudflared, any tag or digest) or a name that contains cloudflared.
+# step: cloudflared
 CF_SVC=0 CF_CTR=""
 systemctl is-active --quiet cloudflared 2>/dev/null && CF_SVC=1
 if [[ $DOCKER_ACTIVE -eq 1 && $IS_ROOT -eq 1 ]]; then
