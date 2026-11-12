@@ -109,6 +109,10 @@ edit server-prep.sh '/^[[:space:]]*run_step suid[[:space:]]/ { $0 = $0 "  # last
 expect 0 'reads a run_step line with a trailing comment' ': consistent'
 
 fresh
+edit server-prep.sh '/^[[:space:]]*run_step suid[[:space:]]/ { sub(/"SUID review"/, "\"SUID review # keep\"") } { print }'
+expect 0 'reads a run_step title with a # in it' ': consistent'
+
+fresh
 edit server-prep.sh '{ sub(/^step_suid[(][)]/, "step_suidx()"); print }'
 expect 1 'flags a renamed step function' "step 'suid' has no step_suid() function" 'step_suidx() (server-prep.sh:'
 
