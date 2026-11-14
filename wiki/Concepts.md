@@ -29,7 +29,7 @@ Moving SSH could cut you off, so the `ssh` step works in two phases:
 
 1. **Phase A.** sshd listens on the old port **and** the new port. The script starts a timer: in 10 minutes, the old SSH config comes back by itself.
 2. You open a **new** terminal and test `ssh -p 822 <user>@<server>`. You answer `y` (it works), `n` (roll back now) or `s` (skip, I have console access).
-3. **Phase B.** After `y` or `s`, the timer stops, sshd listens only on the new port, and the temporary firewall rule for the old port is removed.
+3. **Phase B.** After `y` or `s`, the timer stops, sshd listens only on the new port, and the temporary firewall rule for the old port is removed. If something the script does not edit still keeps an old port open (a `Port` line in another included file, or an `ssh.socket` override), the step keeps that rule, fails and adds a todo that says what to remove. A re-run then finishes the move.
 
 **Known limit:** with `--yes`, the script does not wait for your test, so the timer stops right away. A fix is planned in [issue #65](https://github.com/exceev-consulting/server-prep/issues/65). Until then, change SSH interactively, or have console access.
 
