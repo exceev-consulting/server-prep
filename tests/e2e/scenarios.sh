@@ -248,6 +248,12 @@ check_tarpit() {   # where the endlessh package exists, the tarpit must really l
     check "the endlessh tarpit is running on port 22" $? "$(as_root 'systemctl is-active endlessh; journalctl -u endlessh -n 3 --no-pager -o cat' 2>&1 | tr '\n' ' ' | head -c 300)"
 }
 
+plant_port_line() {   # an active Port line in another drop-in, as some provider images ship (issue #72)
+    # One place only: the rollback scenario restores it, and two identical lines would make sshd
+    # listen twice on 22. Does nothing once the file exists.
+    as_root 'f=/etc/ssh/sshd_config.d/10-e2e-port.conf; test -e "$f" || printf "Port 22\n" > "$f"' < /dev/null
+}
+
 no_ssh_banner() {   # no_ssh_banner PORT: true when the port gives no SSH greeting (closed or tarpit)
     local line=""
     { exec 3<>"/dev/tcp/127.0.0.1/$1"; } 2>/dev/null || return 0
@@ -335,6 +341,7 @@ sc_prep_dry_run() {
     local rc
     wait_apt_idle
     settle_listchanges
+    plant_port_line   # before the snapshot: the dry run must leave it alone
     snapshot > "$WORK/snap-before"
     run_prep dry-run --config "$VM_CFG" --yes --dry-run; rc=$?
     check_eq "the dry run exits 0" "$rc" 0
@@ -366,6 +373,7 @@ sc_prep_interactive() {
 sc_prep_run() {
     begin prep-run
     local rc failed
+    plant_port_line   # also here: --only ssh-access skips prep-dry-run
     run_prep first --config "$VM_CFG" --yes; rc=$?
     check_eq "server-prep.sh exits 0" "$rc" 0
     [[ -n "$PREP_REPORT" ]]; check "the report is written" $?
@@ -410,6 +418,11 @@ sc_ssh_access() {
     as_root 'rm -f /root/e2e-panel-key'
     [[ $rc -ne 0 ]]; check "root is refused from an address that is not the panel's" $?
     no_ssh_banner "$P22"; check "port 22 gives no SSH login any more" $?
+    # issue #72: sshd listens on every Port line, so the planted one must be commented out
+    check_eq "sshd -T lists only port 822" \
+        "$(as_root "sshd -T 2>/dev/null | awk '\$1==\"port\"{print \$2}' | sort -u | paste -sd' ' -" < /dev/null)" 822
+    as_root 'grep -qx "# server-prep: Port 22" /etc/ssh/sshd_config.d/10-e2e-port.conf' < /dev/null
+    check "the planted Port 22 line is commented out" $?
     check_tarpit
     finish
 }
@@ -604,6 +617,8 @@ sc_rollback() {
     check "after the rollback, the cloud-init user logs in on port 22 again" "$st"
     # When it did not run, go back to the panel channel on 822 for the checks and the log collection
     [[ $st -eq 0 ]] || use_new_port
+    as_root 'grep -qx "Port 22" /etc/ssh/sshd_config.d/10-e2e-port.conf' < /dev/null
+    check "rollback.sh put back the Port 22 line of the other drop-in" $?
     SSH_LIMIT=180 as_root 'for i in $(seq 1 60); do grep -qs "Rollback done" /var/tmp/e2e/rollback.out && exit 0; sleep 2; done; exit 1' < /dev/null
     check "rollback.sh runs to its end" $?
     fetch_file /var/tmp/e2e/rollback.out rollback-out.log && attach rollback-out.log

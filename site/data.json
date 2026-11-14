@@ -47,7 +47,7 @@
       "name": "ssh",
       "title": "SSH security",
       "gate": null,
-      "details": "port 822, keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works"
+      "details": "port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works"
     },
     {
       "name": "ips",
