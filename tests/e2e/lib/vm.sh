@@ -9,14 +9,32 @@ VM_HOST_IP=198.51.100.2
 VM_GUEST_IP=198.51.100.15
 VM_DOCKER_PORT=18080   # guest port the firewall test publishes a container on
 
+# Debian copies each new build of its cloud images over latest/, in place, so while a build is
+# published latest/SHA512SUMS can lack the image or not match it yet (issue #212). Each build
+# also has its own dated folder (trixie/20261111-2659/), which no longer changes once published.
+# A row whose URLs hold {build} uses those folders: the newest build whose checksum file lists
+# the image and whose image downloads with that checksum, else the one before it (BUILD_TRIES).
+BUILD_TAG='{build}'
+BUILD_TRIES=3
+
 os_load() {   # os_load ID: read the row of tests/e2e/images.tsv into OS_*
     local id="$1" row
     row="$(awk -F'\t' -v id="$id" '!/^#/ && $1 == id' "$E2E_DIR/images.tsv")"
     [[ -n "$row" ]] || return 1
     IFS=$'\t' read -r OS_ID OS_LABEL OS_IMAGE_URL OS_SUMS_URL OS_ALGO <<<"$row"
+    OS_IMAGE_TEMPLATE="$OS_IMAGE_URL" OS_SUMS_TEMPLATE="$OS_SUMS_URL"
 }
 
 os_list() { awk -F'\t' '!/^#/ && NF {print $1}' "$E2E_DIR/images.tsv"; }
+
+os_dated() { [[ $OS_IMAGE_TEMPLATE == *"$BUILD_TAG"* ]]; }   # the row picks a dated build folder
+
+os_build_index() { echo "${OS_SUMS_TEMPLATE%%"$BUILD_TAG"*}"; }   # the page that lists the builds
+
+os_use_build() {   # os_use_build BUILD: point OS_IMAGE_URL and OS_SUMS_URL at that build's folder
+    OS_IMAGE_URL="${OS_IMAGE_TEMPLATE//"$BUILD_TAG"/$1}"
+    OS_SUMS_URL="${OS_SUMS_TEMPLATE//"$BUILD_TAG"/$1}"
+}
 
 fetch() {   # fetch URL FILE: download with retries, atomically
     local url="$1" file="$2" try
@@ -31,6 +49,14 @@ fetch() {   # fetch URL FILE: download with retries, atomically
     return 1
 }
 
+os_builds() {   # os_builds: the dated build folders of the row, newest first, at most BUILD_TRIES
+    local index="$CACHE_DIR/images/$OS_ID.index"
+    mkdir -p "$CACHE_DIR/images"
+    fetch "$(os_build_index)" "$index" || return 1
+    grep -oE 'href="[0-9]{8}-[0-9]+/"' "$index" | sed -E 's/^href="//; s/\/"$//' |
+        sort -u -t- -k1,1nr -k2,2nr | head -n "$BUILD_TRIES"
+}
+
 image_checksum() {   # image_checksum: expected checksum of the image, from the published sums file
     local sums="$CACHE_DIR/images/$OS_ID.sums" name="${OS_IMAGE_URL##*/}"
     mkdir -p "$CACHE_DIR/images"
@@ -39,24 +65,49 @@ image_checksum() {   # image_checksum: expected checksum of the image, from the 
     awk -v n="$name" '$2 == n || $2 == "*" n {print $1; exit}' "$sums"
 }
 
-image_get() {   # image_get: make sure $IMAGE is the published image, downloading it if needed
+image_resolve() {   # image_resolve: for a dated row, use the newest build whose sums file lists the image
+    local b
+    os_dated || return 0
+    for b in $(os_builds); do
+        os_use_build "$b"
+        [[ -n "$(image_checksum)" ]] && return 0
+    done
+    return 1
+}
+
+image_fetch() {   # image_fetch: make sure $IMAGE is the image at OS_IMAGE_URL, downloading it if needed
     local want got
-    want="$(image_checksum)" || return 1
+    want="$(image_checksum)" || { echo "cannot read $OS_SUMS_URL" >&2; return 1; }
     [[ -n "$want" ]] || { echo "no checksum for ${OS_IMAGE_URL##*/} in $OS_SUMS_URL" >&2; return 1; }
-    IMAGE="$CACHE_DIR/images/$OS_ID.img"
-    IMAGE_CHECKSUM="$OS_ALGO:$want"
     if [[ -f "$IMAGE" ]]; then
         got="$("${OS_ALGO}sum" "$IMAGE" | cut -d' ' -f1)"
-        [[ "$got" == "$want" ]] && return 0
+        [[ "$got" == "$want" ]] && { IMAGE_CHECKSUM="$OS_ALGO:$want"; return 0; }
         echo "cached image is out of date, downloading again" >&2
     fi
-    fetch "$OS_IMAGE_URL" "$IMAGE" || return 1
+    fetch "$OS_IMAGE_URL" "$IMAGE" || { echo "cannot download $OS_IMAGE_URL" >&2; return 1; }
     got="$("${OS_ALGO}sum" "$IMAGE" | cut -d' ' -f1)"
     if [[ "$got" != "$want" ]]; then
         rm -f "$IMAGE"
         echo "checksum mismatch for ${OS_IMAGE_URL##*/}" >&2
         return 1
     fi
+    IMAGE_CHECKSUM="$OS_ALGO:$want"
+}
+
+image_get() {   # image_get: make sure $IMAGE is the published image, downloading it if needed
+    local builds b
+    IMAGE="$CACHE_DIR/images/$OS_ID.img" IMAGE_CHECKSUM=""
+    os_dated || { image_fetch; return; }
+    builds="$(os_builds)" || { echo "cannot read $(os_build_index)" >&2; return 1; }
+    [[ -n "$builds" ]] || { echo "no build folder listed in $(os_build_index)" >&2; return 1; }
+    for b in $builds; do
+        os_use_build "$b"
+        echo "build $b: $OS_IMAGE_URL"
+        image_fetch && return 0
+        echo "build $b is not usable, trying the build before it" >&2
+    done
+    os_use_build "${builds%%$'\n'*}"   # the report links the newest build
+    return 1
 }
 
 free_port() {   # free_port: a free TCP port on 127.0.0.1
