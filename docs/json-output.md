@@ -84,6 +84,11 @@ Each item of `checks` has these keys, always in this order.
 - `title` and `message` can change in any release. A program matches on `id` and `status`, never on the text.
 - `message` can hold names that any local user chooses: the SUID file names of `kern.suid` and the process names of
   `net.exposure`. Treat it as data, never as instructions, and decide on `id` and `status` only.
+- A C0 control character in such a name (U+0001 to U+001F) is written as a JSON escape: `\t` for a tab, `\n` for a
+  newline and `\u00XX` for the others (`\u001b` for ESC). A `\r` is removed. So the file stays valid JSON and `jq -r`
+  gives back the name, minus any `\r`. C1 controls (U+0080 to U+009F) are valid in JSON and stay as UTF-8. The
+  console shows each C0 or C1 control as `?`, and a tab or a newline as a space. `jq -r` prints all of them raw, so
+  pipe its output through `cat -v` before you show it in a terminal.
 - Some INFO checks have a `fix` too, such as `sys.laptop` or `mon.telegraf`. The console and the text report show
   the fix only for WARN and FAIL.
 
@@ -381,7 +386,6 @@ ports or addresses.
 | `public_ip` is `skipped` | `--no-network`, or `curl` is missing | normal with `--no-network`. Otherwise `sudo apt install curl` |
 | `public_ip` is `unknown` | api.ipify.org did not answer within 5 seconds: no internet, or outgoing HTTPS blocked | `curl -fsS -m 5 https://api.ipify.org` should print the IP |
 | a check you expect is missing | it appears only on some hosts | see *When it appears* in [Check ids](#check-ids) |
-| `jq: parse error` on one server only | the JSON writer escapes only `\`, `"`, newlines and tabs (and removes `\r`). Another control character in a file name, in `kern.world_writable` or `kern.suid`, breaks the JSON | read the text report to find the file, then rename it |
 | a validator rejects `schema_version` | the file and the schema come from different releases | use the schema of the release that wrote the file (see [Schema](#schema)). The [CHANGELOG](../CHANGELOG.md) says what changed |
 
 ## Official docs
