@@ -1676,13 +1676,24 @@ ufw_rule_split() {
 }
 
 # ufw_rule_key SPEC: the rule without its action (allow, limit...) and log option. ufw keeps one rule
-# per key: adding a rule whose key is there replaces that rule, its action and comment included.
+# per key: adding a rule whose key is there replaces that rule, its action and comment included. ufw
+# writes the log option after the direction and the interfaces: "allow log 80/tcp", "allow out log
+# 80/tcp", "allow in on tailscale0 log to any port 822 proto tcp" (get_command in ufw's parser.py).
 ufw_rule_key() {
-    local s="$1" route=""
-    [[ $s == "route "* ]] && { route="route "; s="${s#route }"; }
-    s="${s#* }"
-    [[ $s == "log "* || $s == "log-all "* ]] && s="${s#* }"
-    printf '%s%s\n' "$route" "$s"
+    local IFS=' ' i=1
+    local -a w=() key=()
+    read -ra w <<<"$1"
+    [[ ${w[0]:-} == route ]] && { key=(route); w=("${w[@]:1}"); }
+    while [[ ${w[i]:-} == in || ${w[i]:-} == out ]]; do
+        if [[ ${w[i + 1]:-} == on ]]; then
+            key+=("${w[@]:i:3}"); i=$((i + 3))   # in on IFACE, out on IFACE
+        else
+            key+=("${w[i]}"); i=$((i + 1))        # out
+        fi
+    done
+    [[ ${w[i]:-} == log || ${w[i]:-} == log-all ]] && i=$((i + 1))
+    key+=("${w[@]:i}")
+    printf '%s\n' "${key[*]}"
 }
 
 # ufw_fw_comment TEXT: TEXT is a comment the firewall step writes after the tag. "coolify" was the
@@ -1791,14 +1802,26 @@ UFW_WANT_EXACT=1   # 0 when an address could not be written as ufw does (ufw_add
 UFW_WANT_BAD=""    # those addresses and why (ufw_addr_problem), "; " between them
 UFW_RULES_RESTORE=0   # 1 once step_firewall found UFW on: rollback.sh copies its rule files back
 
+# ufw_temp_comment COMMENT: COMMENT is one of the temporary SSH rules', tagged or not (server-prep-temp)
+ufw_temp_comment() { [[ ${1#"$UFW_TAG"} == server-prep-temp* ]]; }
+
 # ufw_want ufw WORDS... comment TEXT: the runner of the firewall step for ufw_allow_ssh. It only records
 # the rule in UFW_WANT. A rule whose key is already there is left out: ufw would keep only the last one,
-# and the comment would change at every run (ADMIN_IPS and PANEL_IP can name the same address).
+# and the comment would change at every run (ADMIN_IPS and PANEL_IP can name the same address). Except
+# that a permanent rule takes the place of a temporary one (server-prep-temp): phase B of the SSH step
+# deletes the temporary rules, and an old SSH port that the answers open too (443, an EXTRA_PORTS
+# entry) would close, since without SSH sources both rules are "PORT/tcp".
 ufw_want() {
-    local IFS=' ' n=$# spec key k
+    local IFS=' ' n=$# spec key i
     spec="${*:2:n-3}"
     key="$(ufw_rule_key "$spec")"
-    for k in "${UFW_WANT_KEYS[@]}"; do [[ $k == "$key" ]] && return 0; done
+    for i in "${!UFW_WANT_KEYS[@]}"; do
+        [[ ${UFW_WANT_KEYS[i]} == "$key" ]] || continue
+        if ufw_temp_comment "${UFW_WANT[i]#*$'\t'}" && ! ufw_temp_comment "${!n}"; then
+            UFW_WANT[i]="${spec}"$'\t'"${!n}"
+        fi
+        return 0
+    done
     UFW_WANT+=("${spec}"$'\t'"${!n}")
     UFW_WANT_KEYS+=("$key")
 }
@@ -1883,7 +1906,7 @@ ufw_stale_rules() {
     local keep_temp="$1" line key k found
     while IFS= read -r line; do
         ufw_rule_split "$line" && ufw_fw_owned "$UFW_R_SPEC" "$UFW_R_COMMENT" || continue
-        [[ $keep_temp -eq 1 && ${UFW_R_COMMENT#"$UFW_TAG"} == server-prep-temp* ]] && continue
+        [[ $keep_temp -eq 1 ]] && ufw_temp_comment "$UFW_R_COMMENT" && continue
         key="$(ufw_rule_key "$UFW_R_SPEC")"
         found=0
         for k in "${UFW_WANT_KEYS[@]}"; do [[ $k == "$key" ]] && { found=1; break; }; done

@@ -49,7 +49,14 @@ check_key 'deny log-all 80/tcp' '80/tcp'
 check_key 'route allow 80/tcp' 'route 80/tcp'
 check_key 'allow from 192.168.1.50 to any port 822 proto tcp' 'from 192.168.1.50 to any port 822 proto tcp'
 check_key 'allow in on tailscale0 to any port 822 proto tcp' 'in on tailscale0 to any port 822 proto tcp'
-pass 'ufw_rule_key drops the action and the log option, and keeps route apart'
+# ufw writes the log option after the direction and the interfaces (get_command in ufw's parser.py)
+check_key 'allow in on tailscale0 log to any port 822 proto tcp' 'in on tailscale0 to any port 822 proto tcp'
+check_key 'allow out log 80/tcp' 'out 80/tcp'
+check_key 'deny out log-all to 192.0.2.10 port 25 proto tcp' 'out to 192.0.2.10 port 25 proto tcp'
+check_key 'route allow in on eth0 out on docker0 log to any port 80 proto tcp' 'route in on eth0 out on docker0 to any port 80 proto tcp'
+check_key 'allow in on log to any port 822 proto tcp' 'in on log to any port 822 proto tcp'
+check_key 'allow in on eth0' 'in on eth0'
+pass 'ufw_rule_key drops the action and the log option (after the direction and interfaces too), and keeps route apart'
 
 # --- ufw_fw_owned: the tag, or a comment of a version before it on the shape it added -------------------
 owned() {   # owned yes|no SPEC COMMENT
@@ -178,6 +185,33 @@ ufw_wanted_rules
 PANEL_ACCESS=cloudflared
 ufw_wanted_rules
 [[ ${#UFW_WANT[@]} -eq 0 ]] || fail "ufw_wanted_rules: the tunnel alone gave:"$'\n'"$(wanted)"
+# an old SSH port that the answers open too (443 with EXPOSE_WEB, an EXTRA_PORTS entry), without SSH
+# sources: the temporary rule has the key of the permanent one, and the permanent one takes its place,
+# comment included. Phase B of the SSH step deletes the temporary rules: the port stays open.
+CURRENT_SSH_PORTS='443 2222 '; SSH_PORT=822; PANEL_ACCESS=''; EXPOSE_WEB=yes; EXTRA_PORTS=2222
+ufw_wanted_rules
+want='limit 822/tcp#server-prep: ssh
+allow 443/tcp#server-prep: https
+allow 2222/tcp#server-prep: extra
+allow 80/tcp#server-prep: http
+allow 443/udp#server-prep: http3
+route allow 80/tcp#server-prep: docker http
+route allow 443/tcp#server-prep: docker https
+route allow 443/udp#server-prep: docker http3
+route allow 2222/tcp#server-prep: docker extra'
+[[ $(wanted) == "$want" ]] ||
+    fail "ufw_wanted_rules: an old SSH port the answers open gave:"$'\n'"$(wanted)"$'\n'"want:"$'\n'"$want"
+# in either order: a temporary rule never takes the place of a permanent one
+UFW_WANT=(); UFW_WANT_KEYS=()
+ufw_want ufw allow 2222/tcp comment 'server-prep: extra'
+ufw_want ufw limit 2222/tcp comment 'server-prep: server-prep-temp'
+[[ $(wanted) == 'allow 2222/tcp#server-prep: extra' ]] ||
+    fail "ufw_want: a temporary rule after a permanent one with its key gave:"$'\n'"$(wanted)"
+# and between two permanent rules (SSH_PORT in EXTRA_PORTS), the first one stays
+ufw_want ufw limit 2222/tcp comment 'server-prep: ssh'
+[[ $(wanted) == 'allow 2222/tcp#server-prep: extra' ]] ||
+    fail "ufw_want: a second permanent rule with the key of the first gave:"$'\n'"$(wanted)"
+CURRENT_SSH_PORTS='22 '; SSH_PORT=2222; EXPOSE_WEB=no; EXTRA_PORTS=''; PANEL_ACCESS=cloudflared
 ADMIN_IPS='192.168.1.50 office'
 ufw_wanted_rules
 [[ $UFW_WANT_EXACT -eq 0 && $UFW_WANT_BAD == 'office is not an IP address or network' ]] ||
@@ -197,7 +231,7 @@ cd "$SCRIPT_DIR" || fail "cannot enter $SCRIPT_DIR"
 [[ $(wanted) == *$'\nallow */tcp#server-prep: extra\nroute allow */tcp#server-prep: docker extra' ]] ||
     fail "ufw_wanted_rules: EXTRA_PORTS='*' gave:"$'\n'"$(wanted)"
 EXTRA_PORTS=''
-pass 'ufw_wanted_rules: the temporary rules of the old port, the limit rule without sources, nothing for the tunnel, no compare for a name or /0, no globbing'
+pass 'ufw_wanted_rules: the temporary rules of the old port unless the answers open it, the limit rule without sources, nothing for the tunnel, no compare for a name or /0, no globbing'
 
 # --- ufw_stale_rules: the rules of earlier answers ---------------------------------------------------------
 # A server prepared by a version before the tag, then by this one, with rules of the operator
@@ -287,6 +321,9 @@ ufw() {
         status)
             echo "Status: active"
             [[ ${2:-} == verbose ]] && echo "Default: deny (incoming), allow (outgoing), disabled (routed)"
+            if [[ ${2:-} == numbered ]]; then
+                for i in "${!FAKE_RULES[@]}"; do printf '[%2d] %s\n' $((i + 1)) "${FAKE_RULES[$i]}"; done
+            fi
             return 0 ;;
         show)
             echo "Added user rules (see 'ufw status' for running firewall):"
@@ -294,7 +331,10 @@ ufw() {
             return 0 ;;
         reload|enable|default) return 0 ;;
         delete|route)
-            if [[ $1 == route && $2 == delete ]]; then fake_words route "${@:3}"
+            if [[ $1 == delete && $2 =~ ^[1-9][0-9]*$ ]]; then   # by number, as in ufw status numbered
+                [[ $2 -le ${#FAKE_RULES[@]} ]] || { echo 'ERROR: Could not find rule'; return 1; }
+                i=$(($2 - 1)); unset 'FAKE_RULES[i]'; FAKE_RULES=("${FAKE_RULES[@]}"); return 0
+            elif [[ $1 == route && $2 == delete ]]; then fake_words route "${@:3}"
             elif [[ $1 == delete ]]; then fake_words "${@:2}"
             else fake_add "$@"; return; fi
             for i in "${!FAKE_RULES[@]}"; do
@@ -421,10 +461,11 @@ pass 'step_firewall: a failed delete, or one that removes nothing, fails the ste
 
 # UFW off before the run: rollback.sh keeps the run's rules (old files restored on a UFW that stays
 # on could block SSH)
+real_status="$(declare -f ufw_status)"
 ufw_status() { echo 'Status: inactive'; }
 fw 'with UFW off' 0
 [[ $UFW_RULES_RESTORE -eq 0 ]] || fail 'step_firewall: UFW was off, but rollback.sh would restore its rule files'
-unset -f ufw_status
+eval "$real_status"
 pass 'step_firewall: with UFW off before the run, rollback.sh does not restore the rule files'
 
 # A rule that is not the firewall step's holds the place of a wanted one: it stays. With the same action
@@ -451,6 +492,50 @@ grep -qF "the answers ask for 'allow 80/tcp', but a UFW rule without the server-
 [[ ${#MANUAL_TODO[@]} -eq 2 ]] || fail "step_firewall: want the deny rule's todo and Docker's, got: $(printf '%s | ' "${MANUAL_TODO[@]}")"
 EXPOSE_WEB=no
 pass "step_firewall: a rule in the place of a wanted one stays; one that contradicts the answers gets a warning and a to-do"
+
+# The operator's rule with the log option holds the key of a wanted rule as well: ufw writes the option
+# after the interface, and its add would replace the operator's rule (ufw's match ignores the log type)
+FAKE_RULES=('allow in on tailscale0 log to any port 822 proto tcp')
+ADMIN_IPS=''; PANEL_ACCESS=tailscale; EXTRA_PORTS=''
+fw 'with a logged operator rule on tailscale0' 0
+[[ $(rules) == 'allow in on tailscale0 log to any port 822 proto tcp' ]] ||
+    fail "step_firewall: changed the operator's logged tailscale0 rule:"$'\n'"$(rules)"
+for c in "${CALLS[@]}"; do
+    [[ $c != 'allow in on tailscale0 '* ]] || fail "step_firewall: replaced the operator's logged tailscale0 rule: $c"
+done
+[[ $STEP_NOTES == *'without the server-prep tag left as it is: allow in on tailscale0 log to any port 822 proto tcp'* ]] ||
+    fail "step_firewall: the notes of a logged operator rule on tailscale0 are '$STEP_NOTES'"
+pass "step_firewall: the operator's rule with the log option after its interface stays"
+
+# SSH moves from 443 and 2222, which the answers open too (EXPOSE_WEB, EXTRA_PORTS), without SSH
+# sources. The firewall step puts the permanent rules in the place of the temporary ones of an earlier
+# run, and phase B of the SSH step, which deletes the temporary rules by number, leaves both ports open.
+FAKE_RULES=("limit 443/tcp comment 'server-prep: server-prep-temp'" "limit 2222/tcp comment 'server-prep: server-prep-temp'")
+SSH_PORT=822; CURRENT_SSH_PORTS='443 2222 '; ADMIN_IPS=''; PANEL_ACCESS=''; EXPOSE_WEB=yes; EXTRA_PORTS=2222; PENDING=1
+fw 'with an old SSH port the answers open' 0
+[[ $STEP_NOTES == *'80/443 open'* && $STEP_NOTES == *'extra port 2222/tcp'* ]] ||
+    fail "step_firewall: the notes of an old SSH port the answers open are '$STEP_NOTES'"
+sshd() { printf 'port 822\n'; }
+ssh_listen_ports() { printf '822 '; }
+ssh_close_old_ports || fail 'ssh_close_old_ports: failed with SSH on 822 only'
+unset -f sshd ssh_listen_ports
+want="limit 822/tcp comment 'server-prep: ssh'
+allow 443/tcp comment 'server-prep: https'
+allow 2222/tcp comment 'server-prep: extra'
+allow 80/tcp comment 'server-prep: http'
+allow 443/udp comment 'server-prep: http3'
+route allow 80/tcp comment 'server-prep: docker http'
+route allow 443/tcp comment 'server-prep: docker https'
+route allow 443/udp comment 'server-prep: docker http3'
+route allow 2222/tcp comment 'server-prep: docker extra'"
+[[ $(sort <<<"$(rules)") == "$(sort <<<"$want")" ]] ||
+    fail "step_firewall + phase B: an old SSH port the answers open left:"$'\n'"$(rules)"$'\n'"want:"$'\n'"$want"
+CURRENT_SSH_PORTS='822 '; PENDING=0
+fw 'once SSH is on 822 only' 0
+[[ $STEP_CHANGED -eq 0 && " ${CALLS[*]} " != *' delete '* ]] ||
+    fail "step_firewall: the re-run after the move changed the rules: $(printf '%s; ' "${CALLS[@]}")"
+EXPOSE_WEB=no; EXTRA_PORTS=''
+pass 'step_firewall: an old SSH port the answers open (443, an extra port) stays open once phase B deletes the temporary rules'
 
 # --- the plan: what the firewall step will delete ------------------------------------------------------------
 mapfile -t FAKE_RULES < <(sed -n 's/^ufw //p' <<<"$ADDED")
