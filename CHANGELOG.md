@@ -5,6 +5,14 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `server-preconfig.sh` no longer fails with `--yes` (or Enter) when the server's current name has capitals or a
+  domain, such as `Web-01` or `vps123.example.net`. The default hostname is now the short name in lowercase (`web-01`,
+  `vps123`), and the script says when it differs from the current name. The `127.0.1.1` line of `/etc/hosts` keeps its
+  domain (`127.0.1.1 web-01.example.com web-01`), also when only the current hostname had it. When cloud-init runs at
+  boot, the script writes `/etc/cloud/cloud.cfg.d/zz-server-preconfig.cfg` (`preserve_hostname: true`,
+  `manage_etc_hosts: false`) so the next boot does not undo the hostname or `/etc/hosts`, and `--check` reports it
+  (`pre.cloud_init_hostname`, INFO when cloud-init is disabled, as on Ubuntu installed from the ISO). A `cloud.cfg.d`
+  file read after the drop-in still wins: the run and `--check` name it.
 - The saved answers (`/etc/server-prep/server-prep.conf`) now keep `LAPTOP_MODE`, so a re-run with `--config` keeps
   laptop server mode on a machine without a battery (an older saved file gets the line at its next run). The file
   overrides the environment, so the audit's `sys.laptop` fix hint now says to set `LAPTOP_MODE=yes` in it instead of
@@ -21,6 +29,14 @@ Highlights of each release. The full list of merged pull requests is in each
   UFW from the same addresses as the run's SSH rule, deletes the Endlessh rule, which would have left the old SSH open
   to everyone on 22, and checks the restored files with `sshd -t`. It starts with a warning to run it from the console,
   not over SSH, and prints what it does not undo.
+- Fix: the SSH step left the old SSH port open when `/etc/ssh/sshd_config` or another file in
+  `/etc/ssh/sshd_config.d/` had its own `Port` line (for example `Port 22`). sshd listens on every `Port` line it reads,
+  so every re-run moved SSH again, Endlessh skipped port 22 and the audit kept warning about it. The step now comments
+  out those `Port` lines, in the file a symlinked drop-in points to (each file is backed up first and put back by
+  `rollback.sh`). If SSH still listens on an old port after the move, the step fails, names the port and keeps that
+  port's temporary UFW rules; once the line that sets it is gone, a re-run restarts SSH and deletes them. On a server
+  prepared earlier, run `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh --dry-run`,
+  then the same command without `--dry-run` (not `--yes`, which skips the second-terminal login test).
 - With `PANEL=openship`, the daily AIDE check no longer fills with Openship's deploy changes: it now leaves out
   `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`,
   `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `csr` and `keys` under
@@ -57,6 +73,21 @@ Highlights of each release. The full list of merged pull requests is in each
   check `upd.third_party` warns when an installed one is left out. Each update restarts that tool for a moment (SSH
   over Tailscale pauses a few seconds). On a server prepared before, run:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes`.
+- **Security:** Docker, cloudflared and CrowdSec are now installed only after their repository keys match the
+  fingerprints the vendors publish, as Telegraf already was. Only that one key is kept, in `/etc/apt/keyrings/` (a
+  file that bundles another key or a secret key is refused), and each repository is pinned at priority 900, so an
+  older Ubuntu Pro (ESM) or distro build cannot win. CrowdSec no longer runs its remote install script
+  (`curl https://install.crowdsec.net | sh`) as root: server-prep adds the repository itself. If that fails (download,
+  wrong key, `apt-get update`), the `ips` step now FAILS instead of quietly installing the old distro CrowdSec. A
+  distro CrowdSec is now found by where it comes from, not by its version string, so the Debian 13 and Ubuntu 26.04
+  builds (`1.4.6-10`, `1.4.6-10.1`) are replaced too. Re-runs check the keys already in place (Telegraf's too), and
+  check and pin a Docker CE or cloudflared installed from its vendor's repository; one installed another way is left
+  as it is. Another source for the same repository, such as the `docker.list` of an older Docker guide, is removed
+  (backed up first, and `rollback.sh` puts it back): apt refuses one repository listed with two keys. The new audit check `upd.repo_keys` warns when
+  an installed Docker CE, CrowdSec, cloudflared or Telegraf is not from its vendor's repository, not pinned at 900,
+  or signed by a key without the published fingerprint, when a source has `trusted=yes` (apt then checks no
+  signature), and when `gpg` is missing so the keys cannot be checked. On a server prepared before, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only docker,ips,telegraf,cloudflared --yes`.
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
   now says it would check that file and merge the log rotation if it is missing.

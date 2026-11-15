@@ -870,6 +870,103 @@ pkg_install() {   # install missing packages only
 }
 pkg_available() { apt-cache show "$1" >/dev/null 2>&1; }
 
+# key_fingerprint GNUPGHOME FILE: the fingerprint of the key in FILE (armored or binary), or nothing when FILE
+# holds no key, more than one primary key (pub or sec), or any secret key material (sec, ssb): apt would load a
+# bundled secret key as one more signing key, so such a file never passes the fingerprint check.
+# --no-autostart: listing a secret key would otherwise start a gpg-agent for the throwaway GNUPGHOME.
+key_fingerprint() {
+    local out
+    out="$(GNUPGHOME="$1" gpg --batch --no-autostart --show-keys --with-fingerprint --with-colons "$2" 2>/dev/null)" || return 0
+    awk -F: '$1=="pub" || $1=="sec" {n++} $1=="sec" || $1=="ssb" {s=1} $1=="fpr" && f=="" {f=$10}
+             END {if (n==1 && !s) print f}' <<<"$out"
+}
+
+# apt_repo_key NAME URL FPR KEYRING: put a third-party apt key in KEYRING only when it is one key with the
+# fingerprint its vendor publishes, so a swapped key on their server cannot sign our packages. A key already
+# in place is checked the same way on every run and kept when it passes. A KEYRING ending in .asc is written
+# armored (apt reads .asc files as text), any other one binary. A dry run downloads and writes nothing, and a
+# throwaway GNUPGHOME keeps /root/.gnupg out.
+apt_repo_key() {
+    local name="$1" url="$2" fpr="$3" keyring="$4" home rc=0 armor=()
+    [[ "$keyring" == *.asc ]] && armor=(--armor)
+    home="$(mktemp -d)" || { note "cannot create a temp folder for the ${name} key"; return 1; }
+    if [[ -s "$keyring" && "$(key_fingerprint "$home" "$keyring")" == "$fpr" ]]; then
+        rm -rf "$home"; return 0
+    fi
+    info "adding the ${name} repository key"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        rm -rf "$home"; changed; return 0
+    fi
+    if ! curl -fsSL "$url" -o "$home/key" >> "$LOG_FILE" 2>&1; then
+        note "cannot download the ${name} key"; rc=1
+    elif [[ "$(key_fingerprint "$home" "$home/key")" != "$fpr" ]]; then
+        note "${name} key fingerprint mismatch - not installing"; rc=1
+    # Only the checked key reaches the keyring: gpg imports the download into the throwaway home and exports that
+    # one fingerprint, so nothing else in the file (a packet or a key gpg skips) is passed on to apt. The export
+    # is checked again before it is installed, and install copies it in one go, so /etc/apt/keyrings never holds
+    # a half-written key. --no-autostart: no gpg-agent is left running for the throwaway home.
+    elif ! GNUPGHOME="$home" gpg --batch --no-autostart --import "$home/key" >> "$LOG_FILE" 2>&1 \
+         || ! GNUPGHOME="$home" gpg --batch --no-autostart "${armor[@]}" --export "$fpr" > "$home/keyring" 2>> "$LOG_FILE" \
+         || [[ "$(key_fingerprint "$home" "$home/keyring")" != "$fpr" ]] \
+         || ! install -m 0755 -d "${keyring%/*}"; then
+        note "cannot write ${keyring}"; rc=1
+    else
+        local existed=0
+        if [[ -e "$keyring" ]]; then existed=1; backup_file "$keyring"; fi
+        if install -m 0644 "$home/keyring" "$keyring"; then
+            if [[ $existed -eq 1 ]]; then CHANGED_FILES+=("$keyring"); else NEW_FILES+=("$keyring"); fi
+            log "wrote ${keyring}"; changed
+        else
+            note "cannot write ${keyring}"; rc=1
+        fi
+    fi
+    rm -rf "$home"
+    return "$rc"
+}
+
+# pkg_from PKG TEXT: true when the installed version of PKG is offered by an apt source whose `apt-cache madison`
+# line contains TEXT (the repository URL without its scheme, then its suite). The version string alone cannot
+# tell: a distro build such as 1.4.6-10.1 has no "ubuntu", "deb" or "esm" in it.
+pkg_from() {
+    local v
+    pkg_installed "$1" || return 1
+    v="$(dpkg-query -W -f='${Version}' "$1" 2>/dev/null)"
+    apt-cache madison "$1" 2>/dev/null | awk -F'|' -v v="$v" -v t="$2" '
+        { gsub(/^[ \t]+|[ \t]+$/, "", $2) } $2 == v && index($3, t) { f = 1 } END { exit !f }'
+}
+
+# drop_other_sources TEXT KEEP: back up and remove the files in sources.list.d, other than the one named KEEP,
+# whose entries all point at TEXT (a repository URL without its scheme), such as the docker.list that
+# get.docker.com or an older install guide left behind. apt refuses one repository listed twice with two keys
+# ("Conflicting values set for option Signed-By"), and then every apt command fails. A file that also lists
+# other repositories, or such a line in sources.list, is left alone and stops the step. Call it only after
+# apt_repo_key has passed: a failed key download or check must leave the operator's working source in place.
+APT_SOURCES=/etc/apt/sources.list   # tests point these two elsewhere
+APT_SOURCES_D=/etc/apt/sources.list.d
+drop_other_sources() {
+    local text="$1" keep="$2" f entries
+    if grep -sE '^[[:space:]]*deb(-src)?[[:space:]]' "$APT_SOURCES" | grep -qF "$text"; then
+        note "${APT_SOURCES} lists ${text}: remove that line, then re-run this step"; return 1
+    fi
+    for f in "$APT_SOURCES_D"/*.list "$APT_SOURCES_D"/*.sources; do
+        [[ -f "$f" && "${f##*/}" != "$keep" ]] || continue
+        # the entries: deb lines of a .list file, URIs fields of a deb822 .sources file
+        entries="$(grep -iE '^[[:space:]]*(deb(-src)?[[:space:]]|URIs:)' "$f")"
+        grep -qF "$text" <<<"$entries" || continue
+        if grep -vqF "$text" <<<"$entries"; then
+            note "${f} also lists other repositories: remove its ${text} entry, then re-run this step"; return 1
+        fi
+        backup_file "$f"
+        run rm -f "$f" || { note "cannot remove ${f}"; return 1; }
+        # listed with the changed files, so rollback.sh copies the backup back and the report lists it
+        [[ $DRY_RUN -eq 1 ]] || CHANGED_FILES+=("$f")
+        if [[ $DRY_RUN -eq 1 ]]; then note "would remove ${f}, another source for ${text}"
+        else note "removed ${f}, another source for ${text} (backed up)"; fi
+        changed
+    done
+    return 0
+}
+
 svc_disable() {
     local u
     for u in "$@"; do
@@ -958,7 +1055,7 @@ preflight() {
     DEFAULT_IFACE="$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')"
     LAN_CIDR="$(ip -4 route show dev "$DEFAULT_IFACE" scope link 2>/dev/null | awk '$1 ~ /\// {print $1; exit}')"
     LOCAL_IP="$(ip -4 -o addr show dev "$DEFAULT_IFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)"
-    CURRENT_SSH_PORTS="$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | tr '\n' ' ')"
+    CURRENT_SSH_PORTS="$(sshd -T 2>/dev/null | awk '$1=="port" && !seen[$2]++ {print $2}' | tr '\n' ' ')"
     CURRENT_SSH_PORTS="${CURRENT_SSH_PORTS:-22 }"
 
     if [[ -z "$ADMIN_USER" ]]; then
@@ -1397,22 +1494,38 @@ step_users() {
     return 0
 }
 
-step_docker() {
-    if ! yes_ "$INSTALL_DOCKER"; then return $SKIP_RC; fi
-    pkg_install jq curl ca-certificates || return 1
-    if ! have docker; then
-        info "installing Docker CE from download.docker.com"
-        local distro="$OS_ID"; [[ "$distro" == ubuntu || "$distro" == debian ]] || distro=debian
-        run install -m 0755 -d /etc/apt/keyrings
-        run curl -fsSL "https://download.docker.com/linux/${distro}/gpg" -o /etc/apt/keyrings/docker.asc || { note "cannot download Docker GPG key"; return 1; }
-        run chmod a+r /etc/apt/keyrings/docker.asc
-        write_file /etc/apt/sources.list.d/docker.sources 644 <<EOF
+# docker_repo DISTRO: Docker's official apt repository on a checked key, pinned at 900
+docker_repo() {
+    pkg_install gnupg || return 1
+    # key checked against the fingerprint Docker publishes (docs.docker.com/engine/install). docker.asc is the name
+    # Docker's guide and get.docker.com use, so a source they left behind, or write again later, names the same key.
+    apt_repo_key Docker "https://download.docker.com/linux/$1/gpg" 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 \
+        /etc/apt/keyrings/docker.asc || return 1
+    # another source for the same repository with another key would break every apt command. Removed only once the
+    # key has passed: a failed download or check leaves the operator's working source in place.
+    drop_other_sources "download.docker.com/linux/$1" docker.sources || return 1
+    write_file /etc/apt/sources.list.d/docker.sources 644 <<EOF
 Types: deb
-URIs: https://download.docker.com/linux/${distro}
+URIs: https://download.docker.com/linux/$1
 Suites: ${OS_CODENAME}
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
+    # Ubuntu/ESM may ship other Docker builds: prefer the official ones
+    write_file /etc/apt/preferences.d/docker 644 <<'EOF'
+Package: docker-ce* docker-buildx-plugin docker-compose-plugin containerd.io
+Pin: origin download.docker.com
+Pin-Priority: 900
+EOF
+}
+
+step_docker() {
+    if ! yes_ "$INSTALL_DOCKER"; then return $SKIP_RC; fi
+    pkg_install jq curl ca-certificates || return 1
+    local distro="$OS_ID"; [[ "$distro" == ubuntu || "$distro" == debian ]] || distro=debian
+    if ! have docker; then
+        info "installing Docker CE from download.docker.com"
+        docker_repo "$distro" || return 1
         run apt-get -o DPkg::Lock::Timeout=600 update -q
         run apt-get install "${APT_OPTS[@]}" docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
             || { note "Docker install failed (is ${OS_CODENAME} supported by download.docker.com?)"; return 1; }
@@ -1420,6 +1533,12 @@ EOF
         HAS_DOCKER=1; changed; note "Docker CE installed"
     else
         note "Docker already installed"
+        # Docker CE from download.docker.com for this release (an earlier run, get.docker.com, Docker's guide): its
+        # key is checked and the repository pinned, as on a new install. Another Docker (docker.io, another suite)
+        # is left as it is.
+        if pkg_from docker-ce "download.docker.com/linux/${distro} ${OS_CODENAME}/stable "; then
+            docker_repo "$distro" || return 1
+        fi
         if ! docker compose version >/dev/null 2>&1; then pkg_install docker-compose-plugin || true; fi
     fi
 
@@ -1623,8 +1742,62 @@ restart_ssh() {
     fi
 }
 
+# sshd listens on every Port line it reads: they add up, unlike most settings where the first one
+# wins. So only 00-server-prep.conf may set one. These helpers only read stdin or files.
+# An active Port line, in any case, "Port 22", "Port=22" or "Port = 22": never a comment, GatewayPorts or Ports.
+SSHD_PORT_RE='^[[:space:]]*[Pp][Oo][Rr][Tt]([[:space:]]*=|[[:space:]])'
+# The ports SSH had before this run as step_ssh found them: sshd -T plus the Port lines it comments out.
+# Empty until step_ssh gets there; write_rollback then falls back to CURRENT_SSH_PORTS.
+SSH_OLD_PORTS=""
+# sshd_ports_in: sshd config text on stdin, one port per active Port line (\2: SSHD_PORT_RE has a group).
+# Digits only: "Port abc" or "Port *" would otherwise be written to 00-server-prep.conf, where sshd -t
+# rejects it and the step rolls back with a confusing message.
+sshd_ports_in() { sed -nE "s/${SSHD_PORT_RE}[[:space:]=]*([0-9]+)([[:space:]].*)?$/\2/p"; }
+# sshd_comment_ports: the same text with each active Port line commented out. Idempotent, and
+# every other byte is kept, a missing final newline too.
+sshd_comment_ports() { sed -E "s/${SSHD_PORT_RE}/# server-prep: &/"; }
+# uniq_ports: words on stdin, each port once in first-seen order, as "a b " (trailing space)
+uniq_ports() { tr -s '[:space:]' '\n' | awk 'NF && !seen[$0]++ {printf "%s ", $0}'; }
+# sshd_ports_except PORT: "sshd -T" output on stdin, the other ports once each, as "a b "
+sshd_ports_except() { awk -v keep="$1" '$1=="port" && $2!=keep && !seen[$2]++ {printf "%s ", $2}'; }
+# ports_except PORT: words on stdin, the ports other than PORT once each, as "a b "
+ports_except() { tr -s '[:space:]' '\n' | awk -v keep="$1" 'NF && $0!=keep && !seen[$0]++ {printf "%s ", $0}'; }
+# pid_listen_ports PID: "ss -Hltnp" output on stdin, the ports process PID listens on, one per line
+pid_listen_ports() { awk -v pid="pid=$1," 'index($0, pid) {p=$4; sub(/.*:/, "", p); print p}'; }
+# socket_listen_ports: "systemctl show -p Listen --value" output on stdin ("[::]:22 (Stream)"), one port per line
+socket_listen_ports() { sed -nE 's/^(.*:)?([0-9]+) \(Stream\)$/\2/p'; }
+# ssh_listen_ports: the TCP ports SSH listens on now, once each, as "a b ": those of the running sshd
+# (ssh.service's main process; a Docker or other sshd does not count), plus ssh.socket's when SSH is
+# socket-activated, since systemd holds them too. Read-only: ss and systemctl show.
+ssh_listen_ports() {
+    local pid
+    pid="$(systemctl show -p MainPID --value ssh.service 2>/dev/null)"
+    {
+        [[ $pid =~ ^[1-9][0-9]*$ ]] && ss -Hltnp 2>/dev/null | pid_listen_ports "$pid"
+        [[ $SSH_SOCKET -eq 1 ]] && systemctl show -p Listen --value ssh.socket 2>/dev/null | socket_listen_ports
+    } | uniq_ports
+}
+# sshd_port_dropins DIR: the files of the drop-ins sshd reads (DIR/*.conf) that have an active Port
+# line, each once, other than 00-server-prep.conf and the main sshd_config next to DIR (the step edits
+# those two itself). A symlink gives the file it points to: sshd follows it, and write_file on the link
+# would replace it with a plain file. A file it cannot read, or a dangling link, is skipped, never emptied.
+sshd_port_dropins() {
+    local d="$1" f t own main seen=" "
+    own="$(readlink -f -- "$d")/00-server-prep.conf"
+    main="$(readlink -f -- "${d%/*}/sshd_config")"
+    for f in "$d"/*.conf; do
+        [[ -e $f ]] && t="$(readlink -f -- "$f")" || continue
+        [[ -f $t && $t != "$own" && $t != "$main" && $seen != *" $t "* ]] || continue
+        seen+="$t "
+        grep -qE "$SSHD_PORT_RE" "$t" 2>/dev/null && printf '%s\n' "$t"
+    done
+    return 0
+}
+
 write_sshd_config() {   # write_sshd_config "PORTS"
-    local ports="$1" p allow="AllowUsers ${ADMIN_USER}" src
+    local ports p allow="AllowUsers ${ADMIN_USER}" src
+    # Each port once: on a host prepared by an older version, phase A can get "822 22 822".
+    ports="$(uniq_ports <<<"$1")"
     if [[ -n "$PANEL_PUBKEY" || -s /root/.ssh/authorized_keys ]]; then
         for src in "${ROOT_SOURCES[@]}"; do allow+=" root@${src}"; done
     fi
@@ -1657,9 +1830,9 @@ EOF
     } | write_file /etc/ssh/sshd_config.d/00-server-prep.conf 644
 
     # Root (the panel) allowed with a key, only from trusted sources. Match blocks
-    # must be at the end of the main file.
+    # must be at the end of the main file. Its Port lines are commented out: sshd would listen there too.
     local cur match=""
-    cur="$(sed '/^# BEGIN server-prep root access/,/^# END server-prep root access/d' /etc/ssh/sshd_config)"
+    cur="$(sed '/^# BEGIN server-prep root access/,/^# END server-prep root access/d' /etc/ssh/sshd_config | sshd_comment_ports)"
     if [[ ${#ROOT_SOURCES[@]} -gt 0 ]]; then
         match="# BEGIN server-prep root access
 Match Address $(IFS=,; echo "${ROOT_SOURCES[*]}")
@@ -1669,6 +1842,13 @@ Match Address $(IFS=,; echo "${ROOT_SOURCES[*]}")
     else
         printf '%s\n' "$cur" | write_file /etc/ssh/sshd_config 644
     fi
+
+    # The Port lines of the other drop-ins (a provider image can ship one), in the file a symlinked
+    # drop-in points to. Only the files that have one are rewritten, so a second call changes nothing.
+    local f
+    while IFS= read -r f; do
+        sshd_comment_ports < "$f" | write_file "$f" "$(stat -c %a "$f")"
+    done < <(sshd_port_dropins /etc/ssh/sshd_config.d)
 }
 
 # Tells the user how to test SSH from a second terminal, with an address the firewall
@@ -1717,6 +1897,75 @@ ssh_test_hint() {
     echo "  Keep this terminal open: answer here once the test is done."
 }
 
+# The SSH step again, as a todo gives it: a dry run first, and never --yes, which skips the login test.
+SSH_AGAIN="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh"
+
+# ssh_close_old_ports: the end of a move to SSH_PORT, once SSH has restarted. sshd must be set to
+# SSH_PORT only (sshd -T) and listen there only: a Port line in a file the step does not edit (an
+# Include outside sshd_config.d) or a ListenStream in an ssh.socket override keeps an old port. Then
+# it deletes the temporary UFW rules (server-prep-temp) of the old port(s). Otherwise it keeps them,
+# adds a todo and returns 1: once the cause is gone, a re-run finishes the move (ssh_finish_move).
+ssh_close_old_ports() {
+    local now left nums n
+    now="$(sshd -T 2>/dev/null)"
+    if ! grep -q '^port ' <<<"$now"; then
+        note "could not read the SSH ports back (sshd -T failed); the temporary UFW rules for the old port(s) are kept"
+        todo "Check that SSH is set to port ${SSH_PORT} only (sudo sshd -T | grep ^port), then run: ${SSH_AGAIN} --dry-run, then the same without --dry-run (it deletes the temporary UFW rules of the old port)"
+        return 1
+    fi
+    left="$( { sshd_ports_except "$SSH_PORT" <<<"$now"; ssh_listen_ports; } | ports_except "$SSH_PORT")"
+    if [[ -n $left ]]; then
+        note "SSH still listens on old port(s) ${left}(set outside the files this step edits); their temporary UFW rules are kept"
+        todo "SSH still listens on port(s) ${left% }: find what sets it (a Port line or an Include, symlinks followed: sudo grep -RniE '^[[:space:]]*(port|include)[[:space:]=]' /etc/ssh; a ListenStream: sudo systemctl cat ssh.socket), remove it, then run: ${SSH_AGAIN} --dry-run, then the same without --dry-run (it restarts SSH and deletes the temporary UFW rules)"
+        return 1
+    fi
+    nums=$(ufw_status numbered 2>/dev/null | grep 'server-prep-temp' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn)
+    for n in $nums; do run ufw --force delete "$n"; done
+    return 0
+}
+
+# ssh_finish_move RB: called when the SSH files already hold the final configuration (SSH_PORT only,
+# nothing to write). A move an earlier run could not finish can still be left: its phase B failed
+# because a line it does not edit kept an old port, and the operator has removed that line since.
+# sshd listens on the old port until a restart, and the old port's temporary UFW rules are still there.
+# Finish as phase B does: restart SSH without a login test (SSH_PORT already serves logins), check it
+# listens on SSH_PORT (else run RB, the rollback script), then ssh_close_old_ports. A dry run only says
+# what it would do.
+ssh_finish_move() {
+    local rb="$1" live stale temp=0 what=""
+    live="$(ssh_listen_ports)"
+    stale="$(ports_except "$SSH_PORT" <<<"$live")"
+    ufw_status numbered 2>/dev/null | grep -q 'server-prep-temp' && temp=1
+    if [[ -z $stale && $temp -eq 0 ]]; then
+        [[ $DRY_RUN -eq 1 ]] || note "SSH already secured"
+        return 0
+    fi
+    [[ -n $stale ]] && what="SSH restarted, old port(s) ${stale}closed"
+    [[ $temp -eq 1 ]] && what+="${what:+; }temporary UFW rules of the old port(s) deleted"
+    changed
+    if [[ $DRY_RUN -eq 1 ]]; then note "would finish an earlier move to ${SSH_PORT}: ${what}"; return 0; fi
+    if [[ -n $stale ]]; then
+        if [[ " $live " != *" $SSH_PORT "* ]]; then
+            # SSH_PORT was never live: a restart would move SSH without the login test
+            note "sshd still runs with port(s) ${stale}and not with ${SSH_PORT}, the only port of its configuration: not restarted"
+            local again="sudo systemctl restart ssh"
+            [[ $SSH_SOCKET -eq 1 ]] && again="sudo systemctl daemon-reload && sudo systemctl stop ssh.service && sudo systemctl restart ssh.socket && sudo systemctl start ssh.service"
+            todo "SSH runs on port(s) ${stale}but its configuration sets only ${SSH_PORT} (sudo sshd -T | grep ^port). From the console, not over SSH, restart it (${again}) and test ssh -p ${SSH_PORT} from a second terminal, then run: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
+            return 1
+        fi
+        restart_ssh || { bash "$rb"; note "ssh restart failed, rolled back"; return 1; }
+        sleep 2
+        if ! ss -ltn "sport = :$SSH_PORT" | grep -q LISTEN; then
+            err "sshd is not listening on ${SSH_PORT} - rolling back"
+            bash "$rb"; note "sshd did not listen on ${SSH_PORT} after the restart, rolled back"; return 1
+        fi
+    fi
+    ssh_close_old_ports || return 1
+    note "earlier move to ${SSH_PORT} finished: ${what}"
+    note "SSH on ${SSH_PORT}, key-only, AllowUsers set"
+    return 0
+}
+
 step_ssh() {
     compute_root_sources
     local home nkeys=0
@@ -1734,17 +1983,28 @@ step_ssh() {
         [[ -e $f && ${f##*/} != 00-server-prep.conf ]] && others+=("${f##*/}")
     done
     if [[ ${#others[@]} -gt 0 ]]; then
-        note "other drop-ins present (${others[*]}) - 00-server-prep.conf is read first and wins"
+        note "other drop-ins present (${others[*]}) - 00-server-prep.conf is read first and wins; their Port lines are commented out (sshd listens on every Port line)"
     fi
 
-    local need_two=0 p
-    for p in $CURRENT_SSH_PORTS; do [[ "$p" != "$SSH_PORT" ]] && need_two=1; done
+    # The ports SSH has now: what sshd -T reported, plus those of the Port lines about to be commented
+    # out. Phase A keeps them all, even when preflight could not run sshd -T and assumed 22.
+    local drops=() old_ports need_two=0 p
+    mapfile -t drops < <(sshd_port_dropins /etc/ssh/sshd_config.d)
+    old_ports="$({ printf '%s\n' "$CURRENT_SSH_PORTS"; cat /etc/ssh/sshd_config "${drops[@]}" 2>/dev/null | sshd_ports_in; } | uniq_ports)"
+    SSH_OLD_PORTS="$old_ports"   # rollback.sh restores these files, so write_rollback allows these ports
+    for p in $old_ports; do [[ "$p" != "$SSH_PORT" ]] && need_two=1; done
 
     # rollback script for the safety timer
-    local rb="$BACKUP_DIR/rollback-ssh.sh"
+    local rb="$BACKUP_DIR/rollback-ssh.sh" restore=""
     if [[ $DRY_RUN -eq 0 ]]; then
         backup_file /etc/ssh/sshd_config
         backup_file /etc/ssh/sshd_config.d/00-server-prep.conf
+        # the drop-ins (or the files their links point to) whose Port lines get commented out: without
+        # them, sshd would come back without its old port
+        for f in "${drops[@]}"; do
+            backup_file "$f"
+            restore+="if [ -f $(printf '%q' "$BACKUP_DIR$f") ]; then cp -a $(printf '%q' "$BACKUP_DIR$f") $(printf '%q' "$f"); fi"$'\n'
+        done
         cat > "$rb" <<EOF
 #!/bin/bash
 # Restores the SSH configuration from before server-prep ($TS)
@@ -1754,7 +2014,7 @@ if [ -f "$BACKUP_DIR/etc/ssh/sshd_config.d/00-server-prep.conf" ]; then
 else
     rm -f /etc/ssh/sshd_config.d/00-server-prep.conf
 fi
-systemctl daemon-reload
+${restore}systemctl daemon-reload
 if systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
     systemctl stop ssh.service; systemctl reset-failed ssh.socket; systemctl restart ssh.socket; systemctl start ssh.service
 else
@@ -1767,15 +2027,23 @@ EOF
 
     # Phase A: new secure config, old port(s) still open
     local phase_ports="$SSH_PORT"
-    [[ $need_two -eq 1 ]] && phase_ports="$CURRENT_SSH_PORTS $SSH_PORT"
+    [[ $need_two -eq 1 ]] && phase_ports="$old_ports $SSH_PORT"
     write_sshd_config "$phase_ports"
-    if [[ $DRY_RUN -eq 1 ]]; then note "would set port ${SSH_PORT}, keys only, root via Match"; return 0; fi
+    # Nothing to write and no old port: what is left of an earlier move, if anything, is finished by
+    # ssh_finish_move. With an old port, phase A's files may already be in place (a run stopped
+    # between the phases): go on with the restart, the login test and phase B.
+    local final=0
+    [[ $STEP_CHANGED -eq 0 && $need_two -eq 0 ]] && final=1
+    if [[ $DRY_RUN -eq 1 ]]; then
+        [[ $final -eq 1 ]] && ssh_finish_move "$rb"
+        note "would set port ${SSH_PORT}, keys only, root via Match"; return 0
+    fi
     if ! sshd -t 2>>"$LOG_FILE"; then
         err "sshd -t rejected the new configuration - restoring"
         bash "$rb" >/dev/null 2>&1
         note "invalid sshd configuration, rolled back (see $LOG_FILE)"; return 1
     fi
-    if [[ $STEP_CHANGED -eq 0 ]]; then note "SSH already secured"; return 0; fi
+    if [[ $final -eq 1 ]]; then ssh_finish_move "$rb"; return; fi
 
     # A timer left by an earlier run would restore that run's old config over this one.
     run systemctl stop 'server-prep-ssh-rollback-*.timer'
@@ -1818,10 +2086,12 @@ EOF
         sshd -t 2>>"$LOG_FILE" || { bash "$rb"; note "phase B config invalid, rolled back"; return 1; }
         # The rollback timer is already stopped: a failed restart here would leave no sshd at all.
         restart_ssh || { bash "$rb"; note "phase B restart failed, rolled back"; return 1; }
-        local nums
-        nums=$(ufw_status numbered 2>/dev/null | grep 'server-prep-temp' | sed -E 's/^\[ *([0-9]+)\].*/\1/' | sort -rn)
-        for p in $nums; do run ufw --force delete "$p"; done
-        note "old SSH port(s) ${CURRENT_SSH_PORTS}closed"
+        # sshd must now have only the new port, else the old port's temporary UFW rules stay. The new
+        # port is confirmed and the timer stopped, so no rollback and no restart here.
+        ssh_close_old_ports || return 1
+        local closed=""
+        for p in $old_ports; do [[ $p == "$SSH_PORT" ]] || closed+="$p "; done
+        note "old SSH port(s) ${closed}closed"
     fi
     note "SSH on ${SSH_PORT}, key-only, AllowUsers set"
     return 0
@@ -1867,21 +2137,41 @@ Package: crowdsec*
 Pin: origin packagecloud.io
 Pin-Priority: 900
 EOF
-        if ! pkg_installed crowdsec; then
-            info "adding the CrowdSec repository"
-            if [[ $DRY_RUN -eq 0 ]]; then
-                curl -fsSL https://install.crowdsec.net | sh >> "$LOG_FILE" 2>&1 || warn "CrowdSec repo setup failed, trying distro packages"
-                apt-get -o DPkg::Lock::Timeout=600 update -q >> "$LOG_FILE" 2>&1
+        local cs_ver="" cs_left="CrowdSec not installed" cs_key=/etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg
+        if pkg_installed crowdsec; then
+            cs_ver="$(dpkg-query -W -f='${Version}' crowdsec 2>/dev/null)"; cs_left="crowdsec ${cs_ver} left as it is"
+        fi
+        # CrowdSec's packagecloud repository, added here instead of running its remote install script as root, and
+        # checked on every run, also when that script or an older server-prep added it: the key against its
+        # published fingerprint, and no second source for it (removed only once the key has passed). The file names
+        # are the ones that script uses.
+        pkg_install curl gnupg ca-certificates || { note "cannot install curl/gnupg - ${cs_left}"; return 1; }
+        apt_repo_key CrowdSec https://packagecloud.io/crowdsec/crowdsec/gpgkey 6A89E3C2303A901A889971D3376ED5326E93CD0C "$cs_key" \
+            || { note "${cs_left} - fix the cause, then re-run with --only ips"; return 1; }
+        drop_other_sources packagecloud.io/crowdsec/crowdsec/ crowdsec_crowdsec.list || { note "$cs_left"; return 1; }
+        write_file /etc/apt/sources.list.d/crowdsec_crowdsec.list 644 <<EOF
+deb [signed-by=${cs_key}] https://packagecloud.io/crowdsec/crowdsec/any/ any main
+EOF
+        # The installed crowdsec is kept only when packagecloud offers that version. A missing one, or a distro or ESM
+        # build (1.4.x, whatever its version string says), gets the official release.
+        if ! pkg_from crowdsec packagecloud.io/crowdsec/crowdsec/; then
+            [[ -n "$cs_ver" ]] && info "replacing crowdsec ${cs_ver} (not from packagecloud.io) with the official release"
+            run apt-get -o DPkg::Lock::Timeout=600 update -q \
+                || { note "apt-get update failed - ${cs_left} (re-run with --only ips)"; return 1; }
+            # apt-get update can succeed while a repository did not download: then apt would pick the old
+            # distro/ESM crowdsec, which is what this step must never install
+            if [[ $DRY_RUN -eq 0 ]] && ! apt-cache madison crowdsec 2>/dev/null | grep -q 'packagecloud\.io/crowdsec/crowdsec'; then
+                note "packagecloud.io offers no crowdsec package - not installing the distro one (re-run with --only ips)"; return 1
             fi
             # may report an error if 8080 is taken - fixed just below
+            local cs_before
+            cs_before="$(dpkg-query -W -f='${Status} ${Version}' crowdsec 2>/dev/null)"
             run apt-get install "${APT_OPTS[@]}" crowdsec || warn "crowdsec install reported an error, fixing the LAPI port and retrying"
-            changed
-        elif [[ -f /etc/apt/sources.list.d/crowdsec_crowdsec.list ]] \
-             && dpkg-query -W -f='${Version}' crowdsec 2>/dev/null | grep -qE 'ubuntu|deb|esm'; then
-            info "replacing the distro crowdsec ($(dpkg-query -W -f='${Version}' crowdsec)) with the official release"
-            run apt-get -o DPkg::Lock::Timeout=600 update -q
-            run apt-get install "${APT_OPTS[@]}" crowdsec || warn "crowdsec upgrade reported an error, fixing the LAPI port"
-            changed
+            # CHANGED only when apt did something: when packagecloud no longer lists the installed version and
+            # offers no newer one, apt-get install leaves crowdsec as it is, and a re-run must not say CHANGED
+            if [[ $DRY_RUN -eq 1 || "$(dpkg-query -W -f='${Status} ${Version}' crowdsec 2>/dev/null)" != "$cs_before" ]]; then
+                changed
+            fi
         fi
         # Move the local API away from 8080 (Traefik dashboards use it)
         if [[ -f /etc/crowdsec/config.yaml ]] && grep -q '127.0.0.1:8080' /etc/crowdsec/config.yaml; then
@@ -1948,7 +2238,7 @@ APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
     # Third-party repositories (origin and label of their Release files). The list is added to the
-    # distro's own origins; only installed packages are upgraded, and apt pins (crowdsec at 900) still apply.
+    # distro's own origins; only installed packages are upgraded, and the third-party repos' pins (900) still apply.
     local -a origins=()
     yes_ "$DOCKER_AUTO_UPDATE" && origins+=('"origin=Docker,label=Docker CE";')
     if yes_ "$THIRD_PARTY_AUTO_UPDATE"; then
@@ -2390,21 +2680,10 @@ EOF
 step_telegraf() {
     yes_ "$INSTALL_TELEGRAF" || return $SKIP_RC
     pkg_install curl gnupg || return 1
-    # official repository, key checked against InfluxData's published fingerprint
-    local key=/etc/apt/keyrings/influxdata-archive.gpg fpr=24C975CBA61A024EE1B631787C3D57159FC2F927
-    if [[ ! -s "$key" ]]; then
-        info "adding the InfluxData repository"
-        if [[ $DRY_RUN -eq 0 ]]; then
-            local tmp; tmp="$(mktemp)"
-            curl -fsSL https://repos.influxdata.com/influxdata-archive.key -o "$tmp" || { note "cannot download the InfluxData key"; rm -f "$tmp"; return 1; }
-            if ! gpg --show-keys --with-fingerprint --with-colons "$tmp" 2>/dev/null | grep -q "^fpr:\+${fpr}:\$"; then
-                note "InfluxData key fingerprint mismatch - not installing"; rm -f "$tmp"; return 1
-            fi
-            install -m 0755 -d /etc/apt/keyrings
-            gpg --dearmor < "$tmp" > "$key"; chmod 644 "$key"; rm -f "$tmp"
-        fi
-        changed
-    fi
+    # official repository, key checked against InfluxData's published fingerprint (on every run)
+    local key=/etc/apt/keyrings/influxdata-archive.gpg
+    apt_repo_key InfluxData https://repos.influxdata.com/influxdata-archive.key 24C975CBA61A024EE1B631787C3D57159FC2F927 \
+        "$key" || return 1
     write_file /etc/apt/sources.list.d/influxdata.list 644 <<EOF
 deb [signed-by=${key}] https://repos.influxdata.com/debian stable main
 EOF
@@ -2513,8 +2792,34 @@ EOF
     return 0
 }
 
+# cloudflared_repo: Cloudflare's official apt repository on a checked key, pinned at 900
+cloudflared_repo() {
+    pkg_install curl gnupg ca-certificates || return 1
+    # key checked against Cloudflare's fingerprint ("CloudFlare Software Packaging 2025", the key served at
+    # pkg.cloudflare.com/cloudflare-public-v2.gpg)
+    apt_repo_key Cloudflare https://pkg.cloudflare.com/cloudflare-public-v2.gpg CC94B39C77AE7342A68B89628A682D308D4E5E73 \
+        /etc/apt/keyrings/cloudflare-public-v2.gpg || return 1
+    # another source for the same repository with another key would break every apt command. Removed only once the
+    # key has passed: a failed download or check leaves the operator's working source in place.
+    drop_other_sources pkg.cloudflare.com/cloudflared cloudflared.list || return 1
+    write_file /etc/apt/sources.list.d/cloudflared.list 644 <<'EOF'
+deb [signed-by=/etc/apt/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
+EOF
+    # Ubuntu/ESM may ship an older cloudflared: prefer the official one
+    write_file /etc/apt/preferences.d/cloudflared 644 <<'EOF'
+Package: cloudflared
+Pin: origin pkg.cloudflare.com
+Pin-Priority: 900
+EOF
+}
+
 step_cloudflared() {
     [[ "$PANEL_ACCESS" == *cloudflared* ]] || return $SKIP_RC
+    # cloudflared from Cloudflare's repository (an earlier run, which kept the key in /usr/share/keyrings, or
+    # Cloudflare's guide): its key is checked and the repository pinned, as on a new install
+    if pkg_from cloudflared pkg.cloudflare.com/cloudflared; then
+        cloudflared_repo || { note "cloudflared left as it is - fix the cause, then re-run with --only cloudflared"; return 1; }
+    fi
     if systemctl is-active --quiet cloudflared 2>/dev/null; then
         note "cloudflared tunnel service already running"
     elif [[ -z "$CLOUDFLARED_TOKEN" ]]; then
@@ -2522,12 +2827,7 @@ step_cloudflared() {
         note "no tunnel token given"; return $SKIP_RC
     else
         if ! have cloudflared; then
-            run mkdir -p --mode=0755 /usr/share/keyrings
-            run curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg -o /usr/share/keyrings/cloudflare-public-v2.gpg \
-                || { note "cannot download Cloudflare key"; return 1; }
-            write_file /etc/apt/sources.list.d/cloudflared.list 644 <<'EOF'
-deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
-EOF
+            cloudflared_repo || { note "cloudflared not installed: ${PANEL_LABEL} cannot use the tunnel yet"; return 1; }
             run apt-get -o DPkg::Lock::Timeout=600 update -q
             pkg_install cloudflared || return 1
         fi
@@ -2583,14 +2883,16 @@ write_rollback() {
     [[ $DRY_RUN -eq 1 ]] && return 0
     local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=()
     for f in "${CHANGED_FILES[@]}" "${NEW_FILES[@]}"; do
-        [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/00-server-prep.conf ]] && ssh_files=1
+        [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/* ]] && ssh_files=1
     done
     [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]] && endlessh=1
     # The restored SSH files are this run's backups, so sshd goes back to the ports it had before
     # the run. UFW, which this run left on, no longer allows them: phase B of the SSH step deleted
     # their temporary rules. Rebuild those rules (same sources, same comment) before SSH restarts.
+    # step_ssh's list also has the ports of the Port lines it commented out, which the restored files
+    # bring back even when preflight could not run sshd -T (CURRENT_SSH_PORTS is then 22).
     if [[ $ssh_files -eq 1 ]]; then
-        for p in $CURRENT_SSH_PORTS; do
+        for p in ${SSH_OLD_PORTS:-$CURRENT_SSH_PORTS}; do
             [[ $p == "$SSH_PORT" ]] && continue
             old_ports+=("$p")
             [[ $p == 22 ]] && port22=1
