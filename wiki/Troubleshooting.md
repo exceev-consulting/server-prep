@@ -80,6 +80,7 @@ From the first setup with `server-preconfig.sh` (see [server-preconfig.md](https
 | `Could not open lock file … are you root?` | in `sudo a && b`, only `a` runs as root | `sudo a && sudo b` |
 | `Authentication failed` at `[sudo: authenticate]` | a token or the next command was pasted at sudo's password prompt | type the server password, and run commands one at a time |
 | `sudo: unable to resolve host <name>` | the hostname changed before `/etc/hosts` | harmless: the script updates `/etc/hosts` first |
+| The hostname or `/etc/hosts` is back to the provider's name after a reboot | cloud-init puts it back (`preserve_hostname: false` or `manage_etc_hosts: true`) | run `sudo ./server-preconfig.sh --hostname web-01` again: it writes a cloud-init drop-in that keeps them. If `--check` still warns, the file it names, or the provider's user-data, sets them again |
 | No internet or SSH after a power cut | the IP was set by hand and never saved | `sudo ./server-preconfig.sh --static-ip current` |
 | `Some peers are advertising routes but --accept-routes is false` | another device shares a subnet | ignore it; don't turn on `--accept-routes` on a LAN server |
 | Server not visible in Tailscale | logged in with another account, or waiting for approval | `tailscale switch --list`, or approve it in the admin console under Machines |
