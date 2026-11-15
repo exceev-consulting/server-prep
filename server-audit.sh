@@ -719,37 +719,74 @@ hex_prefix_eq() {
     (( (16#${a:n:1} >> (4 - r)) == (16#${b:n:1} >> (4 - r)) ))
 }
 
-# The server's own addresses, as addr_hex values between spaces. Filled once per run by ufw_cache_addrs.
-UFW_OWN_ADDRS=" "
+# hex_never_public HEX: is HEX, an addr_hex value, an address that no packet from the internet
+# reaches? Link-local (169.254/16, fe80::/10) and tailnet (100.64.0.0/10, Tailscale's
+# fd7a:115c:a1e0::/48). classify_addr lists a socket bound to a tailnet or fe80:: address as
+# tailnet/LAN only for the same reason.
+hex_never_public() {
+    hex_prefix_eq "$1" a9fe0000 16 || hex_prefix_eq "$1" 64400000 10 ||
+        hex_prefix_eq "$1" fe800000000000000000000000000000 10 ||
+        hex_prefix_eq "$1" fd7a115ca1e000000000000000000000 48
+}
+
+# hex_private HEX: is HEX, an addr_hex value, a private address (10.0.0.0/8, 172.16.0.0/12,
+# 192.168.0.0/16, or IPv6 unique local fc00::/7)?
+hex_private() {
+    hex_prefix_eq "$1" 0a000000 8 || hex_prefix_eq "$1" ac100000 12 || hex_prefix_eq "$1" c0a80000 16 ||
+        hex_prefix_eq "$1" fc000000000000000000000000000000 7
+}
+
+# The server's own addresses, as addr_hex values between spaces, filled once per run by
+# ufw_cache_addrs: UFW_OUTER_ADDRS for those the internet can reach, UFW_INNER_ADDRS for those only
+# one interface's network reaches (the tailnet, the link, a Docker bridge, a VPN tunnel, a second LAN).
+UFW_OUTER_ADDRS=" "
+UFW_INNER_ADDRS=" "
 
 # ufw_cache_addrs: reads the server's own addresses once, in the main shell, with `ip -o addr show`,
-# so the $(ufw_port_access ...) subshells of the exposure loop find them in UFW_OWN_ADDRS. Private and
-# tailnet addresses count too: behind 1:1 NAT or a port forward, the internet reaches the server on a
-# private address. Loopback addresses are left out, as no packet from outside reaches them. Without
-# `ip` the list stays empty, and a rule to an address then only counts for a socket bound to that
-# address. The list is reset first, so a second call adds nothing twice. Field 3 is inet or inet6,
-# field 4 the address with its prefix (or alone, before "peer" on a point-to-point link).
+# so the $(ufw_port_access ...) subshells of the exposure loop find them in UFW_OUTER_ADDRS and
+# UFW_INNER_ADDRS. A public address is outer. A link-local or tailnet address (hex_never_public) is
+# inner. A private address is outer only on an interface that holds a default route of its family
+# (`ip -f inet|inet6 route show default`, every "dev" of it, so each nexthop of a multipath route
+# counts): behind 1:1 NAT or a port forward, the internet reaches the server on that address. On any
+# other interface (docker0, wg0, a second LAN) it is inner. Loopback addresses are left out, as no
+# packet from outside reaches them. Without `ip` both lists stay empty, and a rule to an address then
+# only counts for a socket bound to that address. The lists are reset first, so a second call adds
+# nothing twice. In `ip -o addr show`, field 2 is the interface, field 3 inet or inet6, field 4 the
+# address with its prefix (or alone, before "peer" on a point-to-point link).
 ufw_cache_addrs() {
-    local fam addr
-    UFW_OWN_ADDRS=" "
+    local fam dev addr line uplinks=" " dev_re='(^|[[:space:]])dev[[:space:]]+([^[:space:]]+)'
+    UFW_OUTER_ADDRS=" "; UFW_INNER_ADDRS=" "
     [[ $UFW_ACTIVE -eq 1 && -n "$UFW_STATUS" ]] || return 0
     have ip || return 0
-    while read -r _ _ fam addr _; do
+    for fam in inet inet6; do
+        while read -r line; do
+            [[ "$line" =~ $dev_re ]] && uplinks+="$fam:${BASH_REMATCH[2]} "
+        done < <(ip -f "$fam" route show default 2>/dev/null)
+    done
+    while read -r _ dev fam addr _; do
         [[ "$fam" == inet || "$fam" == inet6 ]] || continue
         addr="${addr%%/*}"
         [[ "$addr" != 127.* && "$addr" != ::1 ]] || continue
-        addr_hex "$addr" && UFW_OWN_ADDRS+="$ADDR_HEX "
+        addr_hex "$addr" || continue
+        if hex_never_public "$ADDR_HEX" ||
+            { hex_private "$ADDR_HEX" && [[ "$uplinks" != *" $fam:$dev "* ]]; }; then
+            UFW_INNER_ADDRS+="$ADDR_HEX "
+        else
+            UFW_OUTER_ADDRS+="$ADDR_HEX "
+        fi
     done < <(ip -o addr show 2>/dev/null)
     return 0
 }
 
 # ufw_dst_open DST SCOPE: does a rule to DST (UFW_R_DST: one address, or a network such as
-# 203.0.113.0/24 or 2001:db8::/64) reach a socket that listens on SCOPE? SCOPE is "all" for a socket
-# on every IPv4 and IPv6 address (::, * or an address that cannot be read), "v4" for one on every
-# IPv4 address (0.0.0.0), or else the addr_hex of the one address the socket listens on. For all and
-# v4, DST must cover one of the server's own addresses (UFW_OWN_ADDRS) that the socket receives, so
-# an IPv4 rule never reaches a socket on [2001:db8::1] and an IPv6 rule never reaches one on 0.0.0.0.
-# Fails for an address or a network the server does not have, and for a DST it cannot read.
+# 203.0.113.0/24 or 2001:db8::/64) reach a socket that listens on SCOPE, and from where? SCOPE is
+# "all" for a socket on every IPv4 and IPv6 address (::, * or an address that cannot be read), "v4"
+# for one on every IPv4 address (0.0.0.0), or else the addr_hex of the one address the socket
+# listens on. For all and v4, DST must cover one of the server's own addresses that the socket
+# receives, so an IPv4 rule never reaches a socket on [2001:db8::1] and an IPv6 rule never reaches one
+# on 0.0.0.0. Returns 0 when DST covers an address the internet reaches (UFW_OUTER_ADDRS), 2 when it
+# covers only addresses one interface's network reaches (UFW_INNER_ADDRS, or a link-local or tailnet
+# socket address), and 1 for an address or a network the server does not have, or a DST it cannot read.
 ufw_dst_open() {
     local bits own
     addr_hex "${1%/*}" || return 1
@@ -761,12 +798,19 @@ ufw_dst_open() {
     fi
     case "$2" in
         all|v4) ;;
-        # A socket can only bind to an address the server has.
-        *) hex_prefix_eq "$2" "$ADDR_HEX" "$bits"; return ;;
+        # A socket can only bind to an address the server has: that address decides who reaches it.
+        *)
+            hex_prefix_eq "$2" "$ADDR_HEX" "$bits" || return 1
+            if hex_never_public "$2" || [[ "$UFW_INNER_ADDRS" == *" $2 "* ]]; then return 2; fi
+            return 0 ;;
     esac
-    for own in $UFW_OWN_ADDRS; do
+    for own in $UFW_OUTER_ADDRS; do
         [[ "$2" == all || ${#own} -eq 8 ]] || continue
         hex_prefix_eq "$own" "$ADDR_HEX" "$bits" && return 0
+    done
+    for own in $UFW_INNER_ADDRS; do
+        [[ "$2" == all || ${#own} -eq 8 ]] || continue
+        hex_prefix_eq "$own" "$ADDR_HEX" "$bits" && return 2
     done
     return 1
 }
@@ -780,10 +824,12 @@ ufw_dst_open() {
 # any to any`) prints Anywhere/tcp in To and From, and covers every port of that protocol. A rule to
 # an address or a network (UFW_R_DST) counts like a rule to Anywhere when it reaches the socket
 # (ufw_dst_open): when it covers one of the server's own addresses that the socket listens on, or
-# any of them for a socket on every address. Otherwise it matches nothing. An interface or a source
-# other than Anywhere gives restricted.
+# any of them for a socket on every address. Otherwise it matches nothing. A rule that reaches the
+# socket only through addresses that one interface's network reaches (a tailnet, link-local, Docker
+# bridge or tunnel address: ufw_dst_open returns 2) counts like a rule on that interface. An
+# interface or a source other than Anywhere gives restricted.
 ufw_port_access() {
-    local port="$1" proto="$2" listen="${3:-*}" scope=all line e matched best="none"
+    local port="$1" proto="$2" listen="${3:-*}" scope=all line e matched inner best="none"
     [[ $UFW_ACTIVE -eq 1 && -n "$UFW_STATUS" ]] || { echo "nofw"; return; }
     # As ss prints it: the interface first (0.0.0.0%eth0, [fe80::1]%eth0), then the brackets.
     listen="${listen%%\%*}"; listen="${listen#[}"; listen="${listen%]}"
@@ -797,7 +843,11 @@ ufw_port_access() {
     fi
     while IFS= read -r line; do
         ufw_rule_fields "$line" || continue
-        [[ -z "$UFW_R_DST" ]] || ufw_dst_open "$UFW_R_DST" "$scope" || continue
+        inner=0
+        if [[ -n "$UFW_R_DST" ]]; then
+            ufw_dst_open "$UFW_R_DST" "$scope" || inner=$?
+            [[ $inner -ne 1 ]] || continue
+        fi
         matched=0
         if [[ "$UFW_R_TO" == Anywhere || "$UFW_R_TO" == "Anywhere/$proto" ]] ||
             ufw_spec_match "$UFW_R_TO" "$port" "$proto"; then
@@ -808,7 +858,7 @@ ufw_port_access() {
             done
         fi
         [[ $matched -eq 1 ]] || continue
-        if [[ -z "$UFW_R_IFACE" && "$UFW_R_FROM" == Anywhere* ]]; then echo "any"; return; fi
+        if [[ $inner -eq 0 && -z "$UFW_R_IFACE" && "$UFW_R_FROM" == Anywhere* ]]; then echo "any"; return; fi
         best="restricted"
     done < <(sed -n '/^--/,$p' <<<"$UFW_STATUS" | tail -n +2)
     echo "$best"
@@ -854,6 +904,8 @@ if have ss; then
         [[ ${XRANK[$port]:-0} -lt 3 ]] || continue
         label="$name"
         if [[ "$DOCKER_PORTS" == *" $port "* ]]; then
+            # Chosen by port, so every socket of a published port comes here, in any order of ss. Its
+            # rank depends on the port and the FWD rules, never on the socket: it is ranked once.
             [[ -n "${XRANK[$port]:-}" ]] && continue
             label=docker
             if [[ $DOCKER_PROTECTED -eq 0 ]]; then rank=3; label="docker,bypasses fw"

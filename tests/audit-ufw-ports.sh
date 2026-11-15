@@ -4,9 +4,11 @@
 # `ufw status verbose` / `ufw status` output. Issue #78: a port opened through a UFW application
 # profile (`ufw allow OpenSSH`) must count as open. Issue #162: a rule to one of the server's own
 # addresses (`ufw allow to 203.0.113.10 port 80 proto tcp`) counts like a rule to Anywhere for the
-# sockets that listen on that address or on all addresses of its family; a rule to an address the
-# server does not have opens nothing. No root needed and nothing on the host changes: `ufw`, `ip`,
-# `ss` and `docker` are shell functions that print canned output.
+# sockets that listen on that address or on all addresses of its family, or like a rule on an
+# interface (restricted) when only one interface's network reaches that address (tailnet, link-local,
+# a private address away from the default route); a rule to an address the server does not have opens
+# nothing. No root needed and nothing on the host changes: `ufw`, `ip`, `ss` and `docker` are shell
+# functions that print canned output.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +17,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 # server-audit.sh runs its checks on load, so it cannot be sourced: load only the matcher and its helpers.
 for fn in ufw_rule_fields ufw_spec_match ufw_app_lookup ufw_cache_apps addr_hex hex_prefix_eq \
-    ufw_cache_addrs ufw_dst_open ufw_port_access classify_addr; do
+    hex_never_public hex_private ufw_cache_addrs ufw_dst_open ufw_port_access classify_addr; do
     eval "$(sed -n "/^${fn}() {/,/^}/p" "$SCRIPT_DIR/server-audit.sh")"
     if ! declare -F "$fn" >/dev/null; then
         printf 'not ok: %s not found in server-audit.sh\n' "$fn"
@@ -33,7 +35,8 @@ $exposure_src
 declare -A UFW_APP_PORTS=()
 UFW_ACTIVE=1
 UFW_STATUS=""
-UFW_OWN_ADDRS=" "
+UFW_OUTER_ADDRS=" "
+UFW_INNER_ADDRS=" "
 HAVE_IP=1
 DOCKER_ACTIVE=0; DOCKER_PROTECTED=1; IS_ROOT=0; EXPOSED_WARN=4; EXPOSED_FAIL=6
 
@@ -66,19 +69,16 @@ ufw() {
     esac
 }
 
-# The real ip never runs. `ip -o addr show` prints canned addresses in the real format, one call
-# logged per run to a file, so the test can count the calls. Any other use of ip is logged as
-# unexpected. The server: public 203.0.113.10 and 2001:db8::1 (plus fe80::1) on eth0, LAN
-# 192.168.1.50 on eth1, the Docker bridge 10.17.0.1 and a point-to-point 10.8.0.1 (printed before
-# "peer", without a prefix). Loopback is left out by ufw_cache_addrs.
-ip() {
-    if [[ "$*" != '-o addr show' ]]; then
-        printf 'unexpected ip %s\n' "$*" | tee -a "$tmp/ip-unexpected" >&2
-        return 1
-    fi
-    printf 'call\n' >>"$tmp/ip-calls"
-    cat <<'IP'
-1: lo    inet 127.0.0.1/8 scope host lo\       valid_lft forever preferred_lft forever
+# The real ip never runs. `ip -o addr show` prints IP_ADDRS and `ip -f inet|inet6 route show default`
+# prints IP_ROUTE4 or IP_ROUTE6, in the real format. Each call is logged to a file, so the test can
+# count them. Any other use of ip is logged as unexpected. The default server: public 203.0.113.10
+# and 2001:db8::1 (plus fe80::1) on eth0, which holds both default routes; a second LAN 192.168.1.50
+# on eth1, the Docker bridge 10.17.0.1, a point-to-point 10.8.0.1 (printed before "peer", without a
+# prefix) and the tailnet addresses on tailscale0. Tailscale's own resolver addresses,
+# 100.100.100.100 and fd7a:115c:a1e0::53, stand for the node's: scripts/check-files.sh allows no
+# other address in 100.64.0.0/10, and that one only without the /32 that ip prints after it.
+# Loopback is left out by ufw_cache_addrs.
+SERVER_ADDRS='1: lo    inet 127.0.0.1/8 scope host lo\       valid_lft forever preferred_lft forever
 1: lo    inet6 ::1/128 scope host noprefixroute \       valid_lft forever preferred_lft forever
 2: eth0    inet 203.0.113.10/24 brd 203.0.113.255 scope global eth0\       valid_lft forever preferred_lft forever
 2: eth0    inet6 2001:db8::1/64 scope global \       valid_lft forever preferred_lft forever
@@ -86,7 +86,26 @@ ip() {
 3: eth1    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth1\       valid_lft forever preferred_lft forever
 4: docker0    inet 10.17.0.1/16 brd 10.17.255.255 scope global docker0\       valid_lft forever preferred_lft forever
 5: wg0    inet 10.8.0.1 peer 10.8.0.2/32 scope global wg0\       valid_lft forever preferred_lft forever
-IP
+6: tailscale0    inet 100.100.100.100 scope global tailscale0\       valid_lft forever preferred_lft forever
+6: tailscale0    inet6 fd7a:115c:a1e0::53/128 scope global \       valid_lft forever preferred_lft forever'
+SERVER_ROUTE4='default via 203.0.113.1 dev eth0 proto static'
+SERVER_ROUTE6='default via fe80::fe dev eth0 proto ra metric 1024 expires 1798sec pref medium'
+IP_ADDRS=$SERVER_ADDRS; IP_ROUTE4=$SERVER_ROUTE4; IP_ROUTE6=$SERVER_ROUTE6
+ip() {
+    case "$*" in
+        '-o addr show') printf '%s\n' "$IP_ADDRS" ;;
+        '-f inet route show default') [[ -z "$IP_ROUTE4" ]] || printf '%s\n' "$IP_ROUTE4" ;;
+        '-f inet6 route show default') [[ -z "$IP_ROUTE6" ]] || printf '%s\n' "$IP_ROUTE6" ;;
+        *) printf 'unexpected ip %s\n' "$*" | tee -a "$tmp/ip-unexpected" >&2; return 1 ;;
+    esac
+    printf '%s\n' "$*" >>"$tmp/ip-calls"
+}
+# ip_calls_are N: ip ran N times for each of its three commands since ip-calls was emptied.
+ip_calls_are() {
+    local want="" got
+    (( $1 == 0 )) || want=$(printf '%s|%s|%s|' "$1 -f inet route show default" "$1 -f inet6 route show default" "$1 -o addr show")
+    got=$(LC_ALL=C sort "$tmp/ip-calls" | uniq -c | sed 's/^ *//' | tr '\n' '|')
+    [[ "$got" == "$want" ]] || fail "ip calls '$got', want '$want' ($2)"
 }
 
 # The real ss never runs: `ss -H -ltnp` prints the sockets in SS_SOCKETS, in the real format.
@@ -348,27 +367,81 @@ fields_are '60000:61000/tcp' '' 60000:61000/tcp
 fields_are '1000:2000,3000:4000/tcp' '' 1000:2000,3000:4000/tcp
 fields_are 'Anywhere/tcp' '' Anywhere/tcp
 
+# --- hex_never_public and hex_private: the ranges, at their edges ----------------------------------
+range_is() {   # range_is FUNC HEX WANT: FUNC HEX succeeds (yes) or fails (no)
+    local got=no
+    "$1" "$2" && got=yes
+    [[ "$got" == "$3" ]] || fail "$1 $2 gave $got, want $3"
+    printf 'ok: %s %s gives %s\n' "$1" "$2" "$3"
+}
+range_is hex_never_public a9fe0000 yes                             # first of 169.254/16 (link-local)
+range_is hex_never_public a9feffff yes                             # last of 169.254/16
+range_is hex_never_public a9ff0000 no                              # just after it
+range_is hex_never_public 64400000 yes                             # first of 100.64.0.0/10 (tailnet)
+range_is hex_never_public 647fffff yes                             # last of 100.64.0.0/10
+range_is hex_never_public 643fffff no                              # just before it
+range_is hex_never_public 64800000 no                              # just after it
+range_is hex_never_public 64646464 yes                             # 100.100.100.100
+range_is hex_never_public fe800000000000000000000000000001 yes     # fe80::1
+range_is hex_never_public febfffffffffffffffffffffffffffff yes     # last of fe80::/10
+range_is hex_never_public fec00000000000000000000000000000 no      # fec0::
+range_is hex_never_public fd7a115ca1e000000000000000000053 yes     # fd7a:115c:a1e0::53 (tailnet)
+range_is hex_never_public fd7a115ca1e100000000000000000000 no      # fd7a:115c:a1e1::
+range_is hex_never_public 20010db8000000000000000000000001 no      # 2001:db8::1
+range_is hex_never_public cb00710a no                              # 203.0.113.10
+range_is hex_never_public 00000000 no                              # 0.0.0.0
+range_is hex_private 0a000000 yes                                  # 10.0.0.0
+range_is hex_private 0affffff yes                                  # 10.255.255.255
+range_is hex_private 0b000000 no                                   # just after 10.0.0.0/8
+range_is hex_private ac100000 yes                                  # first of 172.16.0.0/12
+range_is hex_private ac1fffff yes                                  # last of 172.16.0.0/12
+range_is hex_private ac0fffff no                                   # just before it
+range_is hex_private ac200000 no                                   # just after it
+range_is hex_private c0a80132 yes                                  # 192.168.1.50
+range_is hex_private c0a7ffff no                                   # just before 192.168.0.0/16
+range_is hex_private c0a90000 no                                   # just after it
+range_is hex_private fc000000000000000000000000000000 yes          # fc00::
+range_is hex_private fdffffffffffffffffffffffffffffff yes          # last of fc00::/7
+range_is hex_private fbffffffffffffffffffffffffffffff no           # just before it
+range_is hex_private fe000000000000000000000000000000 no           # fe00::
+range_is hex_private cb00710a no                                   # 203.0.113.10
+range_is hex_private 20010db8000000000000000000000001 no           # 2001:db8::1
+
 # --- Rules to an address or a network (issue #162) ------------------------------------------------
 # The server's addresses come from the ip stub. A rule to one of them counts like a rule to Anywhere
 # for the sockets that receive that address: one bound to it, or one on all addresses of its family
-# (0.0.0.0 for IPv4; :: and *, which can be dual-stack, for both). Private addresses count too:
-# behind 1:1 NAT or a port forward, the internet reaches the server on a private address.
+# (0.0.0.0 for IPv4; :: and *, which can be dual-stack, for both), when the internet reaches that
+# address: a public address, or a private one on the interface of a default route (1:1 NAT, port
+# forward). The tailnet and link-local addresses, and the private addresses on other interfaces
+# (Docker bridge, tunnel, second LAN), are reached only from that interface's network: a rule to one
+# counts like a rule on that interface, restricted.
 HEADER=$VERBOSE_HEADER
 set_rules '3000/tcp' 'ALLOW IN' 'Anywhere'
 : >"$tmp/ip-calls"
+addrs_are() {   # addrs_are OUTER INNER WHAT: the two lists ufw_cache_addrs filled
+    [[ "$UFW_OUTER_ADDRS" == "$1" && "$UFW_INNER_ADDRS" == "$2" ]] ||
+        fail "$3 gave outer '$UFW_OUTER_ADDRS' and inner '$UFW_INNER_ADDRS', want '$1' and '$2'"
+    printf 'ok: %s\n' "$3"
+}
+server_outer=' cb00710a 20010db8000000000000000000000001 '
+server_inner=' fe800000000000000000000000000001 c0a80132 0a110001 0a080001 64646464 fd7a115ca1e000000000000000000053 '
 ufw_cache_addrs
-want=' cb00710a 20010db8000000000000000000000001 fe800000000000000000000000000001 c0a80132 0a110001 0a080001 '
-[[ "$UFW_OWN_ADDRS" == "$want" ]] || fail "ufw_cache_addrs gave '$UFW_OWN_ADDRS', want '$want'"
+addrs_are "$server_outer" "$server_inner" "ufw_cache_addrs sorts the server addresses by reach, without loopback or prefix"
 ufw_cache_addrs
-[[ "$UFW_OWN_ADDRS" == "$want" ]] || fail "a second ufw_cache_addrs gave '$UFW_OWN_ADDRS', want '$want'"
-printf 'ok: ufw_cache_addrs reads the server addresses, without loopback or prefix, and resets the list\n'
+addrs_are "$server_outer" "$server_inner" "a second ufw_cache_addrs resets the lists"
+ip_calls_are 2 "one of each command per ufw_cache_addrs"
 
 # The two cases that recorded the old behaviour (a rule to the server's own address was firewalled).
 # `ufw allow proto tcp to 192.168.1.50` prints the address and the protocol in To, Anywhere in From.
+# 192.168.1.50 is on eth1, which holds no default route: only that LAN reaches it.
 set_rules '192.168.1.50/tcp' 'ALLOW IN' 'Anywhere'
-expect 22 tcp any "whole protocol to one destination address"
-expect 22 tcp any "whole protocol to one destination address" 0.0.0.0
-expect 53 udp none "whole protocol to one destination address, other protocol"
+expect 22 tcp restricted "whole protocol to the second LAN's address"
+expect 22 tcp restricted "whole protocol to the second LAN's address" 0.0.0.0
+expect 53 udp none "whole protocol to the second LAN's address, other protocol"
+set_rules '203.0.113.10/tcp' 'ALLOW IN' 'Anywhere'
+expect 22 tcp any "whole protocol to the public address"
+expect 22 tcp any "whole protocol to the public address" 0.0.0.0
+expect 53 udp none "whole protocol to the public address, other protocol"
 set_rules '192.168.1.50/tcp' 'ALLOW IN' '192.168.1.50/tcp'
 expect 22 tcp restricted "whole protocol to and from one address"
 set_rules '2001:db8::1 2222/tcp' 'ALLOW IN' 'Anywhere (v6)'
@@ -422,19 +495,40 @@ expect 22 tcp restricted "port to the server's address from one source"
 expect 22 tcp none "port to the server's address from one source, socket on an IPv6 address" '[2001:db8::1]'
 set_rules '203.0.113.10 22/tcp on eth0' 'ALLOW IN' 'Anywhere'
 expect 22 tcp restricted "port to the server's address on an interface"
-# Private addresses of the server count like public ones (1:1 NAT, port forward), with no class of
-# their own: any, restricted or none, as for every other rule.
+# Addresses that only one interface's network reaches: a rule to one counts like a rule on that
+# interface (restricted), never like a rule to Anywhere, and never as a result of its own.
 set_rules '192.168.1.50 8080/tcp' 'ALLOW IN' 'Anywhere'
-expect 8080 tcp any "port to the server's LAN address (1:1 NAT or port forward)"
-expect 8080 tcp none "port to the server's LAN address, socket on the public address" 203.0.113.10
+expect 8080 tcp restricted "port to the second LAN's address"
+expect 8080 tcp restricted "port to the second LAN's address, socket on all IPv4 addresses" 0.0.0.0
+expect 8080 tcp none "port to the second LAN's address, socket on the public address" 203.0.113.10
 set_rules '192.168.1.50 8080/tcp' 'ALLOW IN' '192.168.1.0/24'
-expect 8080 tcp restricted "port to the server's LAN address from the LAN"
+expect 8080 tcp restricted "port to the second LAN's address from the LAN"
 set_rules '10.17.0.1 9100/tcp' 'ALLOW IN' 'Anywhere'
-expect 9100 tcp any "port to the Docker bridge address"
+expect 9100 tcp restricted "port to the Docker bridge address"
 set_rules '10.8.0.1 51820' 'ALLOW IN' 'Anywhere'
-expect 51820 udp any "port to a point-to-point address (ip prints it before peer)"
+expect 51820 udp restricted "port to a point-to-point address (ip prints it before peer)"
 set_rules 'fe80::1 22/tcp' 'ALLOW IN' 'Anywhere (v6)'
-expect 22 tcp any "port to a link-local address"
+expect 22 tcp restricted "port to a link-local address, on the interface of the default route"
+expect 22 tcp restricted "port to a link-local address, socket on it" '[fe80::1]%eth0'
+expect 22 tcp none "port to a link-local address, socket on all IPv4 addresses" 0.0.0.0
+# The tailnet: `ufw allow to <tailnet address> port 3000` opens 3000 to the tailnet only, like
+# `ufw allow in on tailscale0 to any port 3000`.
+set_rules '100.100.100.100 3000/tcp' 'ALLOW IN' 'Anywhere'
+expect 3000 tcp restricted "port to the tailnet address"
+expect 3000 tcp restricted "port to the tailnet address, socket on all IPv4 addresses" 0.0.0.0
+expect 3000 tcp restricted "port to the tailnet address, socket on it" 100.100.100.100
+set_rules 'fd7a:115c:a1e0::53 3000/tcp' 'ALLOW IN' 'Anywhere (v6)'
+expect 3000 tcp restricted "port to the tailnet IPv6 address" '[::]'
+expect 3000 tcp none "port to the tailnet IPv6 address, socket on all IPv4 addresses" 0.0.0.0
+set_rules '100.64.0.0/10 3000/tcp' 'ALLOW IN' 'Anywhere'
+expect 3000 tcp restricted "port to the whole tailnet range"
+# A rule to such an address never hides a rule that opens the port to the internet, in any order.
+set_rules '100.100.100.100 3000/tcp' 'ALLOW IN' 'Anywhere' '203.0.113.10 3000/tcp' 'ALLOW IN' 'Anywhere'
+expect 3000 tcp any "rule to the tailnet address before one to the public address" 0.0.0.0
+expect 3000 tcp restricted "rule to the tailnet address before one to the public address, socket on the tailnet address" \
+    100.100.100.100
+set_rules '100.100.100.100 3000/tcp' 'ALLOW IN' 'Anywhere' '3000/tcp' 'ALLOW IN' 'Anywhere'
+expect 3000 tcp any "rule to the tailnet address before one to any address" 0.0.0.0
 # Networks: ufw keeps the prefix (`ufw allow to 203.0.113.10/24` prints 203.0.113.0/24).
 set_rules '203.0.113.0/24 80/tcp' 'ALLOW IN' 'Anywhere'
 expect 80 tcp any "port to a network that holds the server's address"
@@ -447,7 +541,7 @@ expect 443 tcp none "port to the /29 next to the server's address"
 set_rules '198.51.100.0/24 80/tcp' 'ALLOW IN' 'Anywhere'
 expect 80 tcp none "port to a network the server is not in"
 set_rules '10.0.0.0/8 9100/tcp' 'ALLOW IN' 'Anywhere'
-expect 9100 tcp any "port to a private network that holds the Docker bridge address"
+expect 9100 tcp restricted "port to a private network that holds only the Docker bridge and tunnel addresses"
 set_rules '172.16.0.0/12 9100/tcp' 'ALLOW IN' 'Anywhere'
 expect 9100 tcp none "port to a private network the server is not in"
 set_rules '203.0.113.0/24 6379/tcp' 'ALLOW IN' '198.51.100.7'
@@ -483,22 +577,68 @@ expect 80 tcp restricted "rule to the server's address before a rule from a netw
 set_rules '80/tcp' 'ALLOW IN' '198.51.100.0/24' '203.0.113.10 80/tcp' 'ALLOW IN' 'Anywhere'
 expect 80 tcp any "rule from a network before a rule to the server's address" 0.0.0.0
 expect 80 tcp restricted "rule from a network before a rule to the server's address, IPv6 socket" '[2001:db8::1]'
-[[ $(wc -l <"$tmp/ip-calls") -eq 2 ]] || fail "ip ran $(wc -l <"$tmp/ip-calls") times, want 2 (one per ufw_cache_addrs)"
-printf 'ok: ufw_port_access never runs ip: the addresses are read in the main shell\n'
+
+# A cloud server behind 1:1 NAT, or a LAN server behind a port forward: its only IPv4 address,
+# 192.168.1.50, is private and on eth0, the interface of the default route. The internet reaches the
+# server there, so a rule to it counts like a rule to Anywhere. There is no IPv6 default route, so the
+# unique local address fd00::5 is reached only from its own network.
+IP_ADDRS='1: lo    inet 127.0.0.1/8 scope host lo\       valid_lft forever preferred_lft forever
+2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global dynamic eth0\       valid_lft 86000sec preferred_lft 86000sec
+2: eth0    inet6 fd00::5/64 scope global \       valid_lft forever preferred_lft forever
+2: eth0    inet6 fe80::1/64 scope link \       valid_lft forever preferred_lft forever
+4: docker0    inet 10.17.0.1/16 brd 10.17.255.255 scope global docker0\       valid_lft forever preferred_lft forever'
+IP_ROUTE4='default via 192.168.1.1 dev eth0 proto dhcp src 192.168.1.50 metric 100'
+IP_ROUTE6=''
+ufw_cache_addrs
+addrs_are ' c0a80132 ' ' fd000000000000000000000000000005 fe800000000000000000000000000001 0a110001 ' \
+    "ufw_cache_addrs keeps a private address on the interface of the default route as one the internet reaches"
+set_rules '192.168.1.50 8080/tcp' 'ALLOW IN' 'Anywhere'
+expect 8080 tcp any "port to the private address of the default route (1:1 NAT or port forward)"
+expect 8080 tcp any "port to the private address of the default route, socket on all IPv4 addresses" 0.0.0.0
+expect 8080 tcp any "port to the private address of the default route, IPv4-mapped socket on it" '[::ffff:192.168.1.50]'
+set_rules '192.168.1.0/24 8080/tcp' 'ALLOW IN' 'Anywhere'
+expect 8080 tcp any "port to the network of the default route"
+set_rules '10.17.0.1 8080/tcp' 'ALLOW IN' 'Anywhere'
+expect 8080 tcp restricted "port to the Docker bridge address, behind NAT"
+set_rules 'fd00::5 8080/tcp' 'ALLOW IN' 'Anywhere (v6)'
+expect 8080 tcp restricted "port to a unique local address, without an IPv6 default route" '[::]'
+# A multipath default route: the interface of each nexthop counts.
+IP_ADDRS=$SERVER_ADDRS
+IP_ROUTE4='default proto static metric 100 
+	nexthop via 203.0.113.1 dev eth0 weight 1 
+	nexthop via 192.168.1.1 dev eth1 weight 1 '
+IP_ROUTE6=$SERVER_ROUTE6
+ufw_cache_addrs
+addrs_are ' cb00710a 20010db8000000000000000000000001 c0a80132 ' \
+    ' fe800000000000000000000000000001 0a110001 0a080001 64646464 fd7a115ca1e000000000000000000053 ' \
+    "ufw_cache_addrs reads the interface of every nexthop of a multipath default route"
+set_rules '192.168.1.50 8080/tcp' 'ALLOW IN' 'Anywhere'
+expect 8080 tcp any "port to the second LAN's address, on a nexthop of the default route"
+# No default route at all: only the public addresses are reached from the internet.
+IP_ROUTE4=''; IP_ROUTE6=''
+ufw_cache_addrs
+addrs_are "$server_outer" "$server_inner" "ufw_cache_addrs without a default route"
+IP_ROUTE4=$SERVER_ROUTE4; IP_ROUTE6=$SERVER_ROUTE6
+ufw_cache_addrs
+addrs_are "$server_outer" "$server_inner" "ufw_cache_addrs back on the default server"
+ip_calls_are 6 "one of each command per ufw_cache_addrs, never in ufw_port_access"
 
 HAVE_IP=0
 ufw_cache_addrs
-[[ "$UFW_OWN_ADDRS" == ' ' ]] || fail "without ip, ufw_cache_addrs left '$UFW_OWN_ADDRS', want ' '"
-[[ $(wc -l <"$tmp/ip-calls") -eq 2 ]] || fail "ufw_cache_addrs ran ip although have ip fails"
+addrs_are ' ' ' ' "without ip, ufw_cache_addrs leaves both lists empty"
+ip_calls_are 6 "ufw_cache_addrs ran ip although have ip fails"
 set_rules '203.0.113.10 80/tcp' 'ALLOW IN' 'Anywhere'
 expect 80 tcp none "port to the server's address, without ip, socket on all addresses"
 expect 80 tcp any "port to the server's address, without ip, socket on it" 203.0.113.10
+# The socket's own address still tells a tailnet or link-local address apart.
+set_rules '100.100.100.100 3000/tcp' 'ALLOW IN' 'Anywhere'
+expect 3000 tcp restricted "port to the tailnet address, without ip, socket on it" 100.100.100.100
 HAVE_IP=1
 printf 'ok: without ip, a rule to an address only reaches a socket bound to it\n'
 
 UFW_ACTIVE=0
 ufw_cache_addrs
-[[ $(wc -l <"$tmp/ip-calls") -eq 2 ]] || fail "ufw_cache_addrs ran ip while UFW is inactive"
+ip_calls_are 6 "ufw_cache_addrs ran ip while UFW is inactive"
 UFW_ACTIVE=1
 printf 'ok: ufw_cache_addrs makes no ip call while UFW is inactive\n'
 
@@ -530,16 +670,32 @@ SS_SOCKETS=("$(sock 203.0.113.10:443 nginx)" "$(sock '[2001:db8::1]:443' nginx)"
 set_rules '443/tcp' 'ALLOW IN' '198.51.100.0/24' '2001:db8:1::1 443/tcp' 'ALLOW IN' 'Anywhere (v6)'
 expect_exposure "restricted on the IPv4 socket, firewalled on the IPv6 one" PASS \
     '0 exposed - internet-exposed: none; firewalled: 443(nginx),restricted; tailnet/LAN only: none; localhost only: none'
-# Every kind at once, in the order ss lists the ports. 5432 listens on the LAN address and on all
-# addresses, with a rule to the LAN address: tailnet/LAN only for the socket bound to it, and exposed
-# for the one on all addresses (1:1 NAT, port forward).
+# Six internal services on all addresses, each opened to the tailnet address only: none is exposed,
+# so the count stays below the WARN and FAIL thresholds.
+SS_SOCKETS=("$(sock 0.0.0.0:3000 grafana)" "$(sock 0.0.0.0:8086 influxd)" "$(sock 0.0.0.0:9100 node_exporter)"
+    "$(sock 0.0.0.0:9090 prometheus)" "$(sock 0.0.0.0:3100 loki)" "$(sock 0.0.0.0:9093 alertmanager)")
+set_rules '100.100.100.100 3000/tcp' 'ALLOW IN' 'Anywhere' '100.100.100.100 8086/tcp' 'ALLOW IN' 'Anywhere' \
+    '100.100.100.100 9100/tcp' 'ALLOW IN' 'Anywhere' '100.100.100.100 9090/tcp' 'ALLOW IN' 'Anywhere' \
+    '100.100.100.100 3100/tcp' 'ALLOW IN' 'Anywhere' '100.100.100.100 9093/tcp' 'ALLOW IN' 'Anywhere'
+expect_exposure "six ports open to the tailnet address only" PASS \
+    '0 exposed - internet-exposed: none; firewalled: 3000(grafana),restricted 8086(influxd),restricted 9100(node_exporter),restricted 9090(prometheus),restricted 3100(loki),restricted 9093(alertmanager),restricted; tailnet/LAN only: none; localhost only: none'
+# Every kind at once, in the order ss lists the ports. 5432 listens on the second LAN's address and on
+# all addresses, with a rule to that LAN address: tailnet/LAN only for the socket bound to it, and
+# restricted for the one on all addresses, since only that LAN reaches the address.
 SS_SOCKETS=("$(sock 0.0.0.0:22 sshd)" "$(sock 192.168.1.50:5432 postgres)" "$(sock 0.0.0.0:5432 postgres)"
     "$(sock 127.0.0.1:631 cupsd)" "$(sock 0.0.0.0:9000 minio)" "$(sock 0.0.0.0:9100 node_exporter)"
     "$(sock '[::]:22' sshd)" "$(sock '[::]:9000' minio)")
 set_rules '22/tcp' 'ALLOW IN' 'Anywhere' '192.168.1.50 5432/tcp' 'ALLOW IN' 'Anywhere' \
     '9100/tcp' 'ALLOW IN' '198.51.100.7'
 expect_exposure "public, restricted, LAN, firewalled and localhost ports" PASS \
+    '1 exposed - internet-exposed: 22(sshd); firewalled: 5432(postgres),restricted 9000(minio) 9100(node_exporter),restricted; tailnet/LAN only: 5432(postgres); localhost only: 631'
+# The same server behind 1:1 NAT: 192.168.1.50 is on the interface of the default route, so the
+# socket on all addresses is exposed.
+IP_ADDRS='2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0\       valid_lft forever preferred_lft forever'
+IP_ROUTE4='default via 192.168.1.1 dev eth0 proto static'; IP_ROUTE6=''
+expect_exposure "port open to the private address of the default route (1:1 NAT)" PASS \
     '2 exposed - internet-exposed: 22(sshd) 5432(postgres); firewalled: 9000(minio) 9100(node_exporter),restricted; tailnet/LAN only: 5432(postgres); localhost only: 631'
+IP_ADDRS=$SERVER_ADDRS; IP_ROUTE4=$SERVER_ROUTE4; IP_ROUTE6=$SERVER_ROUTE6
 # Docker ports keep their own labels and their place in the order of ss.
 DOCKER_ACTIVE=1; IS_ROOT=1; DOCKER_PROTECTED=0
 DOCKER_PS='0.0.0.0:8080->80/tcp, [::]:8080->80/tcp'
@@ -555,10 +711,9 @@ set_rules '22/tcp' 'ALLOW IN' 'Anywhere' '8080/tcp' 'ALLOW FWD' 'Anywhere'
 expect_exposure "Docker port opened with a route rule" PASS \
     '2 exposed - internet-exposed: 22(sshd) 8080(docker); firewalled: 3000(node); tailnet/LAN only: none; localhost only: none'
 DOCKER_ACTIVE=0; IS_ROOT=0; DOCKER_PROTECTED=1; DOCKER_PS=""
-[[ $(wc -l <"$tmp/ip-calls") -eq $EXPOSURE_RUNS ]] ||
-    fail "ip ran $(wc -l <"$tmp/ip-calls") times for $EXPOSURE_RUNS exposure runs, want once each"
+ip_calls_are "$EXPOSURE_RUNS" "the exposure block reads the server addresses once per run, in the main shell"
 printf 'ok: the exposure block reads the server addresses once per run, in the main shell\n'
-UFW_OWN_ADDRS=" "; SS_SOCKETS=()
+UFW_OUTER_ADDRS=" "; UFW_INNER_ADDRS=" "; SS_SOCKETS=()
 
 # --- Cache: each bare profile name is looked up once per run, in the main shell -------------------
 HEADER=$PLAIN_HEADER
@@ -593,6 +748,8 @@ ufw_cache_apps
 UFW_ACTIVE=1
 printf 'ok: ufw_cache_apps makes no ufw call while UFW is inactive\n'
 
-[[ -e "$tmp/ufw-unexpected" ]] && fail "unexpected ufw calls: $(tr '\n' ' ' <"$tmp/ufw-unexpected")"
+for cmd in ufw ip ss docker; do
+    [[ -e "$tmp/$cmd-unexpected" ]] && fail "unexpected $cmd calls: $(tr '\n' ' ' <"$tmp/$cmd-unexpected")"
+done
 
 printf 'ok: all ufw_port_access cases\n'
