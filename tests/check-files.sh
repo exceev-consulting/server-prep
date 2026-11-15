@@ -4,7 +4,10 @@
 # CLAUDE.local.md is tracked, or when an IPv4 address is not an example. Then it tests the guard on
 # throwaway git repos built in a temp folder: tracked reports, filled configs, keys and
 # CLAUDE.local.md fail, the forbidden list stays in step with .gitignore, and an IPv4 address that
-# is not an example fails with its file and line. No root needed and nothing on the host changes.
+# is not an example fails with its file and line. Last, it checks that `scripts/check.sh --only
+# security` runs the guard: OK on a clean repo, FAIL with the guard's output on a tracked report or
+# an address that is not an example, and without .git SKIP on your machine but FAIL with CI=true.
+# No root needed and nothing on the host changes.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -215,3 +218,60 @@ printf 'ok: check-files inside another repository\n'
 # 11. It takes no arguments
 new_repo
 expect 2 'rejects an argument' 'Usage: scripts/check-files.sh' --help
+
+# 12. scripts/check.sh --only security runs the guard. check.sh cds to its own parent, so it sits
+# beside check-files.sh in the test repo. It needs bash 5 and exits 2 on an older bash. CI is set
+# on each run: GitHub Actions exports CI=true, and check.sh turns a missing tool or .git into a FAIL then.
+expect_check() {   # expect_check WANT_STATUS LABEL CI TEXT...: runs check.sh --only security from outside the repo, with CI=<CI> ("" for your machine)
+    local want="$1" label="$2" ci="$3" status=0 text missing=""
+    shift 3
+    (cd "$tmp" && CI="$ci" XDG_CACHE_HOME="$tmp/cache" bash "$repo/scripts/check.sh" --only security) >"$tmp/out" 2>&1 || status=$?
+    for text in "$@"; do
+        grep -qF -- "$text" "$tmp/out" || missing="$text"
+    done
+    if [[ $status -ne $want || -n $missing ]]; then
+        printf 'not ok: check.sh --only security %s (status %s, want %s%s)\n' "$label" "$status" "$want" \
+            "${missing:+; missing: $missing}"
+        cat "$tmp/out"
+        exit 1
+    fi
+    # the security section must never reach the ShellCheck download
+    if [[ -e $tmp/cache ]]; then
+        printf 'not ok: check.sh --only security %s created %s (ShellCheck download)\n' "$label" "$tmp/cache"
+        exit 1
+    fi
+    printf 'ok: check.sh --only security %s\n' "$label"
+}
+
+new_check_repo() {   # new_repo, plus scripts/check.sh
+    new_repo
+    cp "$SCRIPT_DIR/scripts/check.sh" "$repo/scripts/"
+    git -C "$repo" add -- scripts/check.sh
+}
+
+if (( BASH_VERSINFO[0] >= 5 )); then
+    new_check_repo
+    expect_check 0 'passes on a clean repo' '' 'OK    security' 'Summary: 1 OK, 0 FAIL'
+
+    new_check_repo
+    add_file server-audit-web-01-20260101.txt
+    expect_check 1 'fails on a force-added report' '' 'FAIL  security' \
+        'check-files: server-audit-web-01-20260101.txt: must not be committed' 'It reads the staged copy'
+
+    new_check_repo
+    add_file docs/a.md "Server: $bad"
+    expect_check 1 'fails on an address that is not an example' true 'FAIL  security' \
+        "check-files: docs/a.md:1: $bad is not"
+
+    # No .git, as in a release tarball or a CI checkout made without git (the REST tarball of
+    # actions/checkout): SKIP on your machine, FAIL in CI, where the guard must never pass unseen.
+    rm -rf "$repo"
+    mkdir -p "$repo/scripts"
+    cp "$SCRIPT_DIR/scripts/check.sh" "$SCRIPT_DIR/scripts/check-files.sh" "$repo/scripts/"
+    expect_check 0 'skips without .git on your machine' '' 'SKIP  security' '.git not found' \
+        'Summary: 0 OK, 0 FAIL, 1 skipped'
+    expect_check 1 'fails without .git with CI=true' true 'FAIL  security' '.git not found (CI needs it)' \
+        'Summary: 0 OK, 1 FAIL, 0 skipped (failed: security)'
+else
+    printf 'skip: check.sh --only security (bash %s, check.sh needs 5)\n' "$BASH_VERSION"
+fi
