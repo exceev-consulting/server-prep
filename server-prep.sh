@@ -60,7 +60,7 @@ DOCKER_AUTO_UPDATE="${DOCKER_AUTO_UPDATE:-yes}"
 THIRD_PARTY_AUTO_UPDATE="${THIRD_PARTY_AUTO_UPDATE:-yes}"   # CrowdSec, cloudflared, Telegraf, Tailscale in unattended-upgrades
 AUTO_REBOOT="${AUTO_REBOOT:-no}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-04:00}"
-DISABLE_SERVICES="${DISABLE_SERVICES:-}"      # filled interactively; default = all candidates
+DISABLE_SERVICES="${DISABLE_SERVICES:-}"      # filled interactively; empty = all candidates, none = nothing
 HEADLESS="${HEADLESS:-no}"
 LAPTOP_MODE="${LAPTOP_MODE:-auto}"
 INSTALL_AUDITD="${INSTALL_AUDITD:-yes}"
@@ -96,6 +96,7 @@ ASSUME_YES=0
 ONLY=""
 SKIP=""
 CONFIG_FILE=""
+SAVED_ANSWERS=0   # 1 when --config is an answers file that save_answers wrote
 VALIDATE=0
 UPGRADE=0
 
@@ -524,6 +525,11 @@ validate_values() {
     done
     read -rd '' -a list <<< "$DISABLE_SERVICES"
     for item in "${list[@]}"; do
+        if [[ ${item,,} == none ]]; then
+            [[ ${#list[@]} -eq 1 ]] ||
+                vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES has none next to service names: write none alone to disable no service, or list only the services to disable"
+            continue
+        fi
         [[ " $SERVICE_CANDIDATES " == *" $item "* ]] ||
             vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES has $(vq "$item"), which is not one of: ${SERVICE_CANDIDATES}. The service of that name will be disabled: check the name"
     done
@@ -682,6 +688,14 @@ fi
 
 if [[ -n "$CONFIG_FILE" ]]; then
     [[ -r "$CONFIG_FILE" ]] || { echo "Cannot read $CONFIG_FILE" >&2; exit 2; }
+    # The first line save_answers writes. Only from a regular file: reading a line of a pipe
+    # (--config <(...)) would take it away from the source below.
+    if [[ -f "$CONFIG_FILE" ]]; then
+        saved_head=""
+        IFS= read -r saved_head < "$CONFIG_FILE" || :
+        [[ $saved_head == '# server-prep answers - '* ]] && SAVED_ANSWERS=1
+        unset saved_head
+    fi
     # shellcheck disable=SC1090
     . "$CONFIG_FILE"
 fi
@@ -766,10 +780,18 @@ tailscale_ipv4() {
 # ----------------------------------------------------------------------------
 # Interactive prompts (read from /dev/tty so "curl | bash" also works)
 # ----------------------------------------------------------------------------
-ask() {   # ask VAR "question" "default"
-    local __var="$1" q="$2" def="${!1:-${3:-}}" ans=""
+ask() {   # ask VAR "question" "default" [optional]: on an optional question, - or none empties the answer
+    local __var="$1" q="$2" def="${!1:-${3:-}}" opt="${4:-}" ans=""
     if [[ $INTERACTIVE -eq 1 ]]; then
-        read -r -p "${C_BOLD}?${C_0} ${q} ${C_D}[${def}]${C_0}: " ans < /dev/tty || true
+        # Enter keeps the default, so - (or none) is the only way to empty a saved answer. A question
+        # that needs a value asks again. At the end of input ans stays empty and the default is kept.
+        while true; do
+            ans=""
+            read -r -p "${C_BOLD}?${C_0} ${q} ${C_D}[${def}]${C_0}: " ans < /dev/tty || true
+            [[ $ans == - || ${ans,,} == none ]] || break
+            [[ $opt == optional ]] && { printf -v "$__var" ''; return 0; }
+            warn "This answer cannot be empty: type a value, or press Enter to keep [${def}]"
+        done
         printf -v "$__var" '%s' "${ans:-$def}"
     else
         printf -v "$__var" '%s' "$def"
@@ -1023,6 +1045,19 @@ explain() {
     for l in "$@"; do printf '%s\n' "  ${C_D}${l}${C_0}"; done
 }
 
+removed_words() {   # removed_words LABEL OLD NEW: a "LABEL item" line for each item of the list OLD that NEW no longer has
+    local w new seen=" "
+    local -a o=() n=()
+    read -ra o <<< "${2//,/ }"
+    read -ra n <<< "${3//,/ }"
+    new=" ${n[*]} "
+    for w in "${o[@]}"; do
+        [[ $new == *" $w "* || $seen == *" $w "* ]] && continue
+        seen+="$w "
+        printf '%s %s\n' "$1" "$w"
+    done
+}
+
 service_help() {
     case "$1" in
         avahi-daemon) echo "Avahi: announces this machine on the local network (printers, .local names). Useless on a server, and it listens on UDP 5353." ;;
@@ -1039,7 +1074,10 @@ questions() {
     [[ $INTERACTIVE -eq 1 ]] || return 0
     title "Server preparation - questions"
     echo "  Host: ${HOST_SHORT} | ${OS_PRETTY} | laptop: $([[ $IS_LAPTOP == 1 ]] && echo yes || echo no) | docker: $([[ $HAS_DOCKER == 1 ]] && echo yes || echo no) | tailscale: $([[ $HAS_TAILSCALE == 1 ]] && echo yes || echo no) | cloudflared: $([[ $HAS_CLOUDFLARED == 1 ]] && echo yes || echo no)"
-    echo "  Press Enter to accept the [default]. Nothing changes until you confirm the plan at the end."
+    echo "  Press Enter to accept the [default]. Where a question shows (- = ...), type - to leave it empty."
+    echo "  Nothing changes until you confirm the plan at the end."
+    # what opened firewall rules before the answers below: step_firewall only adds rules
+    local old_ips="$ADMIN_IPS" old_ports="$EXTRA_PORTS" old_access="$PANEL_ACCESS" old_panel_ip="$PANEL_IP" old_web="$EXPOSE_WEB"
 
     # ---------------------------------------------------------------- 1
     echo; echo "${C_BOLD}1. Admin account${C_0}"
@@ -1056,7 +1094,7 @@ questions() {
             "(no key yet? create one there with:  ssh-keygen -t ed25519). Paste the whole line." \
             "Never paste the private key (the file without .pub)."
     while true; do
-        ask ADMIN_PUBKEY "Admin SSH public key (empty = keep current keys)" "${ADMIN_PUBKEY:-}"
+        ask ADMIN_PUBKEY "Admin SSH public key (- = none, keep current keys)" "${ADMIN_PUBKEY:-}" optional
         [[ -z "$ADMIN_PUBKEY" ]] || valid_pubkey "$ADMIN_PUBKEY" && break
         warn "That is not a valid public key (expected one line like: ssh-ed25519 AAAA... comment)"
         ADMIN_PUBKEY=""
@@ -1068,14 +1106,14 @@ questions() {
             "apps here by connecting over SSH as root with its own key. The name is used in messages, and two" \
             "names also change settings: coolify creates /data/coolify; openship leaves Openship's deploy files" \
             "out of AIDE and has auditd watch its SSH key folders."
-    ask PANEL "Panel (coolify, dokploy, openship, other name; empty = none)" "${PANEL:-}"
+    ask PANEL "Panel (coolify, dokploy, openship, other name; - = none)" "${PANEL:-}" optional
     set_panel_label
     explain "${PANEL_LABEL^}'s SSH public key: open the SSH key the panel uses for servers and copy its" \
             "public part (Coolify: Keys & Tokens -> Private Keys -> the key -> Public Key)." \
             "It is installed in /root/.ssh/authorized_keys and only accepted from the sources chosen below." \
             "Leave empty if this server will not be managed by a panel."
     while true; do
-        ask PANEL_PUBKEY "${PANEL_LABEL^} SSH public key (empty = skip)" "${PANEL_PUBKEY:-}"
+        ask PANEL_PUBKEY "${PANEL_LABEL^} SSH public key (- = skip)" "${PANEL_PUBKEY:-}" optional
         [[ -z "$PANEL_PUBKEY" ]] || valid_pubkey "$PANEL_PUBKEY" && break
         warn "Invalid public key"; PANEL_PUBKEY=""
     done
@@ -1089,7 +1127,9 @@ questions() {
             "  public      : straight to this server's public IP - typical for a VPS. Only the panel" \
             "                server's IP will be allowed to log in as root." \
             "Root login is refused from every other address, even with the right key."
-    ask PANEL_ACCESS "Access methods" "${PANEL_ACCESS:-$def_access}"
+    # From the saved answers, an access emptied with - stays empty when you press Enter
+    [[ $SAVED_ANSWERS -eq 1 ]] && def_access="$PANEL_ACCESS"
+    ask PANEL_ACCESS "Access methods (- = none)" "${PANEL_ACCESS:-$def_access}" optional
     if [[ "$PANEL_ACCESS" == *public* ]]; then
         explain "The public IPv4 of the server running ${PANEL_LABEL}. On that server run:  curl -4 ifconfig.me"
         ask PANEL_IP "${PANEL_LABEL^} server public IP" "$PANEL_IP"
@@ -1110,11 +1150,14 @@ questions() {
             "Current SSH port(s): ${CURRENT_SSH_PORTS}"
     ask SSH_PORT "New SSH port" "$SSH_PORT"
     local def_ips="${ADMIN_IPS:-$LAN_CIDR}"
+    # From the saved answers, sources emptied with - stay empty when you press Enter
+    [[ $SAVED_ANSWERS -eq 1 ]] && def_ips="$ADMIN_IPS"
     explain "Addresses allowed to reach the SSH port directly (space-separated IPs or networks)." \
             "Suggested: your local network ${LAN_CIDR:-?} and your office/home public IP if it is fixed." \
             "The tunnel, Tailscale and the panel IP chosen above are allowed automatically." \
-            "Empty + no tunnel/tailscale/panel IP = SSH open to everyone (rate-limited, keys only)."
-    ask ADMIN_IPS "Allowed SSH sources" "$def_ips"
+            "None (-) + no tunnel/tailscale/panel IP = SSH open to everyone (rate-limited, keys only)." \
+            "None (-) + only the panel IP = only the panel server reaches SSH: you are locked out."
+    ask ADMIN_IPS "Allowed SSH sources (- = none)" "$def_ips" optional
     local def_web=no; [[ "$PANEL_ACCESS" == *public* ]] && def_web=yes
     explain "Ports 80/443 are where your deployed apps answer (the panel's reverse proxy, e.g. Traefik or Caddy)." \
             "  yes : visitors reach the apps directly on this server's IP (normal for a VPS)." \
@@ -1122,8 +1165,23 @@ questions() {
             "        Nothing is exposed on the internet - recommended behind a home box."
     ask_yn EXPOSE_WEB "Open 80/443 to the internet?" "${EXPOSE_WEB:-$def_web}"
     explain "Other ports to open to everyone, e.g. a database you must reach from outside (5432/tcp)." \
-            "Format: port/proto separated by spaces. Most setups need none - keep it empty unless sure."
-    ask EXTRA_PORTS "Extra ports" "$EXTRA_PORTS"
+            "Format: port/proto separated by spaces. Most setups need none - keep it empty unless sure." \
+            "Removing a port or an SSH source does not delete the rule an earlier run added: see the to-do."
+    ask EXTRA_PORTS "Extra ports (- = none)" "$EXTRA_PORTS" optional
+    # step_firewall only adds rules: name the ones an earlier run may have added for an answer
+    # removed here (#74). cloudflared has no rule: the tunnel arrives on loopback.
+    local gone=""
+    gone="$(
+        yes_ "$old_web" && ! yes_ "$EXPOSE_WEB" && echo "ports 80/443"
+        removed_words port "$old_ports" "$EXTRA_PORTS"
+        removed_words "SSH source" "$old_ips" "$ADMIN_IPS"
+        removed_words access "${old_access//cloudflared/}" "$PANEL_ACCESS"
+        [[ "$PANEL_ACCESS" == *public* ]] && removed_words "panel IP" "$old_panel_ip" "$PANEL_IP"
+    )"
+    if [[ -n "$gone" ]]; then
+        gone="$(paste -sd ';' <<< "$gone")"
+        todo "The firewall step does not delete rules: if an earlier run opened what you removed from the answers (${gone//;/, }), UFW still allows it. List the rules with: sudo ufw status numbered, then delete each one you no longer need, highest number first: sudo ufw delete <number>"
+    fi
 
     # ---------------------------------------------------------------- 4
     echo; echo "${C_BOLD}4. Protection${C_0}"
@@ -1162,16 +1220,23 @@ questions() {
     echo; echo "${C_BOLD}5. Services${C_0}"
     explain "Every running service is something that can be attacked. These are desktop services" \
             "a server does not need. Disabling is reversible: sudo systemctl enable --now <name>"
-    local s sel="" a
+    local s sel="" a def asked=0
     for s in $SERVICE_CANDIDATES; do
         systemctl cat "$s" >/dev/null 2>&1 || continue
-        local def=yes
+        asked=1
+        def=yes   # empty = every candidate; none, or a list without it, = no
         [[ -n "$DISABLE_SERVICES" && " $DISABLE_SERVICES " != *" $s "* ]] && def=no
         echo "  ${C_D}- $(service_help "$s")${C_0}"
         a=$def; ask_yn a "  Disable ${s}" "$def"
         [[ $a == yes ]] && sel+="$s "
     done
-    DISABLE_SERVICES="${sel% }"
+    # The answer is what you chose, whatever else is installed: none when you kept every service, since
+    # an empty value means every candidate to a --yes re-run (#74). With no candidate installed nothing
+    # was asked, so the value stays as it was.
+    if [[ $asked -eq 1 ]]; then
+        DISABLE_SERVICES="${sel% }"
+        DISABLE_SERVICES="${DISABLE_SERVICES:-none}"
+    fi
     if [[ $IS_LAPTOP -eq 1 ]]; then
         explain "Laptop detected: closing the lid and idle sleep will be disabled so the apps stay online." \
                 "Tip: keep it plugged in, and if the BIOS allows it, limit battery charge to ~80%."
@@ -1216,7 +1281,7 @@ questions() {
         ask TELEGRAM_CHAT_ID "Telegram chat id" "$TELEGRAM_CHAT_ID"
         explain "${PANEL_LABEL^} logs in as root every few minutes; alerting on those would spam you." \
                 "Users listed here never trigger a login alert (space-separated)."
-        ask TELEGRAM_IGNORE_USERS "Users without login alerts" "$TELEGRAM_IGNORE_USERS"
+        ask TELEGRAM_IGNORE_USERS "Users without login alerts (- = none)" "$TELEGRAM_IGNORE_USERS" optional
     fi
     explain "Timezone used for logs, scheduled reboots and reports (e.g. Europe/Paris, UTC)."
     ask TIMEZONE "Timezone" "$TIMEZONE"
@@ -1231,7 +1296,9 @@ summary_and_confirm() {
     if [[ "$PANEL_ACCESS" == *public* && -z "$PANEL_IP" ]]; then
         die "PANEL_ACCESS contains 'public' but PANEL_IP is empty"
     fi
-    [[ -z "$DISABLE_SERVICES" && $INTERACTIVE -eq 0 ]] && DISABLE_SERVICES="$SERVICE_CANDIDATES"
+    # Empty = every candidate (a config without the setting, or questions that asked nothing because no
+    # candidate is installed), none = disable nothing. save_answers writes the list, or none (#74).
+    [[ -z "${DISABLE_SERVICES//[[:space:]]/}" ]] && DISABLE_SERVICES="$SERVICE_CANDIDATES"
     title "Plan"
     cat <<EOF
   Admin user ........ ${ADMIN_USER} $([[ -n "$ADMIN_PUBKEY" ]] && echo "(+1 key)")
@@ -1248,7 +1315,15 @@ summary_and_confirm() {
   Steps ............. ${ONLY:-all}${SKIP:+ (skip: $SKIP)}
   Mode .............. $([[ $DRY_RUN == 1 ]] && echo "DRY-RUN (nothing will change)" || echo "APPLY")
 EOF
-    confirm "Proceed?" yes || die "Aborted by user"
+    # --validate warns about this lockout, but the questions never run it: an answer of - at "Allowed SSH
+    # sources" leads here. Warn under the plan, and make Proceed default to no.
+    local go=yes
+    if step_selected firewall && [[ -z "${ADMIN_IPS//[[:space:],]/}" && "$PANEL_ACCESS" == *public* &&
+          "$PANEL_ACCESS" != *tailscale* && "$PANEL_ACCESS" != *cloudflared* ]]; then
+        warn "No allowed SSH source and no Tailscale or tunnel: the firewall will allow SSH only from ${PANEL_LABEL}'s server (${PANEL_IP}), so you will be locked out of new SSH logins. Answer n and add your IP or network at 'Allowed SSH sources' (ADMIN_IPS)"
+        go=no
+    fi
+    confirm "Proceed?" "$go" || die "Aborted by user"
 }
 
 save_answers() {
@@ -1259,7 +1334,7 @@ save_answers() {
         local v
         for v in ADMIN_USER ADMIN_PUBKEY PANEL PANEL_PUBKEY PANEL_ACCESS PANEL_IP SSH_PORT ADMIN_IPS EXPOSE_WEB EXTRA_PORTS \
                  TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT \
-                 AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS INSTALL_AUDITD INSTALL_RKHUNTER INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF \
+                 AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF \
                  TELEGRAM_ENABLE TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS SWAP_SIZE PTRACE_SCOPE; do
             printf '%s=%q\n' "$v" "${!v}"
         done
@@ -2249,6 +2324,7 @@ step_services() {
     before=$(systemctl list-units --type=service --state=running --no-legend | wc -l)
     local s
     for s in $DISABLE_SERVICES; do
+        [[ ${s,,} == none ]] && continue   # none = disable nothing
         case "$s" in
             avahi-daemon) svc_disable avahi-daemon.socket avahi-daemon.service ;;
             cups) svc_disable cups.path cups.socket cups.service ;;
@@ -2578,11 +2654,17 @@ EOF
 
 step_telegram() {
     yes_ "$TELEGRAM_ENABLE" || return $SKIP_RC
-    # the answers file never holds the token: a re-run without one keeps the token already installed
+    # The answers file never holds the token: a re-run without one (--config /etc/server-prep/server-prep.conf
+    # --yes) keeps the token already installed (#74). It is read here, never printed or logged: only
+    # telegram.env and curl's stdin (server-prep-notify) get it.
     if [[ -z "$TELEGRAM_BOT_TOKEN" && -f "$CONF_DIR/telegram.env" ]]; then
         TELEGRAM_BOT_TOKEN="$(sed -n 's/^TELEGRAM_BOT_TOKEN=//p' "$CONF_DIR/telegram.env" 2>/dev/null | tail -n 1)"
+        # a hand-edited telegram.env may quote it, which the scripts that source it accept
+        [[ $TELEGRAM_BOT_TOKEN =~ ^\"(.*)\"$ || $TELEGRAM_BOT_TOKEN =~ ^\'(.*)\'$ ]] && TELEGRAM_BOT_TOKEN="${BASH_REMATCH[1]}"
+        [[ -n "$TELEGRAM_BOT_TOKEN" ]] && note "bot token kept from $CONF_DIR/telegram.env"
     fi
-    [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]] || { note "token/chat id missing"; return 1; }
+    [[ -n "$TELEGRAM_BOT_TOKEN" ]] || { note "bot token missing: type it at the prompt (it is not saved in the answers) or set TELEGRAM_BOT_TOKEN"; return 1; }
+    [[ -n "$TELEGRAM_CHAT_ID" ]] || { note "chat id missing: set TELEGRAM_CHAT_ID"; return 1; }
     # the token goes into a curl config line (url = "..."), whose errors are silenced: catch a bad paste here
     [[ $TELEGRAM_BOT_TOKEN =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || { note "the bot token does not look like 123456:ABC-..."; return 1; }
     write_file "$CONF_DIR/telegram.env" 600 <<EOF

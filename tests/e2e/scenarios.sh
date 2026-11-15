@@ -463,7 +463,7 @@ sc_audit_prepared() {
 
 sc_prep_rerun() {
     begin prep-rerun
-    local rc moved chain
+    local rc moved chain got
     run_prep second --config "$VM_CFG" --yes; rc=$?
     check_eq "server-prep.sh exits 0" "$rc" 0
     if [[ -n "$PREP_REPORT" ]]; then
@@ -484,6 +484,23 @@ sc_prep_rerun() {
     check "after it, DOCKER-USER still goes through UFW" $? "$(head -c 300 <<<"$chain")"
     grep -q CROWDSEC <<<"$chain"
     check "after it, DOCKER-USER still goes through CrowdSec" $? "$(head -c 300 <<<"$chain")"
+    # A --yes re-run from the saved answers does what the first run did (issue #74). The ssh step is
+    # never part of a --yes run: --yes skips its login test and rollback timer.
+    got="$(as_root '. /etc/server-prep/server-prep.conf && printf "%s|%s" "$DISABLE_SERVICES" "$LAPTOP_MODE"' < /dev/null)"
+    check_eq "the saved answers keep DISABLE_SERVICES and LAPTOP_MODE" "$got" \
+        "avahi-daemon cups cups-browsed bluetooth ModemManager apport|auto"
+    run_prep saved-answers --config /etc/server-prep/server-prep.conf --yes --only services,laptop,telegram; rc=$?
+    check_eq "a --yes re-run from the saved answers exits 0" "$rc" 0
+    if [[ -n "$PREP_REPORT" ]]; then
+        report_steps "$PREP_REPORT" > "$WORK/steps-saved-answers.json"
+        check_eq "the saved-answers report lists the three steps" \
+            "$(jq -r 'map(.step) | join(",")' "$WORK/steps-saved-answers.json")" services,laptop,telegram
+        moved="$(jq -r '[.[] | select(.result != "OK (already)" and .result != "SKIPPED")
+            | "\(.step) \(.result)"] | join(", ")' "$WORK/steps-saved-answers.json")"
+        [[ -z "$moved" ]]; check "from the saved answers, services, laptop and telegram are OK (already) or SKIPPED" $? "$moved"
+    else
+        check "the saved-answers report is written" 1
+    fi
     finish
 }
 

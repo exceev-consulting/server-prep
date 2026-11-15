@@ -5,6 +5,17 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Fix: a re-run from the saved answers
+  (`sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step> --yes`) now does what the first run
+  did. When you keep every service, the answers say `DISABLE_SERVICES=none` instead of an empty value, which a `--yes`
+  run read as "disable them all"; the saved list holds only the services you chose to disable. `LAPTOP_MODE` is saved too, so the audit's laptop hint now says to set it in that file. The
+  `telegram` step keeps the bot token already in `/etc/server-prep/telegram.env`, quoted or not, without showing it.
+  At a question that shows `(- = ...)`, type `-` (or `none`) to empty an answer, such as the extra ports or the allowed
+  SSH sources; on a re-run from the saved answers, Enter keeps it empty. The firewall step still only adds rules: the
+  to-do names the ports and sources you removed, with the commands to delete their rules. With no allowed SSH source
+  and only the panel's public IP, the plan warns that you will be locked out and `Proceed?` defaults to no. Answers
+  saved by 1.1.1 or older hold an empty `DISABLE_SERVICES` when you kept every service: set `DISABLE_SERVICES=none`
+  there before a `--yes` re-run.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,

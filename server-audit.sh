@@ -304,9 +304,15 @@ if [[ $HAS_BAT -eq 1 || -f /etc/systemd/logind.conf.d/50-server-prep-lid.conf ]]
     if [[ $LID_OK -eq 1 && ${#LAPTOP_BAD[@]} -eq 0 ]]; then
         result sys.laptop INFO "Laptop server mode" "$laptop_msg"
     else
-        # without a battery the step runs only with LAPTOP_MODE=yes, and the saved answers do not keep it
-        laptop_env=""; [[ $HAS_BAT -eq 1 ]] || laptop_env="env LAPTOP_MODE=yes "
-        result sys.laptop INFO "Laptop server mode" "$laptop_msg" "sudo ${laptop_env}./server-prep.sh --config /etc/server-prep/server-prep.conf --only laptop --yes"
+        # The step runs with a battery unless LAPTOP_MODE=no, and without one only with LAPTOP_MODE=yes. The
+        # saved answers keep LAPTOP_MODE and are read after the environment, so "env LAPTOP_MODE=yes" would
+        # not override them: the hint says to set it in that file. The file is root only: without root the
+        # grep finds nothing.
+        laptop_fix="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only laptop --yes"
+        if [[ $HAS_BAT -eq 0 ]] || grep -qsE "^LAPTOP_MODE=(no|\"no\"|'no')[[:space:]]*(#.*)?\$" /etc/server-prep/server-prep.conf; then
+            laptop_fix="set LAPTOP_MODE=yes in /etc/server-prep/server-prep.conf (add the line if it is missing), then run: ${laptop_fix}"
+        fi
+        result sys.laptop INFO "Laptop server mode" "$laptop_msg" "$laptop_fix"
     fi
 fi
 

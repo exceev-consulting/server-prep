@@ -241,6 +241,22 @@ broken "a bad IPv6 address after a long service name" \
 [[ "$out" == *'WARN '*'"systemd-networkd-wait-online"'* ]] || fail "a long service name is not shown"
 printf 'ok: long plain values are still shown\n'
 
+# DISABLE_SERVICES=none (what save_answers writes when every service is kept, issue #74) is no unknown service
+for line in 'DISABLE_SERVICES="none"' "$(printf 'DISABLE_SERVICES=%q' none)" 'DISABLE_SERVICES="NONE"'; do
+    cp "$tmp/good.conf" "$tmp/none.conf"
+    printf '%s\n' "$line" >> "$tmp/none.conf"
+    check "$tmp/none.conf"
+    [[ $status -eq 0 && "$out" == "config OK (0 warning(s), 0 note(s))" ]] ||
+        fail "$line gives exit $status, want 0 and only \"config OK\""
+    printf 'ok: %s gives exit 0 and config OK\n' "$line"
+done
+cp "$tmp/good.conf" "$tmp/none.conf"
+printf 'DISABLE_SERVICES="none cups"\n' >> "$tmp/none.conf"
+check "$tmp/none.conf"
+[[ $status -eq 0 && $(count WARN) -eq 1 && $(count ERROR) -eq 0 && "$out" == *"write none alone"* ]] ||
+    fail "DISABLE_SERVICES=\"none cups\" gives exit $status, want 0 and one warning that says to write none alone"
+printf 'ok: DISABLE_SERVICES with none next to a service name gives one warning\n'
+
 # Lockout: public access and no ADMIN_IPS
 cp "$tmp/good.conf" "$tmp/lockout.conf"
 printf 'PANEL_ACCESS="public"\nADMIN_IPS=""\n' >> "$tmp/lockout.conf"

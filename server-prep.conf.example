@@ -41,7 +41,7 @@ AUTO_REBOOT="no"                         # reboot automatically when updates nee
 AUTO_REBOOT_TIME="04:00"
 
 # --- Services ----------------------------------------------------------------
-DISABLE_SERVICES="avahi-daemon cups cups-browsed bluetooth ModemManager apport"
+DISABLE_SERVICES="avahi-daemon cups cups-browsed bluetooth ModemManager apport"   # none = disable nothing; empty = all of these
 HEADLESS="no"                            # desktop machines: boot without the GUI
 LAPTOP_MODE="auto"                       # auto|yes|no - ignore lid close, disable sleep
 
