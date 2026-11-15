@@ -77,7 +77,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
   - Always use `"${APT_OPTS[@]}"`, which includes `DPkg::Lock::Timeout=600`.
   - Fresh servers run apt in the background at boot.
 - **Third-party repos:**
-  - Download the key, **verify its fingerprint**, and dearmor it to `/etc/apt/keyrings/`.
+  - Download the key, **verify its fingerprint**, and dearmor it to `/etc/apt/keyrings/`: `apt_repo_key NAME URL FPR KEYRING` does it (one key with the published fingerprint, no secret key, only that key exported) and checks a key already in place on every run (a KEYRING ending in `.asc` stays armored, see the Signed-By gotcha). Then call `drop_other_sources`, before writing the source, so no other source names another key for the same repository. Never before `apt_repo_key`: a failed key download or check must leave the operator's working source in place.
   - Add a `signed-by` source.
   - Add an apt **pin at priority 900**. Ubuntu Pro ESM (priority 510) otherwise wins with old versions.
 - **Panel-agnostic:** the panel is `PANEL` / `PANEL_PUBKEY` / `PANEL_ACCESS` / `PANEL_IP` (old `COOLIFY_*` names are mapped at load). Messages use `${PANEL_LABEL}`. Panel-specific behaviour must be guarded by `[[ ${PANEL,,} == <name> ]]`.
@@ -112,7 +112,9 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
 |---|---|
 | Install fails with "dpkg lock held" on a fresh server | `DPkg::Lock::Timeout=600` in `APT_OPTS` and on `apt-get update` |
 | Ubuntu 26.04 uses **sudo-rs**: `visudo` rejects `Defaults logfile` | Detect sudo-rs and skip the sudo logfile (it logs to the journal). The audit counts it as PASS |
-| CrowdSec 1.4.x installed from Ubuntu Pro ESM | Pin `crowdsec*` to packagecloud.io at 900, then upgrade if the version string contains ubuntu/deb/esm |
+| CrowdSec 1.4.x installed from Ubuntu Pro ESM or the distro | Pin `crowdsec*` to packagecloud.io at 900, then replace crowdsec when packagecloud does not offer the installed version (`pkg_from`, from `apt-cache madison`). Never decide by the version string: the Debian 13 and Ubuntu 26.04 builds (`1.4.6-10`, `1.4.6-10.1`) have no ubuntu/deb/esm in it. The packagecloud repo is added by hand (key fingerprint checked on every run, no install.crowdsec.net script); when packagecloud gives no crowdsec package, the ips step FAILS instead of installing the ESM/distro build. Audit: `upd.repo_keys` |
+| A test looks for the 900 pin on the repository line of `apt-cache policy` and never finds it | A `Package: crowdsec*` pin shows on the version line (` *** 1.8.2 900`); the repository line below keeps 500. Read the installed version's line and the sources under it (`repo_status` in server-audit.sh, `check_regressions` in the e2e tests) |
+| `E: Conflicting values set for option Signed-By`, then every apt command fails | Two sources for one repository name different key files, such as the `docker.list` an older Docker guide left next to `docker.sources`. Once their key has passed, the docker, ips and cloudflared steps remove the other sources of their repository (`drop_other_sources`, backed up) before writing their own, and the Docker key keeps the name of Docker's guide and get.docker.com (`/etc/apt/keyrings/docker.asc`, written armored), so a later get.docker.com run names the same key |
 | CrowdSec LAPI on 8080 conflicts with Traefik dashboards (Coolify, Dokploy) | `CROWDSEC_LAPI_PORT=8091` |
 | `log_martians` back to 0 after reboot | `/etc/ufw/sysctl.conf` overrides it: the sysctl step rewrites that file |
 | `fs.suid_dumpable=2` after reboot | apport forces it: `apport` is in `DISABLE_SERVICES` |
