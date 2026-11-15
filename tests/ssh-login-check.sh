@@ -53,6 +53,9 @@ if command -v jq > /dev/null 2>&1; then
     have() { [[ $1 == docker || $1 == jq ]]; }
     docker() { [[ "$*" == 'ps -q' ]] && printf 'c1\nc2\n'; return 0; }
     pkg_install() { :; }
+    pkg_from() { return 1; }        # Docker not from download.docker.com: its repository is left as it is
+    docker_repo() { fail 'step_docker set up the Docker repository'; }
+    OS_ID=debian; OS_CODENAME=trixie
     write_file() { cat > /dev/null; changed; }
     run() { printf '%s\n' "$*" >> "$tmp/calls"; }
     # this host's daemon.json, if any, reads as {}: the step always has log rotation to add
@@ -73,7 +76,7 @@ if command -v jq > /dev/null 2>&1; then
     pass 'step_docker: --yes keeps running containers up and adds a todo, --yes --force restarts Docker'
     FORCE=0
     eval "$real_have"
-    unset -f docker pkg_install write_file run cat
+    unset -f docker pkg_install pkg_from docker_repo write_file run cat
 else
     printf 'skip: step_docker restart (jq not found)\n'
 fi
