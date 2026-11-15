@@ -24,6 +24,7 @@ PANEL_IP=""                              # panel server public IP, required with
 CLOUDFLARED_TOKEN=""                     # tunnel token (Zero Trust -> Networks -> Tunnels)
 
 # --- SSH & firewall ----------------------------------------------------------
+# A re-run of the firewall step deletes the UFW rules server-prep added for values you removed here.
 SSH_PORT="822"                           # < 1024 and != 22 passes the audit
 ADMIN_IPS=""                             # IPs/CIDRs allowed to SSH, e.g. "203.0.113.4 192.168.1.0/24"
 EXPOSE_WEB="no"                          # yes = open 80/443 to the internet (no when using the tunnel)

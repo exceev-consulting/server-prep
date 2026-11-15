@@ -14,6 +14,7 @@ ssh-access|ssh|SSH as a user sees it after server-prep
 docker-firewall|firewall|Docker vs firewall: a published port stays closed from outside
 audit-prepared|audit|Audit the prepared server: 0 FAIL
 prep-rerun|server-prep|Second run changes nothing
+firewall-rerun|firewall|Firewall re-run with other answers: only the rules they ask for stay
 openship-paths|server-prep|PANEL=openship: AIDE skips the deploy files, auditd watches the SSH keys
 reboot|reboot|Reboot: SSH comes back on 822 and the settings stay
 audit-rebooted|audit|Audit after the reboot: still 0 FAIL
@@ -254,6 +255,9 @@ plant_port_line() {   # an active Port line in another drop-in, as some provider
     as_root 'f=/etc/ssh/sshd_config.d/10-e2e-port.conf; test -e "$f" || printf "Port 22\n" > "$f"' < /dev/null
 }
 
+UFW_ADDED=""   # the last "ufw show added" of firewall-rerun
+ufw_added_has() { grep -qxF -- "ufw $1" <<<"$UFW_ADDED"; }   # ufw_added_has RULE: UFW has that rule
+
 no_ssh_banner() {   # no_ssh_banner PORT: true when the port gives no SSH greeting (closed or tarpit)
     local line=""
     { exec 3<>"/dev/tcp/127.0.0.1/$1"; } 2>/dev/null || return 0
@@ -487,6 +491,82 @@ sc_prep_rerun() {
     finish
 }
 
+# Issue #67: a firewall re-run with other answers deletes the UFW rules server-prep added for the old
+# ones, and only those: the operator's rule and a look-alike (a server-prep comment on another shape)
+# stay. Both sets of answers keep 198.51.100.2, the harness's SSH route, and the CI answers come back
+# at the end for the scenarios after this one.
+sc_firewall_rerun() {
+    begin firewall-rerun
+    local a=/var/tmp/e2e/fw-a.cfg b=/var/tmp/e2e/fw-b.cfg rc sum rule
+    local gone=() kept=()
+    # A: a second admin address, 80/443 and two extra ports. B: the CI answers plus one extra port.
+    as_root "mkdir -p /var/tmp/e2e && sed -e 's|^ADMIN_IPS=.*|ADMIN_IPS=\"198.51.100.2 192.0.2.4\"|' \
+        -e 's|^EXPOSE_WEB=.*|EXPOSE_WEB=\"yes\"|' -e 's|^EXTRA_PORTS=.*|EXTRA_PORTS=\"8080/tcp 51820/udp\"|' $VM_CFG > $a &&
+        sed 's|^EXTRA_PORTS=.*|EXTRA_PORTS=\"8080/tcp\"|' $VM_CFG > $b" < /dev/null
+    check "the answers A and B are on the server" $?
+    # The operator's rule, a look-alike, and two rules as a version before the tag added them: SSH from an
+    # admin address the answers no longer have, and 80/tcp, which A asks for again (so it gets the tag)
+    as_root "ufw allow from 192.0.2.10 to any port 9100 proto tcp comment 'node exporter' &&
+        ufw allow 8443/tcp comment 'http' &&
+        ufw allow from 203.0.113.4 to any port 822 proto tcp comment 'ssh admin' &&
+        ufw allow 80/tcp comment 'http'" < /dev/null 2>&1 | log_to > /dev/null
+    check "an operator's rule, a look-alike and two rules of an older version are in UFW" "${PIPESTATUS[0]}"
+
+    run_prep fw-a --config "$a" --yes --only firewall; rc=$?
+    check_eq "the firewall run with answers A exits 0" "$rc" 0
+    UFW_ADDED="$(as_root 'ufw show added' < /dev/null 2>&1)"
+    printf 'ufw show added after A:\n%s\n' "$UFW_ADDED" >> "$OUT/$SC_ID.log"
+    for rule in "allow from 192.0.2.4 to any port 822 proto tcp comment 'server-prep: ssh admin'" \
+        "allow 80/tcp comment 'server-prep: http'" "route allow 443/udp comment 'server-prep: docker http3'" \
+        "allow 51820/udp comment 'server-prep: extra'"; do
+        ufw_added_has "$rule"; check "after A, UFW has: $rule" $?
+    done
+    ! grep -qF '203.0.113.4' <<<"$UFW_ADDED"
+    check "after A, the SSH rule of the removed admin address (older version) is gone" $?
+
+    sum="$(as_root 'cat /etc/ufw/user.rules /etc/ufw/user6.rules | sha256sum' < /dev/null)"
+    run_prep fw-b-dry --config "$b" --yes --only firewall --dry-run; rc=$?
+    check_eq "a dry run with answers B exits 0" "$rc" 0
+    grep -qF 'allow from 192.0.2.4 to any port 822 proto tcp  # server-prep: ssh admin' "$OUT/$SC_ID.log"
+    check "the plan lists the rules B deletes" $?
+    grep -qF '[dry-run] ufw --force route delete allow 443/udp comment server-prep: docker http3' "$OUT/$SC_ID.log"
+    check "the dry run prints the deletes" $?
+    check_eq "the dry run changes no UFW rule" "$(as_root 'cat /etc/ufw/user.rules /etc/ufw/user6.rules | sha256sum' < /dev/null)" "$sum"
+
+    run_prep fw-b --config "$b" --yes --only firewall; rc=$?
+    check_eq "the firewall run with answers B exits 0" "$rc" 0
+    check_eq "the admin still logs in on 822" "$(ssh_as admin admin "$P822" 'id -un' 2>&1)" admin
+    UFW_ADDED="$(as_root 'ufw show added' < /dev/null 2>&1)"
+    printf 'ufw show added after B:\n%s\n' "$UFW_ADDED" >> "$OUT/$SC_ID.log"
+    gone=(192.0.2.4 'allow 80/tcp' 'allow 443/tcp' 'allow 443/udp' 'route allow 80/tcp' 'route allow 443/tcp'
+        'route allow 443/udp' 51820/udp)
+    for rule in "${gone[@]}"; do
+        ! grep -qF -- "$rule" <<<"$UFW_ADDED"; check "after B, no rule for $rule (A's answers)" $?
+    done
+    kept=("allow from 198.51.100.2 to any port 822 proto tcp comment 'server-prep: ssh admin'"
+        "allow 8080/tcp comment 'server-prep: extra'" "route allow 8080/tcp comment 'server-prep: docker extra'"
+        "allow from 192.0.2.10 to any port 9100 proto tcp comment 'node exporter'" "allow 8443/tcp comment 'http'")
+    for rule in "${kept[@]}"; do
+        ufw_added_has "$rule"; check "after B, UFW still has: $rule" $?
+    done
+    if as_root 'systemctl cat endlessh.service >/dev/null 2>&1' < /dev/null; then
+        grep -qF 'endlessh tarpit' <<<"$UFW_ADDED"; check "after B, the Endlessh rule (the endlessh step's) is still there" $?
+    fi
+    # ufw status lists each IPv6 copy on its own line: none of A's ports may be left there either
+    rule="$(as_root 'ufw status' < /dev/null 2>&1 | grep -E '^(80|443|51820)/(tcp|udp)')"
+    [[ -z $rule ]]; check "after B, ufw status has no IPv4 or IPv6 rule for 80, 443 or 51820" $? "$(paste -sd';' <<<"$rule")"
+
+    # Back to the CI answers: the planted rules go by hand, B's extra port with the run
+    as_root "ufw delete allow from 192.0.2.10 to any port 9100 proto tcp && ufw delete allow 8443/tcp" \
+        < /dev/null 2>&1 | log_to > /dev/null
+    run_prep fw-ci --config "$VM_CFG" --yes --only firewall; rc=$?
+    check_eq "the firewall run with the CI answers exits 0" "$rc" 0
+    UFW_ADDED="$(as_root 'ufw show added' < /dev/null 2>&1)"
+    printf 'ufw show added after the CI answers:\n%s\n' "$UFW_ADDED" >> "$OUT/$SC_ID.log"
+    ! grep -qF '8080/tcp' <<<"$UFW_ADDED"; check "with the CI answers again, B's extra port is gone" $?
+    finish
+}
+
 sc_openship_paths() {
     begin openship-paths
     local rc cfg=/var/tmp/e2e/openship.cfg rules got p bad
@@ -641,7 +721,7 @@ sc_rollback() {
     check "UFW is still on" $?
     # The rollback's own rule: phase B deleted the run's temporary rules, and Endlessh's rule
     # from anywhere must not count.
-    rule="^22/tcp +ALLOW +$VM_HOST_IP +# server-prep-temp"   # each dot also matches itself
+    rule="^22/tcp +ALLOW +$VM_HOST_IP +# (server-prep: )?server-prep-temp"   # each dot also matches itself
     grep -qE "$rule" <<<"$out"
     check "UFW allows port 22 from the admin address with the rollback's own rule" $? "$(grep '^22' <<<"$out" | paste -sd';')"
     # Endlessh's rule allowed 22 from anywhere: left in place, it would open the old SSH to everyone

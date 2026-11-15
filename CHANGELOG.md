@@ -5,6 +5,17 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Fix: a firewall re-run only added rules, so tightening the answers left the old ones open: an address removed from
+  `ADMIN_IPS` could still log in over SSH, SSH stayed open to everyone after a first run without sources, 80/443 stayed
+  open after `EXPOSE_WEB` went from yes to no, and removed `EXTRA_PORTS` stayed open. The firewall step now adds the
+  rules the answers ask for first, so SSH stays reachable, then deletes the rules server-prep added for earlier answers,
+  their IPv6 copies too. The plan lists them before you confirm, and `--dry-run` shows the `ufw delete` commands. Every
+  rule server-prep adds now has a comment that starts with `server-prep: `. A rule from an older version counts as
+  server-prep's only when it has one of its old comments (`ssh admin`, `http`...) on the exact shape server-prep gave
+  it: the next firewall run tags it, or deletes it when the answers no longer ask for it. Rules you added yourself are
+  never touched, even with the same port. The temporary SSH rules stay while SSH is moving to its new port. When UFW was
+  on before a run, its `rollback.sh` now also puts back the UFW rules of that time. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --dry-run` to see what goes.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,

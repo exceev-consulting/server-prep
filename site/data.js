@@ -42,7 +42,7 @@ window.SERVER_PREP_DATA = {
       "name": "firewall",
       "title": "Firewall (UFW + Docker)",
       "gate": null,
-      "details": "UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched)"
+      "details": "UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched); a re-run deletes the rules server-prep added for earlier answers (comment `server-prep: ...`), never yours"
     },
     {
       "name": "ssh",
@@ -244,7 +244,7 @@ window.SERVER_PREP_DATA = {
       "example": "822",
       "default": "822",
       "comment": "< 1024 and != 22 passes the audit",
-      "help": null,
+      "help": "A re-run of the firewall step deletes the UFW rules server-prep added for values you removed here.",
       "saved": true,
       "secret": false
     },

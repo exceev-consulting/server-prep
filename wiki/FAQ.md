@@ -6,7 +6,7 @@ It is designed not to. The SSH change rolls itself back after 10 minutes unless 
 
 ## Can I run it twice?
 
-Yes. Every step checks the current state first and only changes what is missing. Re-run one step with the saved answers:
+Yes. Every step checks the current state first and only changes what is missing. The firewall step also deletes the UFW rules server-prep added for earlier answers, for example an address you removed from `ADMIN_IPS`: the plan lists them first, and your own rules stay. Re-run one step with the saved answers:
 
 ```bash
 sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall
