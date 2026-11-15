@@ -499,6 +499,9 @@ run() { :; }
 have() { [[ "$1" == docker ]]; }   # Docker is installed, jq is not
 jq() { return 127; }               # hides a real jq on this host, like a missing command
 docker() { :; }                    # "docker compose version" must not reach a real Docker
+real_pkg_from="$(declare -f pkg_from)"
+pkg_from() { return 1; }           # not Docker CE from download.docker.com: the host's apt sources stay out (tests/apt-repo-keys.sh)
+OS_ID=debian; OS_CODENAME=trixie   # preflight sets them in a real run
 INSTALL_DOCKER=yes
 expect_docker() {   # expect_docker LABEL DRY_RUN WANT_STATUS WANT_TEXT
     local label="$1" status=0
@@ -516,7 +519,9 @@ expect_docker() {   # expect_docker LABEL DRY_RUN WANT_STATUS WANT_TEXT
 expect_docker 'dry run without jq says what it would merge' 1 0 '[dry-run] check /etc/docker/daemon.json and merge log rotation (10m x 3) if missing'
 expect_docker 'real run without jq fails with a clear note' 0 1 'jq is missing - /etc/docker/daemon.json left untouched'
 eval "$real_have"
+eval "$real_pkg_from"
 unset -f jq docker
+unset OS_ID OS_CODENAME
 DRY_RUN=0
 
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69), the
@@ -539,6 +544,10 @@ bash "$SCRIPT_DIR/tests/audit-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1
 # ... and the audit's third-party update matcher (issue #155).
 bash "$SCRIPT_DIR/tests/audit-third-party.sh" || exit 1
+# ... and the third-party apt repository key check of the docker, ips, telegraf and cloudflared steps, and the
+# audit's upd.repo_keys helpers (issue #70).
+bash "$SCRIPT_DIR/tests/apt-repo-keys.sh" || exit 1
+bash "$SCRIPT_DIR/tests/audit-repo-keys.sh" || exit 1
 
 # ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
