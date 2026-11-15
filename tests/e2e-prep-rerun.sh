@@ -75,6 +75,9 @@ dpkg_list "${BASE[@]}" "docker-ce $CE_OLD" "docker-compose-plugin $COMPOSE_NEW" 
 dpkg_list "${BASE[@]}" "docker-ce $CE_NEW" "docker-compose-plugin $COMPOSE_NEW" > "$tmp/dpkg-both"
 dpkg_list "${BASE[@]}" "docker-ce $CE_OLD" "docker-compose-plugin $COMPOSE_NEW" "vim 2:9.0.1378-2" > "$tmp/dpkg-added"
 dpkg_list "${BASE[@]:0:2}" "docker-ce $CE_OLD" "docker-compose-plugin $COMPOSE_NEW" > "$tmp/dpkg-removed"
+# versions awk would read as numbers: 1.1 and 1.10, 2.0 and 2.00 are equal as numbers
+dpkg_list "ca-certificates 20230311" "jq 1.1" "lsof 2.0" > "$tmp/dpkg-numeric"
+dpkg_list "ca-certificates 20230311" "jq 1.10" "lsof 2.00" > "$tmp/dpkg-numeric-new"
 
 # The scenario's helpers and bookkeeping, loaded as tests/e2e/run.sh loads them.
 E2E_DIR="$ROOT/tests/e2e" REPO_DIR="$ROOT"
@@ -114,7 +117,7 @@ rerun() {
 
 # --- the package diff ---------------------------------------------------------------------------------
 pkg_versions_of() { DPKG="$1"; pkg_versions > "$tmp/pkgs-$1"; }
-for l in before compose both added removed; do pkg_versions_of "$l"; done
+for l in before compose both added removed numeric numeric-new; do pkg_versions_of "$l"; done
 expect_eq "pkg_versions keeps installed packages only (no rc line)" \
     "$(grep -c linux-image "$tmp/pkgs-before")" 0
 expect_eq "pkg_moves lists an upgrade with its old and new version" \
@@ -123,6 +126,8 @@ expect_eq "pkg_moves lists a new package" \
     "$(pkg_moves "$tmp/pkgs-before" "$tmp/pkgs-added" | grep -v '^upgraded')" "installed vim 2:9.0.1378-2"
 expect_eq "pkg_moves lists a removed package" \
     "$(pkg_moves "$tmp/pkgs-before" "$tmp/pkgs-removed" | grep -v '^upgraded')" "removed lsof 4.95.0-1"
+expect_eq "pkg_moves compares versions as strings (1.1 -> 1.10, 2.0 -> 2.00)" \
+    "$(pkg_moves "$tmp/pkgs-numeric" "$tmp/pkgs-numeric-new")" $'upgraded jq 1.1 1.10\nupgraded lsof 2.0 2.00'
 : > "$tmp/pkgs-empty"
 pkg_moves "$tmp/pkgs-empty" "$tmp/pkgs-compose" > /dev/null && fail "pkg_moves accepts a list that was not read"
 pass "pkg_moves fails when a list was not read"
@@ -138,6 +143,9 @@ expect_eq "the real step_update notes the upgrade in the JSON report" \
 expect_eq "update_upgrades_only names the upgraded package" \
     "$(update_upgrades_only "$tmp/compose.json" "$tmp/pkgs-before" "$tmp/pkgs-compose")" \
     "docker-compose-plugin $COMPOSE_OLD -> $COMPOSE_NEW"
+expect_eq "update_upgrades_only names an upgrade whose versions look like numbers" \
+    "$(update_upgrades_only "$tmp/compose.json" "$tmp/pkgs-numeric" "$tmp/pkgs-numeric-new")" \
+    "jq 1.1 -> 1.10, lsof 2.0 -> 2.00"
 rerun compose compose
 expect_eq "issue #207: a docker-compose-plugin release between the runs passes, with a note naming it" \
     "$STATUS|$REASON" \

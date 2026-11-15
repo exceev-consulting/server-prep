@@ -103,11 +103,12 @@ pkg_versions() {   # the installed packages, one "name version" line each
 pkg_moves() {   # pkg_moves BEFORE AFTER: what changed between two pkg_versions lists, one line each:
     # "upgraded NAME OLD NEW" (a new version: full-upgrade only goes up), "installed NAME VERSION"
     # or "removed NAME VERSION". Fails when a list is empty: it was not read.
+    # Versions compare as strings: as numbers, 1.1 and 1.10 (or 2.0 and 2.00) would be equal.
     [[ -s $1 && -s $2 ]] || return 1
     awk 'NR == FNR {old[$1] = $2; next}
         {seen[$1] = 1
          if (!($1 in old)) print "installed", $1, $2
-         else if (old[$1] != $2) print "upgraded", $1, old[$1], $2}
+         else if ((old[$1] "") != ($2 "")) print "upgraded", $1, old[$1], $2}
         END {for (p in old) if (!(p in seen)) print "removed", p, old[p]}' "$1" "$2" | LC_ALL=C sort -k2,2
 }
 
