@@ -4,7 +4,8 @@
 # answers (issue #67), on sample "ufw show added" output: the tag, the comments and shapes of the
 # versions before it, ufw's way of writing addresses, the wanted rules of a set of answers, the stale
 # ones (the temporary SSH rules stay while a move of the SSH port is pending), then step_firewall and
-# the plan with a fake ufw that keeps its rules in memory. No root needed, nothing on the host is touched.
+# the plan with a fake ufw that keeps its rules in memory: failed or silent deletes, and a rule of the
+# operator in the place of a wanted one. No root needed, nothing on the host is touched.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -179,8 +180,24 @@ ufw_wanted_rules
 [[ ${#UFW_WANT[@]} -eq 0 ]] || fail "ufw_wanted_rules: the tunnel alone gave:"$'\n'"$(wanted)"
 ADMIN_IPS='192.168.1.50 office'
 ufw_wanted_rules
-[[ $UFW_WANT_EXACT -eq 0 ]] || fail 'ufw_wanted_rules: an ADMIN_IPS entry that is not an address left UFW_WANT_EXACT at 1'
-pass 'ufw_wanted_rules: the temporary rules of the old port, the limit rule without sources, nothing for the tunnel'
+[[ $UFW_WANT_EXACT -eq 0 && $UFW_WANT_BAD == 'office is not an IP address or network' ]] ||
+    fail "ufw_wanted_rules: an ADMIN_IPS entry that is not an address gave exact $UFW_WANT_EXACT, '$UFW_WANT_BAD'"
+# every address: ufw writes it "allow 822/tcp", for one IP version only, so it cannot be compared
+ADMIN_IPS='0.0.0.0/0, ::/0'; PANEL_ACCESS=public; PANEL_IP=10.0.0.0/0.0.0.0
+ufw_wanted_rules
+want='0.0.0.0/0 is every address (leave ADMIN_IPS empty to open SSH to everyone, rate-limited); ::/0 is every address (leave ADMIN_IPS empty to open SSH to everyone, rate-limited); 10.0.0.0/0.0.0.0 is every address (leave ADMIN_IPS empty to open SSH to everyone, rate-limited)'
+[[ $UFW_WANT_EXACT -eq 0 && $UFW_WANT_BAD == "$want" ]] ||
+    fail "ufw_wanted_rules: /0 entries gave exact $UFW_WANT_EXACT, '$UFW_WANT_BAD'"
+# an entry with a glob character goes to ufw as it is (the old loops let the shell expand it)
+mkdir -p "$tmp/glob/web-01/tcp"
+cd "$tmp/glob" || fail "cannot enter $tmp/glob"
+ADMIN_IPS=''; PANEL_ACCESS=''; PANEL_IP=''; EXTRA_PORTS='*'
+ufw_wanted_rules
+cd "$SCRIPT_DIR" || fail "cannot enter $SCRIPT_DIR"
+[[ $(wanted) == *$'\nallow */tcp#server-prep: extra\nroute allow */tcp#server-prep: docker extra' ]] ||
+    fail "ufw_wanted_rules: EXTRA_PORTS='*' gave:"$'\n'"$(wanted)"
+EXTRA_PORTS=''
+pass 'ufw_wanted_rules: the temporary rules of the old port, the limit rule without sources, nothing for the tunnel, no compare for a name or /0, no globbing'
 
 # --- ufw_stale_rules: the rules of earlier answers ---------------------------------------------------------
 # A server prepared by a version before the tag, then by this one, with rules of the operator
@@ -393,8 +410,14 @@ real_run="$(declare -f run)"
 run() { [[ $* == *' delete '* ]] && return 1; "$@" >> "$LOG_FILE" 2>&1; }
 fw 'with a delete that fails' 1
 [[ ${MANUAL_TODO[*]} == *'allow 9443/tcp'* ]] || fail "step_firewall: the todo of a failed delete is '${MANUAL_TODO[*]}'"
+# ufw exits 0 on a delete that matches no rule ("Could not delete non-existent rule"): the rule is still
+# there when the step reads the rules again
+run() { [[ $* == *' delete '* ]] && return 0; "$@" >> "$LOG_FILE" 2>&1; }
+fw 'with a delete that removes nothing' 1
+[[ ${MANUAL_TODO[*]} == *'allow 9443/tcp'* && $STEP_NOTES != *'deleted '* ]] ||
+    fail "step_firewall: a delete that removed nothing gave notes '$STEP_NOTES' and todo '${MANUAL_TODO[*]}'"
 eval "$real_run"
-pass 'step_firewall: a failed delete fails the step, and the todo names the rule'
+pass 'step_firewall: a failed delete, or one that removes nothing, fails the step, and the todo names the rule'
 
 # UFW off before the run: rollback.sh keeps the run's rules (old files restored on a UFW that stays
 # on could block SSH)
@@ -403,6 +426,31 @@ fw 'with UFW off' 0
 [[ $UFW_RULES_RESTORE -eq 0 ]] || fail 'step_firewall: UFW was off, but rollback.sh would restore its rule files'
 unset -f ufw_status
 pass 'step_firewall: with UFW off before the run, rollback.sh does not restore the rule files'
+
+# A rule that is not the firewall step's holds the place of a wanted one: it stays. With the same action
+# the answer holds (a note that says whose rule it is); with another one (the operator's deny where the
+# answers open 80), a warning and a to-do with the command that applies the answers.
+FAKE_RULES=("allow from 192.168.1.50 to any port 822 proto tcp comment 'server-prep: ssh admin'" 'deny 80/tcp'
+    "allow 22/tcp comment 'server-prep: endlessh tarpit'")
+ADMIN_IPS=192.168.1.50; PANEL_ACCESS=''; PANEL_IP=''; EXPOSE_WEB=yes; EXTRA_PORTS=22/tcp; PENDING=0
+fw 'with the operator deny rule on 80/tcp' 0
+rules | grep -qx 'deny 80/tcp' || fail "step_firewall: changed the operator's deny 80/tcp:"$'\n'"$(rules)"
+rules | grep -qx "allow 22/tcp comment 'server-prep: endlessh tarpit'" || fail "step_firewall: changed the Endlessh rule:"$'\n'"$(rules)"
+for c in "${CALLS[@]}"; do
+    [[ $c != 'allow 80/tcp '* && $c != 'allow 22/tcp '* ]] || fail "step_firewall: replaced a rule that is not its own: $c"
+done
+grep -qF "the answers ask for 'allow 80/tcp', but a UFW rule without the server-prep tag is in its place and stays: deny 80/tcp" "$tmp/out" ||
+    fail "step_firewall: no warning for the deny rule on 80/tcp:"$'\n'"$(cat "$tmp/out")"
+[[ ${MANUAL_TODO[*]} == *"sudo ufw allow 80/tcp comment 'server-prep: http'"* ]] ||
+    fail "step_firewall: the todo does not give the command that applies the answers: ${MANUAL_TODO[*]}"
+[[ $STEP_NOTES == *'not applied: allow 80/tcp'* && $STEP_NOTES != *'80/443 open'* ]] ||
+    fail "step_firewall: the notes of a 80/tcp held by a deny rule are '$STEP_NOTES'"
+[[ $STEP_NOTES == *"the endlessh step's UFW rule left as it is: allow 22/tcp # server-prep: endlessh tarpit"* &&
+    $STEP_NOTES == *'extra port 22/tcp'* && $STEP_NOTES != *'without the server-prep tag left as it is: allow 22/tcp'* ]] ||
+    fail "step_firewall: the notes of the Endlessh rule on an extra port are '$STEP_NOTES'"
+[[ ${#MANUAL_TODO[@]} -eq 2 ]] || fail "step_firewall: want the deny rule's todo and Docker's, got: $(printf '%s | ' "${MANUAL_TODO[@]}")"
+EXPOSE_WEB=no
+pass "step_firewall: a rule in the place of a wanted one stays; one that contradicts the answers gets a warning and a to-do"
 
 # --- the plan: what the firewall step will delete ------------------------------------------------------------
 mapfile -t FAKE_RULES < <(sed -n 's/^ufw //p' <<<"$ADDED")
