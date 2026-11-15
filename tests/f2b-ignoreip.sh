@@ -4,8 +4,9 @@
 # [DEFAULT] ignoreip and drop server-prep's addresses. The ips step adds them back in
 # jail.d/zz-server-prep.local (f2b_prep_local in server-prep.sh), and the audit's ips.f2b_ignoreip
 # reads the list (jail_option_set, f2b_files_ignoreip), compares it with the saved answers
-# (prep_conf_value) and names what is missing (f2b_missing, ip_bits). All on sample files in a
-# temporary folder. When fail2ban is installed here, its own parser also reads server-prep's file.
+# (prep_conf_value) and names what is missing (f2b_missing, ip_bits), or warns that the file is left
+# without the [DEFAULT] ignoreip it extends (f2b_unset_known). All on sample files in a temporary
+# folder. When fail2ban is installed here, its own parser also reads server-prep's file.
 # No root needed, nothing on the host changes.
 set -u
 
@@ -20,7 +21,7 @@ fi
 trap 'rm -rf "$tmp"' EXIT
 
 # server-audit.sh runs its checks on load, so it cannot be sourced: take the functions only.
-for fn in jail_option_set get_jail_option f2b_files_ignoreip ip_bits f2b_missing prep_conf_value; do
+for fn in jail_option_set get_jail_option f2b_files_ignoreip f2b_unset_known ip_bits f2b_missing prep_conf_value; do
     eval "$(sed -n "/^${fn}() {/,/^}/p" "$SCRIPT_DIR/server-audit.sh")"
     declare -F "$fn" >/dev/null || fail "$fn not found in server-audit.sh"
 done
@@ -129,7 +130,19 @@ pass 'with zz-server-prep.local, nothing is missing'
 rm "$F2B_DIR/jail.d/dokploy.local"
 files 'without Dokploy, zz-server-prep.local extends the list of jail.local' "$F2B_DIR/jail.local" \
     '127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
-rm "$F2B_DIR/jail.d/zz-server-prep.local"
+[[ -z "$(f2b_unset_known)" ]] || fail "f2b_unset_known: jail.local sets [DEFAULT] ignoreip, got '$(f2b_unset_known)'"
+pass 'f2b_unset_known: nothing while jail.local sets the [DEFAULT] ignoreip that zz-server-prep.local extends'
+# zz-server-prep.local needs a [DEFAULT] ignoreip: without jail.local, fail2ban rejects its configuration
+mv "$F2B_DIR/jail.local" "$tmp/jail.local"
+[[ "$(f2b_unset_known)" == "$F2B_DIR/jail.d/zz-server-prep.local" ]] ||
+    fail "f2b_unset_known: jail.local deleted, zz-server-prep.local left: got '$(f2b_unset_known)'"
+pass 'f2b_unset_known: jail.local deleted, zz-server-prep.local left alone: names it'
+printf '%s\n' "$DOKPLOY" > "$F2B_DIR/jail.d/dokploy.local"
+[[ -z "$(f2b_unset_known)" ]] || fail "f2b_unset_known: dokploy.local sets [DEFAULT] ignoreip, got '$(f2b_unset_known)'"
+pass "f2b_unset_known: nothing when another file (Dokploy's) sets a [DEFAULT] ignoreip"
+rm "$F2B_DIR/jail.d/dokploy.local" "$F2B_DIR/jail.d/zz-server-prep.local"
+[[ -z "$(f2b_unset_known)" ]] || fail 'f2b_unset_known: no zz-server-prep.local, nothing to say'
+mv "$tmp/jail.local" "$F2B_DIR/jail.local"
 
 printf '[DEFAULT]\nignoreip = 127.0.0.1/8 ; the loopback\n           192.0.2.0/24\n\n[sshd]\nport = 822\n' > "$F2B_DIR/jail.d/other.local"
 files 'a value over two lines, with a " ;" comment' "$F2B_DIR/jail.d/other.local" '127.0.0.1/8 192.0.2.0/24'
@@ -151,6 +164,11 @@ TIMEZONE='Europe/Paris'
 EXTRA_PORTS=$'8080 8443'
 SSH_PORT=22
 SSH_PORT=822
+ANSI=$'a\tb\nc\'d\\e'
+SINGLE='a\b "c"'
+DOUBLE="a\"b\\c\d \$e" # a comment
+PLAIN=a\ b\,c\\d\#e # a comment
+EMPTY=''
 EOF
 conf() {   # conf KEY WANT
     local got
@@ -165,7 +183,17 @@ conf TIMEZONE Europe/Paris
 conf EXTRA_PORTS '8080 8443'
 conf SSH_PORT 822
 conf MISSING ''
-pass 'prep_conf_value: printf %q, quotes, a comment, the last line, and nothing for a missing key'
+conf ANSI $'a\tb\nc\'d\\e'
+conf SINGLE 'a\b "c"'
+conf DOUBLE 'a"b\c\d $e'
+conf PLAIN 'a b,c\d#e'
+conf EMPTY ''
+v=$'192.0.2.1\t192.0.2.2\n198.51.100.0/24 \'x\' "y" \\z,w#v'
+printf 'ADMIN_IPS=%q\n' "$v" > "$tmp/q.conf"
+printf 'PANEL_IP=%q\n' '192.0.2.1 192.0.2.2,a#b' >> "$tmp/q.conf"
+PREP_CONF="$tmp/q.conf" conf ADMIN_IPS "$v"
+PREP_CONF="$tmp/q.conf" conf PANEL_IP '192.0.2.1 192.0.2.2,a#b'
+pass "prep_conf_value: printf %q (backslashes and \$'...' with its escapes), quotes as bash reads them, a comment, the last line, nothing for a missing key"
 printf 'ADMIN_IPS=$(touch %s/pwned)\n' "$tmp" > "$PREP_CONF"
 prep_conf_value ADMIN_IPS > /dev/null
 [[ ! -e "$tmp/pwned" ]] || fail 'prep_conf_value ran a command from the file'
@@ -192,6 +220,16 @@ if command -v fail2ban-client >/dev/null 2>&1 && [[ -r /etc/fail2ban/jail.conf &
     else
         pass "fail2ban's own parser refuses %(known/ignoreip)s in [DEFAULT], as f2b_prep_local explains"
     fi
+    # zz-server-prep.local left without jail.local: nothing sets the [DEFAULT] ignoreip it extends
+    rm "$real/jail.local" "$real/jail.d/dokploy.local"
+    printf '[sshd]\nenabled = true\n' > "$real/jail.d/defaults-debian.conf"
+    f2b_prep_local '127.0.0.1/8 ::1 100.64.0.0/10' > "$real/jail.d/zz-server-prep.local"
+    if fail2ban-client -c "$real" -d > /dev/null 2>&1; then
+        fail "fail2ban $(fail2ban-client --version 2>/dev/null | head -1) accepts zz-server-prep.local without a [DEFAULT] ignoreip: the warning of f2b_unset_known and its comments are wrong for it"
+    fi
+    [[ "$(F2B_DIR="$real" f2b_unset_known)" == "$real/jail.d/zz-server-prep.local" ]] ||
+        fail "f2b_unset_known does not name zz-server-prep.local, which fail2ban refuses without jail.local"
+    pass "fail2ban's own parser refuses zz-server-prep.local without jail.local's [DEFAULT] ignoreip, and f2b_unset_known names it"
 else
     printf 'skip: fail2ban is not installed here, its own parser is not checked\n'
 fi

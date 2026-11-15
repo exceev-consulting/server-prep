@@ -985,8 +985,8 @@ window.SERVER_PREP_DATA = {
             "id": "ips.f2b_ignoreip",
             "title": "fail2ban whitelist",
             "statuses": [
-              "INFO",
               "WARN",
+              "INFO",
               "PASS"
             ]
           },

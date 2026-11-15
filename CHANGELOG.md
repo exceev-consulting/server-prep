@@ -18,11 +18,14 @@ Highlights of each release. The full list of merged pull requests is in each
   in with a key from any address (`PermitRootLogin prohibit-password`), and `jail.d/dokploy.local` replaced fail2ban's
   whitelist, so the office IP or a tailnet device could be banned. The `ips` step now also writes
   `/etc/fail2ban/jail.d/zz-server-prep.local`, read after such files, which keeps their whitelist and adds the tailnet
-  range, `PANEL_IP` and `ADMIN_IPS` back to the sshd jail (`rollback.sh` deletes it). The SSH step warns and adds a
-  to-do when a file read first changes one of its login settings. The audit has two new checks, both WARN in that
-  case: `ssh.dropin_override` names the file and the settings (`ssh.root_login` names it too), and `ips.f2b_ignoreip`
-  lists the addresses missing from the whitelist and the file that set it. The wiki's Panels page says which tabs of
-  the dialog to use on a prepared server and how to undo a save. On a server prepared earlier, run
+  range, `PANEL_IP` and `ADMIN_IPS` back to the sshd jail. It needs `jail.local`: delete both or neither, or fail2ban
+  does not start. `rollback.sh` deletes it, and restarts fail2ban once it has put back fail2ban's files. The SSH step
+  warns and adds a to-do when a file read first changes one of its login settings or adds users, or when
+  `sshd_config` has no `Include` of `sshd_config.d`. The audit has two new checks, both WARN in those cases:
+  `ssh.dropin_override` names the file and the settings (`ssh.root_login` names it too), and `ips.f2b_ignoreip` lists
+  the addresses missing from the whitelist and the file that set it, or says that `zz-server-prep.local` is left
+  without `jail.local`. The wiki's Panels page says which tabs of the dialog to use on a prepared server and how to
+  undo a save. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes`.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.

@@ -77,13 +77,16 @@ expect() {   # expect LABEL WANT [OWN-FILE]: the phrase of sshd_override_text ("
     [[ $got == "$2" ]] || fail "$1: got '$got', want '$2'"
     pass "$1"
 }
+# What sshd does with the values: it keeps the first value of most keywords, and adds up Port and AllowUsers
+KEEP=': sshd keeps these values, not those of 00-server-prep.conf'
+ADDS=': sshd uses these values as well as those of 00-server-prep.conf'
 
 setup
 expect 'only server-prep and the stock main file' ''
 
 setup; put sshd_config.d/00-dokploy.conf "$DOKPLOY"
 expect "Dokploy's 00-dokploy.conf sorts before 00-server-prep.conf and changes PermitRootLogin" \
-    '00-dokploy.conf is read first and sets PermitRootLogin prohibit-password'
+    "00-dokploy.conf is read first and sets PermitRootLogin prohibit-password$KEEP"
 got="$(sshd_dropin_overrides "$ssh/sshd_config.d")"
 [[ $got == "$ssh/sshd_config.d/00-dokploy.conf"$'\t'PermitRootLogin$'\t'prohibit-password ]] ||
     fail "the raw line is FILE<TAB>Keyword<TAB>value, got '$got'"
@@ -95,7 +98,7 @@ ChallengeResponseAuthentication yes
 PermitRootLogin prohibit-password
 MaxAuthTries 6'
 expect 'every setting Dokploy changes is named, in file order (ChallengeResponseAuthentication is the old name of KbdInteractiveAuthentication)' \
-    '00-dokploy.conf is read first and sets PasswordAuthentication yes, ChallengeResponseAuthentication yes, PermitRootLogin prohibit-password, MaxAuthTries 6'
+    "00-dokploy.conf is read first and sets PasswordAuthentication yes, ChallengeResponseAuthentication yes, PermitRootLogin prohibit-password, MaxAuthTries 6$KEEP"
 
 setup; put sshd_config.d/50-cloud-init.conf 'PasswordAuthentication yes
 PermitRootLogin yes'
@@ -103,7 +106,7 @@ expect 'a drop-in that sorts after 00-server-prep.conf changes nothing (sshd kee
 
 setup; put sshd_config.d/00-Zed.conf 'PermitRootLogin yes'
 expect 'byte order, whatever the locale: 00-Zed.conf sorts before 00-server-prep.conf' \
-    '00-Zed.conf is read first and sets PermitRootLogin yes'
+    "00-Zed.conf is read first and sets PermitRootLogin yes$KEEP"
 
 setup; put sshd_config.d/00-a.conf 'PermitRootLogin no'; put sshd_config.d/00-dokploy.conf "$DOKPLOY"
 expect "an earlier file with server-prep's own value wins over Dokploy's: nothing changes" ''
@@ -117,7 +120,7 @@ expect "the same values in another case or with '=', and comments, change nothin
 
 setup; put sshd_config.d/00-a.conf "PermitRootLogin yes"$'\r'"
 MaxAuthTries 3 # a comment"
-expect 'a CRLF line end and a trailing comment are not part of the value' '00-a.conf is read first and sets PermitRootLogin yes'
+expect 'a CRLF line end and a trailing comment are not part of the value' "00-a.conf is read first and sets PermitRootLogin yes$KEEP"
 
 setup; put sshd_config.d/00-a.conf 'X11Forwarding yes
 PrintMotd yes
@@ -133,32 +136,53 @@ setup; put sshd_config.d/00-a.conf 'Port 822
 Port 2222
 AllowUsers admin
 AllowUsers deploy'
-expect 'Port and AllowUsers add up: only the values server-prep does not set count' \
-    '00-a.conf is read first and sets Port 2222, AllowUsers deploy'
+expect "Port and AllowUsers add up: only the values server-prep does not set count, and server-prep's still apply" \
+    "00-a.conf is read first and adds Port 2222, AllowUsers deploy$ADDS"
+
+setup; put sshd_config.d/00-ops.conf 'AllowUsers deploy'
+expect "AllowUsers alone: sshd allows deploy too, server-prep's users stay allowed" \
+    "00-ops.conf is read first and adds AllowUsers deploy$ADDS"
+
+setup; put sshd_config.d/00-a.conf 'AllowUsers deploy
+PermitRootLogin yes'
+expect 'a value set and a value added: each one said as it is' \
+    '00-a.conf is read first and sets PermitRootLogin yes and adds AllowUsers deploy: sshd keeps the values set instead of those of 00-server-prep.conf, and uses the values added along with them'
 
 setup; put sshd_config.d/00-a.conf 'AuthenticationMethods any'
-expect 'AuthenticationMethods any instead of publickey' '00-a.conf is read first and sets AuthenticationMethods any'
+expect 'AuthenticationMethods any instead of publickey' "00-a.conf is read first and sets AuthenticationMethods any$KEEP"
 
 setup; put sshd_config "# the main file
 PermitRootLogin yes
 Include /etc/ssh/sshd_config.d/*.conf
 PasswordAuthentication yes"
 expect 'in the main file, the lines before the Include count, the ones after it do not' \
-    'sshd_config sets PermitRootLogin yes before its Include line'
+    "sshd_config sets PermitRootLogin yes before its Include line$KEEP"
 
 setup; put sshd_config "PermitRootLogin yes
 Include /etc/ssh/sshd_config.d/*.conf"; put sshd_config.d/00-dokploy.conf "$DOKPLOY"
 expect 'the main file comes first, then the drop-ins, each file once' \
-    'sshd_config sets PermitRootLogin yes before its Include line'
+    "sshd_config sets PermitRootLogin yes before its Include line$KEEP"
 put sshd_config.d/00-dokploy.conf "${DOKPLOY/MaxAuthTries 3/MaxAuthTries 9}"
 expect 'two files: one phrase each, joined with "; "' \
-    'sshd_config sets PermitRootLogin yes before its Include line; 00-dokploy.conf is read first and sets MaxAuthTries 9'
+    "sshd_config sets PermitRootLogin yes before its Include line; 00-dokploy.conf is read first and sets MaxAuthTries 9$KEEP"
+
+NOINC='sshd_config has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included'
+setup; put sshd_config 'PermitRootLogin yes
+PasswordAuthentication yes'; put sshd_config.d/00-dokploy.conf "$DOKPLOY"
+expect 'a main file without an Include: sshd reads no drop-in, so that is all there is to say' "$NOINC"
+got="$(sshd_dropin_overrides "$ssh/sshd_config.d")"
+[[ $got == "$ssh/sshd_config"$'\t'Include$'\t' ]] || fail "no Include: the raw line is MAIN<TAB>Include<TAB>, got '$got'"
+pass 'no Include: the raw line is MAIN<TAB>Include<TAB>, and no line of the main file or of a drop-in'
+setup; : > "$ssh/sshd_config"
+expect 'an empty main file has no Include either' "$NOINC"
+setup; put sshd_config 'Include sshd_config.d/*.conf'
+expect 'an Include with a path relative to /etc/ssh counts' ''
 
 setup; rm "$ssh/sshd_config.d/00-server-prep.conf"; put sshd_config.d/00-dokploy.conf "$DOKPLOY"
 expect 'no 00-server-prep.conf: nothing to compare with' ''
 printf '%s\n' "$OWN" > "$tmp/own.conf"
 expect "OWN as an argument (the step's text, before its first write): the drop-ins that would sort first count" \
-    '00-dokploy.conf is read first and sets PermitRootLogin prohibit-password' "$tmp/own.conf"
+    "00-dokploy.conf is read first and sets PermitRootLogin prohibit-password$KEEP" "$tmp/own.conf"
 
 setup; ln -s 00-server-prep.conf "$ssh/sshd_config.d/00-link.conf"
 expect "a link to server-prep's own file changes nothing" ''
@@ -190,7 +214,13 @@ STEP_NOTES="" MANUAL_TODO=()
 if ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || [[ -n $STEP_NOTES || ${#MANUAL_TODO[@]} -gt 0 ]]; then
     fail "ssh_report_overrides reports a Port line, which the step comments out itself: $STEP_NOTES ${MANUAL_TODO[*]}"
 fi
-expect 'the audit still counts that Port line' '00-a.conf is read first and sets Port 22'
+expect 'the audit still counts that Port line' "00-a.conf is read first and adds Port 22$ADDS"
 pass 'the SSH step leaves out Port lines, which write_sshd_config comments out itself'
+setup; put sshd_config 'PermitRootLogin no'
+STEP_NOTES="" MANUAL_TODO=()
+ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || fail 'ssh_report_overrides says nothing about a main file without an Include'
+[[ ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *'no Include line'*"'Include /etc/ssh/sshd_config.d/*.conf'"*'sudo sshd -t'* ]] ||
+    fail "no Include: the step's to-do does not say to add the Include line: ${MANUAL_TODO[*]}"
+pass 'no Include: the SSH step says sshd reads none of the drop-ins and to add the Include line'
 
 printf 'ok: all sshd drop-in override cases\n'

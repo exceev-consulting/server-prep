@@ -129,6 +129,8 @@ sudo systemctl restart fail2ban
 
 `sudo sshd -t` prints nothing when the configuration is valid. Dokploy writes `dokploy-backend.local` only on systems without `/var/log/auth.log`. Deleting `dokploy.local` also removes Dokploy's manual-ban jail (`dokploy-manual`), so its **Ban IP** button works again only after a new save of the Fail2ban tab.
 
+Keep `zz-server-prep.local`: it adds server-prep's addresses to the `[DEFAULT]` whitelist of `/etc/fail2ban/jail.local`. If you ever delete `jail.local` (to manage fail2ban yourself), delete `/etc/fail2ban/jail.d/zz-server-prep.local` with it. Without a `[DEFAULT]` whitelist to add to, fail2ban rejects its whole configuration and does not start; the audit's `ips.f2b_ignoreip` warns then.
+
 There is no Dokploy guide yet. If you run it, please share your result (see [Providers and hardware](Providers-and-hardware)).
 
 ## Openship

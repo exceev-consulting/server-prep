@@ -535,28 +535,34 @@ sshd_grep() {
 # sorts before 00-server-prep.conf (Dokploy's 00-dokploy.conf), wins. Port and AllowUsers add up
 # instead, so each of their values that OWN lacks counts. Only the keywords server-prep sets that
 # decide who logs in and where (ChallengeResponseAuthentication is KbdInteractiveAuthentication's old
-# name), and only global lines: what follows a Match is conditional. OWN is the text server-prep
-# writes (DIR/00-server-prep.conf by default); without it nothing is printed. Reads files only.
+# name), and only global lines: what follows a Match is conditional. A main file without an Include of
+# DIR makes sshd read no drop-in at all, 00-server-prep.conf included: the only line is then
+# "MAIN<TAB>Include<TAB>". OWN is the text server-prep writes (DIR/00-server-prep.conf by default);
+# without it nothing is printed. Reads files only.
 # The same code is in server-prep.sh and server-audit.sh: tests/sshd-dropin-override.sh checks both.
 sshd_dropin_overrides() {
-    local dir="$1" own="${2:-$1/00-server-prep.conf}" main f files=()
+    local dir="$1" own="${2:-$1/00-server-prep.conf}" main f files=() hasmain=0
     [[ -r $own ]] || return 0
     main="${dir%/*}/sshd_config"
-    [[ -f $main && -r $main ]] && files+=("$main")
+    [[ -f $main && -r $main ]] && files+=("$main") && hasmain=1
     # the drop-ins that sort before 00-server-prep.conf, whether that file exists yet or not
     while IFS= read -r f; do
         [[ ${f##*/} == 00-server-prep.conf ]] && break
         [[ -f $f && -r $f ]] && files+=("$f")
     done < <(printf '%s\n' "$dir"/*.conf "$dir/00-server-prep.conf" | LC_ALL=C sort -u)
     [[ ${#files[@]} -gt 0 ]] || return 0
-    awk -v main="$main" -v inc="${dir##*/}/" '
+    awk -v main="$main" -v hasmain="$hasmain" -v inc="${dir##*/}/" '
+        # The lines of the main file wait for its Include line. Without one, sshd reads neither
+        # 00-server-prep.conf nor the other drop-ins: only the Include line is missing then.
+        function emit(s) { if (FILENAME == main && !included) buf[++nb] = s; else print s }
+        function endmain() { if (hasmain && !included && !noinc) { print main "\tInclude\t"; noinc = 1 } }
         BEGIN {
             n = split("permitrootlogin passwordauthentication kbdinteractiveauthentication authenticationmethods allowusers maxauthtries port", m, " ")
             for (i = 1; i <= n; i++) managed[m[i]] = 1
         }
-        FNR == 1 { inmatch = 0; stop = 0 }
+        FNR == 1 { if (FILENAME != ARGV[1] && FILENAME != main) endmain(); inmatch = 0; stop = 0 }
         { line = $0; sub(/\r$/, "", line); sub(/^[[:space:]]+/, "", line) }
-        stop || line == "" || line ~ /^#/ { next }
+        noinc || stop || line == "" || line ~ /^#/ { next }
         {
             kw = line; sub(/[[:space:]=].*$/, "", kw); k = tolower(kw)
             val = substr(line, length(kw) + 1); sub(/^[[:space:]]*=?[[:space:]]*/, "", val)
@@ -564,7 +570,11 @@ sshd_dropin_overrides() {
             if (k == "challengeresponseauthentication") k = "kbdinteractiveauthentication"
         }
         k == "match" { inmatch = 1; next }
-        FILENAME == main && k == "include" && index(val, inc) { stop = 1; next }
+        FILENAME == main && k == "include" && index(val, inc) {
+            stop = 1; included = 1
+            for (i = 1; i <= nb; i++) print buf[i]
+            next
+        }
         inmatch || !(k in managed) { next }
         {
             v = val; gsub(/[[:space:]]+/, " ", v)
@@ -577,31 +587,46 @@ sshd_dropin_overrides() {
             else if (!(k in own)) own[k] = v
             next
         }
-        k == "port" { if (!(v in ownport)) print FILENAME "\t" kw "\t" val; next }
+        k == "port" { if (!(v in ownport)) emit(FILENAME "\t" kw "\t" val); next }
         k == "allowusers" {
             c = split(v, t, " ")
-            for (i = 1; i <= c; i++) if (!(t[i] in ownuser)) { print FILENAME "\t" kw "\t" val; break }
+            for (i = 1; i <= c; i++) if (!(t[i] in ownuser)) { emit(FILENAME "\t" kw "\t" val); break }
             next
         }
-        !(k in seen) { seen[k] = 1; if ((k in own) && own[k] != v) print FILENAME "\t" kw "\t" val }
+        !(k in seen) { seen[k] = 1; if ((k in own) && own[k] != v) emit(FILENAME "\t" kw "\t" val) }
+        END { endmain() }
     ' "$own" "${files[@]}"
 }
-# sshd_override_text: the lines of sshd_dropin_overrides on stdin as one phrase per file, joined with
-# "; ": "00-dokploy.conf is read first and sets PermitRootLogin prohibit-password, MaxAuthTries 6", or
-# "sshd_config sets PermitRootLogin yes before its Include line". Nothing for no input.
+# sshd_override_text: the lines of sshd_dropin_overrides on stdin as one sentence, nothing for no input.
+# A phrase per file, joined with "; ", then what sshd does with the values. sshd keeps the first value
+# of most keywords ("sets"), but adds up those of Port and AllowUsers ("adds"):
+#   00-dokploy.conf is read first and sets PermitRootLogin prohibit-password, MaxAuthTries 6: sshd keeps these values, not those of 00-server-prep.conf
+#   00-ops.conf is read first and adds AllowUsers deploy: sshd uses these values as well as those of 00-server-prep.conf
+#   sshd_config sets PermitRootLogin yes before its Include line: sshd keeps these values, ...
+#   sshd_config has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included
 sshd_override_text() {
     awk -F'\t' '
         NF >= 3 {
             name = $1; sub(/.*\//, "", name)
-            if (name in vals) vals[name] = vals[name] ", " $2 " " $3
-            else { order[++n] = name; vals[name] = $2 " " $3 }
+            if (!(name in seen)) { seen[name] = 1; order[++n] = name }
+            k = tolower($2)
+            if (k == "include") noinc[name] = 1
+            else if (k == "port" || k == "allowusers") { add[name] = add[name] (add[name] == "" ? "" : ", ") $2 " " $3; nadd++ }
+            else { set[name] = set[name] (set[name] == "" ? "" : ", ") $2 " " $3; nset++ }
         }
         END {
             for (i = 1; i <= n; i++) {
-                s = order[i]
-                out = out (i > 1 ? "; " : "") s
-                out = out (s == "sshd_config" ? " sets " vals[s] " before its Include line" : " is read first and sets " vals[s])
+                s = order[i]; p = ""
+                if (set[s] != "") p = "sets " set[s]
+                if (add[s] != "") p = p (p == "" ? "" : " and ") "adds " add[s]
+                if (s in noinc) p = "has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included"
+                else if (s == "sshd_config") p = p " before its Include line"
+                else p = "is read first and " p
+                out = out (i > 1 ? "; " : "") s " " p
             }
+            if (nset && nadd) out = out ": sshd keeps the values set instead of those of 00-server-prep.conf, and uses the values added along with them"
+            else if (nset) out = out ": sshd keeps these values, not those of 00-server-prep.conf"
+            else if (nadd) out = out ": sshd uses these values as well as those of 00-server-prep.conf"
             if (n) print out
         }'
 }
@@ -712,9 +737,12 @@ else
         result ssh.dropin_override INFO "SSH settings override" "No /etc/ssh/sshd_config.d/00-server-prep.conf: server-prep's SSH step has not run here"
     elif [[ ! -r /etc/ssh/sshd_config.d/00-server-prep.conf ]]; then
         result ssh.dropin_override INFO "SSH settings override" "Cannot read /etc/ssh/sshd_config.d/00-server-prep.conf$(need_root_note)"
+    elif [[ $SSH_OVR == *$'\t'Include$'\t'* ]]; then
+        result ssh.dropin_override WARN "SSH settings override" "$(sshd_override_text <<<"$SSH_OVR")" \
+            "Add the line 'Include /etc/ssh/sshd_config.d/*.conf' at the top of /etc/ssh/sshd_config, then: sudo sshd -t && sudo systemctl reload ssh"
     elif [[ -n "$SSH_OVR" ]]; then
         ovr_files="$(awk -F'\t' '!seen[$1]++ { printf "%s%s", (n++ ? ", " : ""), $1 }' <<<"$SSH_OVR")"
-        result ssh.dropin_override WARN "SSH settings override" "$(sshd_override_text <<<"$SSH_OVR"): sshd keeps these values, not those of 00-server-prep.conf" \
+        result ssh.dropin_override WARN "SSH settings override" "$(sshd_override_text <<<"$SSH_OVR")" \
             "Remove these settings from ${ovr_files} (or the whole file if a panel wrote it: Dokploy's server Security dialog writes 00-dokploy.conf), then: sudo sshd -t && sudo systemctl reload ssh"
     else
         result ssh.dropin_override PASS "SSH settings override" "No file read before 00-server-prep.conf changes its login settings$(need_root_note)"
@@ -1051,6 +1079,18 @@ f2b_files_ignoreip() {
     fi
     return 0
 }
+# f2b_unset_known: the file whose [sshd] ignoreip extends the [DEFAULT] list with %(known/ignoreip)s
+# (server-prep's zz-server-prep.local) when no file sets a [DEFAULT] ignoreip, as after jail.local was
+# deleted without it. fail2ban then has no value for %(known/ignoreip)s and rejects its whole
+# configuration ("Bad value substitution ... 'known/ignoreip'"): it does not start, or not after its
+# next restart. Nothing when the list resolves. As f2b_files_ignoreip, it takes that file to be the
+# only one that sets [sshd] ignoreip.
+f2b_unset_known() {
+    local s
+    s="$(jail_option_set sshd ignoreip)"
+    [[ ${s#*$'\t'} == *'%(known/ignoreip)s'* && -z "$(jail_option_set DEFAULT ignoreip)" ]] && printf '%s\n' "${s%%$'\t'*}"
+    return 0
+}
 # ip_bits ADDR: an IPv4 or IPv6 address, without a prefix, as its 32 or 128 bits (a string of 0 and 1);
 # nothing when ADDR is not one (a host name, an IPv4-mapped IPv6 address).
 ip_bits() {
@@ -1118,17 +1158,30 @@ f2b_missing() {
     printf '%s' "${miss% }"
 }
 # prep_conf_value KEY: KEY's value in server-prep's saved answers (PREP_CONF), read and never sourced:
-# the last KEY= line, without its quotes or the backslashes of printf %q, which save_answers uses.
+# the last KEY= line, its quoting undone as bash would. save_answers writes printf %q: backslashes
+# (a\ b\,c), or $'...' with \t, \n, \' and \\ for a value that holds such characters. A file edited
+# by hand can also have '...', "..." and a comment after the value.
 PREP_CONF=/etc/server-prep/server-prep.conf
 prep_conf_value() {
-    local v
+    local v out="" dq=0 q="'" bs='\'
+    local re_sq="^'([^']*)'" re_ansi="^[\$]'((\\\\.|[^\\\\'])*)'" re_dq='^"((\\.|[^\\"])*)"' re_esc='^([^\\]*)\\(.)(.*)$'
     v="$(sed -nE "s/^$1=(.*)\$/\\1/p" "$PREP_CONF" 2>/dev/null | tail -n 1)"
-    if [[ $v =~ ^\"([^\"]*)\" || $v =~ ^\'([^\']*)\' || $v =~ ^\$\'([^\']*)\' ]]; then
+    if [[ $v =~ $re_sq ]]; then          # '...': as written
+        printf '%s' "${BASH_REMATCH[1]}"; return 0
+    elif [[ $v =~ $re_ansi ]]; then      # $'...': \' is ', the other escapes as printf %b reads them
         v="${BASH_REMATCH[1]}"
-    else
+        printf '%b' "${v//"$bs$q"/$q}"; return 0
+    elif [[ $v =~ $re_dq ]]; then        # "...": a backslash goes only before $ ` " and \ itself
+        v="${BASH_REMATCH[1]}"; dq=1
+    else                                 # printf %q without quotes: \X is X; " #" starts a comment
         v="${v%%[[:space:]]#*}"
     fi
-    printf '%s' "${v//\\/}"
+    while [[ $v =~ $re_esc ]]; do
+        out+="${BASH_REMATCH[1]}"
+        [[ $dq -eq 1 && ${BASH_REMATCH[2]} != [\$\`\"\\] ]] && out+="$bs"
+        out+="${BASH_REMATCH[2]}"; v="${BASH_REMATCH[3]}"
+    done
+    printf '%s' "$out$v"
 }
 port_in_list() {
     local list="$1" target="$2" tok a b IFS=','
@@ -1168,8 +1221,13 @@ if [[ $F2B -ge 1 && -d /etc/fail2ban ]]; then
 
     # The addresses the ips step whitelists (tailnet, PANEL_IP, ADMIN_IPS) must still be in the sshd
     # jail's ignoreip: a jail.d/*.local file read after jail.local, such as Dokploy's dokploy.local,
-    # can replace the list (issue #204). fail2ban's own list when it answers, else the files.
-    if [[ ! -e "$PREP_CONF" ]]; then
+    # can replace the list (issue #204). fail2ban's own list when it answers, else the files. First,
+    # zz-server-prep.local left without the jail.local it extends, which stops fail2ban (f2b_unset_known).
+    f2b_unset="$(f2b_unset_known)"
+    if [[ -n "$f2b_unset" ]]; then
+        result ips.f2b_ignoreip WARN "fail2ban whitelist" "fail2ban rejects its configuration, so no jail runs (or none after its next restart): ${f2b_unset} adds to a [DEFAULT] ignoreip that no file sets, as when jail.local is deleted" \
+            "Write jail.local back: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes. Or delete ${f2b_unset##*/} with it: sudo rm ${f2b_unset} && sudo systemctl restart fail2ban"
+    elif [[ ! -e "$PREP_CONF" ]]; then
         result ips.f2b_ignoreip INFO "fail2ban whitelist" "No saved server-prep answers (${PREP_CONF}): no address to look for"
     elif [[ ! -r "$PREP_CONF" ]]; then
         result ips.f2b_ignoreip INFO "fail2ban whitelist" "Cannot read ${PREP_CONF}, which lists the addresses to look for$(need_root_note)"
