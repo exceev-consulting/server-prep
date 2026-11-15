@@ -97,6 +97,7 @@ ONLY=""
 SKIP=""
 CONFIG_FILE=""
 SAVED_ANSWERS=0   # 1 when --config is an answers file that save_answers wrote
+OLD_EMPTY_SERVICES=0   # 1 when those answers hold an empty DISABLE_SERVICES, as 1.1.1 or older saved "keep every service"
 VALIDATE=0
 UPGRADE=0
 
@@ -278,7 +279,7 @@ valid_ip() {   # valid_ip ADDR[/PREFIX]: an IPv4 or IPv6 address or network
 # validate_config FILE: check a config file in two phases and print one line per finding, then a total.
 # Phase 1 reads the text and runs nothing. Phase 2 loads the known settings in a subshell and checks them.
 validate_config() {
-    local v_file="$1" v_errors=0 v_warns=0 v_notes=0 v_dash=0 n=0 i line key value best best_d best_d_new d name chunk
+    local v_file="$1" v_errors=0 v_warns=0 v_notes=0 v_dash=0 v_saved=0 n=0 i line key value best best_d best_d_new d name chunk
     local LC_ALL=C   # byte-wise matching, the same result in every locale
     local -A v_line=()
     local -a v_assign=() v_assign_line=() v_lines=()
@@ -297,6 +298,7 @@ validate_config() {
         vtotal; return 1
     fi
     mapfile -t v_lines < "$v_file"
+    [[ "${v_lines[0]:-}" == '# server-prep answers - '* ]] && v_saved=1   # the first line save_answers writes
     # A pasted private key, a BOM or Windows line endings: one error for the whole file, then stop
     for line in "${v_lines[@]}"; do
         n=$((n + 1))
@@ -533,6 +535,11 @@ validate_values() {
         [[ " $SERVICE_CANDIDATES " == *" $item "* ]] ||
             vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES has $(vq "$item"), which is not one of: ${SERVICE_CANDIDATES}. The service of that name will be disabled: check the name"
     done
+    # save_answers writes none or a list since #74: an empty value in saved answers comes from 1.1.1 or older,
+    # which saved "keep every service" that way, and a --yes re-run reads it as every candidate
+    if [[ ${v_saved:-0} -eq 1 && -z "${DISABLE_SERVICES//[[:space:]]/}" ]]; then
+        vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES is empty, which disables every candidate (${SERVICE_CANDIDATES}). Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, write DISABLE_SERVICES=none, or list only the services to disable"
+    fi
     for k in ONLY SKIP; do
         [[ -n "${v_line[$k]:-}" ]] || continue
         read -rd '' -a list <<< "${!k}"
@@ -698,6 +705,8 @@ if [[ -n "$CONFIG_FILE" ]]; then
     fi
     # shellcheck disable=SC1090
     . "$CONFIG_FILE"
+    # save_answers writes none or a list since #74: empty saved answers come from 1.1.1 or older
+    [[ $SAVED_ANSWERS -eq 1 && -z "${DISABLE_SERVICES//[[:space:]]/}" ]] && OLD_EMPTY_SERVICES=1
 fi
 # Configs written before 1.1 used COOLIFY_* names
 PANEL_PUBKEY="${PANEL_PUBKEY:-${COOLIFY_PUBKEY:-}}"
@@ -1320,6 +1329,8 @@ questions() {
     local s sel="" a def asked=0
     for s in $SERVICE_CANDIDATES; do
         systemctl cat "$s" >/dev/null 2>&1 || continue
+        [[ $asked -eq 0 && $OLD_EMPTY_SERVICES -eq 1 ]] &&
+            warn "The saved answers hold an empty DISABLE_SERVICES, which means every service, but 1.1.1 or older saved it so when you kept every service. Each question below defaults to yes: answer n to keep a service"
         asked=1
         def=yes   # empty = every candidate; none, or a list without it, = no
         [[ -n "$DISABLE_SERVICES" && " $DISABLE_SERVICES " != *" $s "* ]] && def=no
@@ -1329,11 +1340,15 @@ questions() {
     done
     # The answer is what you chose, whatever else is installed: none when you kept every service, since
     # an empty value means every candidate to a --yes re-run (#74). With no candidate installed nothing
-    # was asked, so the value stays as it was.
+    # was asked, so the value stays as it was (empty: every candidate, the default of each question).
     if [[ $asked -eq 1 ]]; then
         DISABLE_SERVICES="${sel% }"
         DISABLE_SERVICES="${DISABLE_SERVICES:-none}"
+    else
+        explain "None of them is installed: nothing to ask. If one gets installed later, a re-run from the saved" \
+                "answers disables it when DISABLE_SERVICES lists it (now: ${DISABLE_SERVICES:-every one}; none = keep them)."
     fi
+    OLD_EMPTY_SERVICES=0   # answered here, or nothing to answer: the plan need not warn
     if [[ $IS_LAPTOP -eq 1 ]]; then
         explain "Laptop detected: closing the lid and idle sleep will be disabled so the apps stay online." \
                 "Tip: keep it plugged in, and if the BIOS allows it, limit battery charge to ~80%."
@@ -1412,12 +1427,20 @@ summary_and_confirm() {
   Steps ............. ${ONLY:-all}${SKIP:+ (skip: $SKIP)}
   Mode .............. $([[ $DRY_RUN == 1 ]] && echo "DRY-RUN (nothing will change)" || echo "APPLY")
 EOF
+    # Answers saved by 1.1.1 or older, read with --yes (the questions warn at a terminal): this run reads the
+    # empty value as every candidate, and save_answers then lists them all, so say it here and in the to-do.
+    if [[ $OLD_EMPTY_SERVICES -eq 1 ]]; then
+        warn "The saved answers hold an empty DISABLE_SERVICES, which means every service listed above. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, press Ctrl-C now, set DISABLE_SERVICES=none in ${CONFIG_FILE} and run again"
+        todo "The saved answers held an empty DISABLE_SERVICES, which means every candidate service: ${SERVICE_CANDIDATES}. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, set DISABLE_SERVICES=none in $CONF_DIR/server-prep.conf$(step_selected services && printf '%s' ", and turn back on each service you use: sudo systemctl enable --now <name>")"
+    fi
     # --validate warns about this lockout, but the questions never run it: an answer of - at "Allowed SSH
-    # sources" leads here. Warn under the plan, and make Proceed default to no.
-    local go=yes
+    # sources" leads here. Warn under the plan, and make Proceed default to no (--yes does not ask).
+    local go=yes how="Answer n and add your IP or network at 'Allowed SSH sources' (ADMIN_IPS)"
+    [[ $ASSUME_YES -eq 1 ]] &&
+        how="With --yes the run goes on: press Ctrl-C now and add your IP or network to ADMIN_IPS, unless a console is at hand (--validate warns about this before a run)"
     if step_selected firewall && [[ -z "${ADMIN_IPS//[[:space:],]/}" && "$PANEL_ACCESS" == *public* &&
           "$PANEL_ACCESS" != *tailscale* && "$PANEL_ACCESS" != *cloudflared* ]]; then
-        warn "No allowed SSH source and no Tailscale or tunnel: the firewall will allow SSH only from ${PANEL_LABEL}'s server (${PANEL_IP}), so you will be locked out of new SSH logins. Answer n and add your IP or network at 'Allowed SSH sources' (ADMIN_IPS)"
+        warn "No allowed SSH source and no Tailscale or tunnel: the firewall will allow SSH only from ${PANEL_LABEL}'s server (${PANEL_IP}), so you will be locked out of new SSH logins. ${how}"
         go=no
     fi
     confirm "Proceed?" "$go" || die "Aborted by user"

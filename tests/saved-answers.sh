@@ -98,6 +98,31 @@ expect_services 'with a saved list, only the listed services default to yes' 'cu
 expect_services 'with no candidate installed nothing is asked and empty stays every candidate' '' '' '' \
     "DISABLE_SERVICES=$SERVICE_CANDIDATES"
 expect_services 'with no candidate installed nothing is asked and none stays none' none '' '' 'DISABLE_SERVICES=none'
+grep -q 'None of them is installed: nothing to ask' "$tmp/questions" && grep -q '(now: none; none = keep them)' "$tmp/questions" ||
+    fail "with no candidate installed, the questions do not say that nothing is asked and what DISABLE_SERVICES holds" "$tmp/questions"
+printf 'ok: with no candidate installed the questions say so, with the value a re-run uses\n'
+
+# At a terminal, empty saved answers of 1.1.1 or older get a warning above the first service question, once,
+# and the plan then has nothing to warn about: the services were answered here.
+old_empty_questions() {   # old_empty_questions INSTALLED: OLD_EMPTY_SERVICES after the questions (they are in $tmp/questions)
+    (
+        installed=" $1 "
+        ask() { printf -v "$1" '%s' "${!1:-${3:-}}"; }
+        ask_yn() { printf -v "$1" '%s' "${!1:-${3:-no}}"; }
+        ask_secret() { :; }
+        systemctl() { [[ $1 == cat && $installed == *" $2 "* ]]; }
+        INTERACTIVE=1 SAVED_ANSWERS=1 OLD_EMPTY_SERVICES=1 DISABLE_SERVICES="" PANEL_ACCESS=tailscale ADMIN_IPS=192.168.1.50
+        questions > "$tmp/questions" 2>&1 || exit 1
+        printf '%s' "$OLD_EMPTY_SERVICES"
+    )
+}
+got="$(old_empty_questions 'cups bluetooth')" || fail "questions stopped" "$tmp/questions"
+[[ "$got" == 0 && $(grep -c '1.1.1 or older saved it so when you kept every service' "$tmp/questions") -eq 1 ]] ||
+    fail "with empty answers of 1.1.1 or older, the questions give OLD_EMPTY_SERVICES=$got and this warning count: $(grep -c '1.1.1 or older' "$tmp/questions")" "$tmp/questions"
+got="$(old_empty_questions '')" || fail "questions stopped" "$tmp/questions"
+[[ "$got" == 0 ]] && ! grep -q '1.1.1 or older' "$tmp/questions" && grep -q '(now: every one; none = keep them)' "$tmp/questions" ||
+    fail "with empty answers of 1.1.1 or older and no candidate installed, the questions give OLD_EMPTY_SERVICES=$got" "$tmp/questions"
+printf 'ok: at a terminal, empty answers of 1.1.1 or older get one warning above the service questions\n'
 
 # --- questions: from the saved answers, Enter keeps an answer emptied with - -------------------------------
 access_defaults() {   # access_defaults SAVED_ANSWERS ADMIN_IPS PANEL_ACCESS: ADMIN_IPS|PANEL_ACCESS after Enter everywhere
@@ -148,10 +173,10 @@ printf 'ok: the to-do names the ports, sources and access methods removed from t
 EXTRA_PORTS="" ADMIN_IPS="" PANEL_ACCESS="" PANEL_IP="" EXPOSE_WEB=""
 
 # --- summary_and_confirm: no SSH source and public access only is a lockout, Proceed defaults to no -------
-lockout_default() {   # lockout_default ADMIN_IPS PANEL_ACCESS [ONLY]: the default of "Proceed?" (the plan in $tmp/plan)
+lockout_default() {   # lockout_default ADMIN_IPS PANEL_ACCESS [ONLY] [ASSUME_YES]: the default of "Proceed?" (the plan in $tmp/plan)
     (
         confirm() { printf '%s' "${2:-no}" > "$tmp/proceed"; }
-        INTERACTIVE=1 ASSUME_YES=0 ADMIN_IPS="$1" PANEL_ACCESS="$2" ONLY="${3:-}" PANEL_IP=198.51.100.2 DISABLE_SERVICES=none
+        INTERACTIVE=1 ASSUME_YES="${4:-0}" ADMIN_IPS="$1" PANEL_ACCESS="$2" ONLY="${3:-}" PANEL_IP=198.51.100.2 DISABLE_SERVICES=none
         summary_and_confirm > "$tmp/plan" 2>&1 || exit 1
         cat "$tmp/proceed"
     )
@@ -159,16 +184,20 @@ lockout_default() {   # lockout_default ADMIN_IPS PANEL_ACCESS [ONLY]: the defau
 for c in '|public|' ' , |public|'; do
     IFS='|' read -r ips access only <<< "$c"
     got="$(lockout_default "$ips" "$access" "$only")" || fail "summary_and_confirm stopped" "$tmp/plan"
-    [[ "$got" == no ]] && grep -q 'you will be locked out of new SSH logins' "$tmp/plan" ||
+    [[ "$got" == no ]] && grep -q "you will be locked out of new SSH logins. Answer n and add" "$tmp/plan" ||
         fail "with ADMIN_IPS=\"$ips\" and public access only, Proceed defaults to \"$got\", want no and a lockout warning" "$tmp/plan"
 done
+# --yes does not ask: the warning says the run goes on
+got="$(lockout_default '' public '' 1)" || fail "summary_and_confirm stopped" "$tmp/plan"
+grep -q 'locked out of new SSH logins. With --yes the run goes on: press Ctrl-C now' "$tmp/plan" ||
+    fail "with --yes, the lockout warning does not say that the run goes on" "$tmp/plan"
 for c in '192.168.1.50|public|' '|tailscale,public|' '|cloudflared,public|' '|public|services'; do
     IFS='|' read -r ips access only <<< "$c"
     got="$(lockout_default "$ips" "$access" "$only")" || fail "summary_and_confirm stopped" "$tmp/plan"
     [[ "$got" == yes ]] && ! grep -q 'locked out' "$tmp/plan" ||
         fail "with ADMIN_IPS=\"$ips\", PANEL_ACCESS=$access and ONLY=\"$only\", Proceed defaults to \"$got\", want yes and no warning" "$tmp/plan"
 done
-printf 'ok: with no SSH source and public access only the plan warns and Proceed defaults to no, otherwise yes\n'
+printf 'ok: with no SSH source and public access only the plan warns and Proceed defaults to no (--yes: the run goes on), otherwise yes\n'
 
 # --- save_answers: none and LAPTOP_MODE are saved, the secrets are not -----------------------------------
 (
@@ -214,17 +243,42 @@ wait
 printf 'ok: only the file save_answers wrote counts as saved answers, and a pipe is still read whole\n'
 
 # Answers saved by a version before #74 hold DISABLE_SERVICES='' when every service was kept: with --yes it
-# still means every candidate (nothing tells it from a config that leaves the setting out).
+# still means every candidate (an empty value means that in any config), but the plan warns under it and the
+# to-do says to write none, with the command to turn a service back on when the services step runs.
 {
     printf '# server-prep answers - 20260101_000000 - reuse with: --config /etc/server-prep/server-prep.conf --yes\n'
     printf "ADMIN_USER=srvprep-test-admin\nPANEL_ACCESS=tailscale\nDISABLE_SERVICES=''\nTIMEZONE=UTC\n"
 } > "$tmp/old-answers.conf"
-got="$(env -i PATH="$PATH" bash -c '
-    . "$1" --config "$2" --yes --only services
-    LOG_FILE="$3/old.log" CURRENT_SSH_PORTS=22 IS_LAPTOP=0
-    summary_and_confirm > "$3/plan" 2>&1 && printf "%s" "$DISABLE_SERVICES"' _ "$SCRIPT" "$tmp/old-answers.conf" "$tmp" 2>&1)"
-[[ "$got" == "$SERVICE_CANDIDATES" ]] || fail "a --yes run from old answers with DISABLE_SERVICES='' gives \"$got\"" "$tmp/plan"
-printf "ok: with --yes, an empty DISABLE_SERVICES from old answers still means every candidate\n"
+old_answers_run() {   # old_answers_run CONFIG ONLY: OLD_EMPTY_SERVICES|DISABLE_SERVICES, then the to-do (the plan in $tmp/plan)
+    env -i PATH="$PATH" bash -c '
+        . "$1" --config "$2" --yes --only "$4"
+        LOG_FILE="$3/old.log" CURRENT_SSH_PORTS=22 IS_LAPTOP=0
+        printf "%s|" "$OLD_EMPTY_SERVICES"
+        summary_and_confirm > "$3/plan" 2>&1 && printf "%s\n" "$DISABLE_SERVICES" && printf "%s\n" "${MANUAL_TODO[@]}"' \
+        _ "$SCRIPT" "$1" "$tmp" "$2" 2>&1
+}
+got="$(old_answers_run "$tmp/old-answers.conf" services)"
+[[ "$(head -n 1 <<< "$got")" == "1|$SERVICE_CANDIDATES" ]] ||
+    fail "a --yes run from old answers with DISABLE_SERVICES='' gives \"$(head -n 1 <<< "$got")\", want \"1|$SERVICE_CANDIDATES\"" "$tmp/plan"
+grep -q "empty DISABLE_SERVICES, which means every service listed above.*press Ctrl-C now, set DISABLE_SERVICES=none in $tmp/old-answers.conf" "$tmp/plan" ||
+    fail "the plan from old answers does not warn about the empty DISABLE_SERVICES" "$tmp/plan"
+[[ $(grep -c . <<< "$got") -eq 2 && "$got" == *"empty DISABLE_SERVICES"*"set DISABLE_SERVICES=none in /etc/server-prep/server-prep.conf, and turn back on"*"systemctl enable --now <name>" ]] ||
+    fail "the to-do from old answers with --only services is:
+$got"
+got="$(old_answers_run "$tmp/old-answers.conf" telegram)"
+[[ $(grep -c . <<< "$got") -eq 2 && "$got" == *"set DISABLE_SERVICES=none in /etc/server-prep/server-prep.conf" ]] ||
+    fail "the to-do from old answers with --only telegram (the answers get the whole list) is:
+$got"
+# none, a list, or an empty value in a config written by hand: no warning, no to-do
+sed "s/^DISABLE_SERVICES=.*/DISABLE_SERVICES=none/" "$tmp/old-answers.conf" > "$tmp/new-answers.conf"
+sed 1d "$tmp/old-answers.conf" > "$tmp/hand-empty.conf"
+for f in new-answers hand-empty; do
+    got="$(old_answers_run "$tmp/$f.conf" services)"
+    [[ $(grep -c . <<< "$got") -eq 1 && "$got" == 0\|* ]] && ! grep -q 'DISABLE_SERVICES' "$tmp/plan" ||
+        fail "a --yes run from $f.conf warns about DISABLE_SERVICES or adds a to-do:
+$got" "$tmp/plan"
+done
+printf "ok: with --yes, an empty DISABLE_SERVICES from old answers still means every candidate, and the plan and the to-do say to write none\n"
 
 # --- step_services: none disables nothing ------------------------------------------------------------------
 services_calls() {   # services_calls VALUE: the svc_disable and run calls of step_services

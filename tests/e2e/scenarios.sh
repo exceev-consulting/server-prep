@@ -486,7 +486,7 @@ sc_audit_prepared() {
 
 sc_prep_rerun() {
     begin prep-rerun
-    local rc moved chain got
+    local rc moved chain got want
     run_prep second --config "$VM_CFG" --yes; rc=$?
     check_eq "server-prep.sh exits 0" "$rc" 0
     if [[ -n "$PREP_REPORT" ]]; then
@@ -509,9 +509,15 @@ sc_prep_rerun() {
     check "after it, DOCKER-USER still goes through CrowdSec" $? "$(head -c 300 <<<"$chain")"
     # A --yes re-run from the saved answers does what the first run did (issue #74). The ssh step is
     # never part of a --yes run: --yes skips its login test and rollback timer.
+    # The two values of ci.cfg, with the defaults of server-prep.sh: an empty DISABLE_SERVICES is every candidate.
+    want="$(DISABLE_SERVICES="" LAPTOP_MODE=""
+        # shellcheck disable=SC1091
+        . "$E2E_DIR/ci.cfg"
+        [[ -n "${DISABLE_SERVICES//[[:space:]]/}" ]] ||
+            DISABLE_SERVICES="$(sed -n 's/^SERVICE_CANDIDATES="\(.*\)"$/\1/p' "$REPO_DIR/server-prep.sh")"
+        printf '%s|%s' "$DISABLE_SERVICES" "${LAPTOP_MODE:-auto}")"
     got="$(as_root '. /etc/server-prep/server-prep.conf && printf "%s|%s" "$DISABLE_SERVICES" "$LAPTOP_MODE"' < /dev/null)"
-    check_eq "the saved answers keep DISABLE_SERVICES and LAPTOP_MODE" "$got" \
-        "avahi-daemon cups cups-browsed bluetooth ModemManager apport|auto"
+    check_eq "the saved answers keep DISABLE_SERVICES and LAPTOP_MODE of ci.cfg" "$got" "$want"
     run_prep saved-answers --config /etc/server-prep/server-prep.conf --yes --only services,laptop,telegram; rc=$?
     check_eq "a --yes re-run from the saved answers exits 0" "$rc" 0
     if [[ -n "$PREP_REPORT" ]]; then
