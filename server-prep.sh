@@ -113,7 +113,8 @@ Usage: sudo $0 [options]
   --yes                non-interactive: use config/env values and each question's default (a default-no
                        question stays no); the SSH step checks the login itself before it closes the old port
   --force              with --yes: also yes to the default-no questions (no SSH key for the admin, Docker
-                       restart); the SSH login check still runs. Without --yes it does nothing: questions still ask
+                       restart); with no admin key, the SSH login check skips only its key check (the admin
+                       can then log in only on the console). Without --yes it does nothing: questions still ask
   --dry-run            show what would change, change nothing
   --only a,b,c         run only these steps
   --skip a,b,c         skip these steps
@@ -2042,15 +2043,19 @@ authorized_keys_paths() {
     done
 }
 
-# ssh_login_check: run with --yes once SSH has restarted on its phase A ports, in place of the operator's
-# test. Each check is logged: sshd listens on SSH_PORT; sshd -T for the admin from 127.0.0.1 allows a key
-# login (AllowUsers, DenyUsers, the groups, Match); the admin has a key in an AuthorizedKeysFile; an SSH
-# handshake (banner and key exchange, no key needed) works on 127.0.0.1:SSH_PORT. Status 1 when one
-# fails, with SSH_CHECK_FAILED saying which. Read-only: safe while the rollback timer runs.
+# ssh_login_check [nokey]: run with --yes once SSH has restarted on its phase A ports, in place of the
+# operator's test. Each check is logged: sshd listens on SSH_PORT; sshd -T for the admin from 127.0.0.1
+# allows a key login (AllowUsers, DenyUsers, the groups, Match); the admin has a key in an
+# AuthorizedKeysFile; an SSH handshake (banner and key exchange, no key needed) works on
+# 127.0.0.1:SSH_PORT. Status 1 when one fails, with SSH_CHECK_FAILED saying which. "nokey": --yes --force
+# went past the no-key guard, so the key check is skipped (as the "s" answer skips the operator's test)
+# and SSH_CHECK_SKIPPED says so; the three other checks still run. Read-only: safe while the rollback
+# timer runs.
 SSH_CHECK_FAILED=""
 SSH_CHECK_PASSED=""
+SSH_CHECK_SKIPPED=""
 ssh_login_check() {
-    local live cfg home uid groups why f n=0 keys failed=() passed=()
+    local live cfg kcfg kfrom="" akc home uid groups why f n=0 keys failed=() passed=() skipped=()
     live="$(ssh_listen_ports)"
     if [[ " $live " == *" $SSH_PORT "* ]]; then
         passed+=("sshd listens on ${SSH_PORT}")
@@ -2062,8 +2067,13 @@ ssh_login_check() {
     uid="$(id -u "$ADMIN_USER" 2>/dev/null)"
     groups="$(id -Gn "$ADMIN_USER" 2>/dev/null)"
     cfg="$(sshd -T -C "user=${ADMIN_USER},host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=${SSH_PORT}" 2>>"$LOG_FILE")"
+    kcfg="$cfg"
     if ! grep -q '^port ' <<<"$cfg"; then
         failed+=("sshd -T could not read the configuration for ${ADMIN_USER}")
+        # the keys are still counted, in OpenSSH's default AuthorizedKeysFile, so that this check does
+        # not report a missing key on top of the sshd -T failure
+        kcfg='authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2'
+        kfrom=" (OpenSSH's default AuthorizedKeysFile, as sshd -T failed)"
     else
         why="$(sshd_login_refused "$ADMIN_USER" "$groups" localhost 127.0.0.1 <<<"$cfg")"
         if [[ -z $why ]]; then
@@ -2072,17 +2082,25 @@ ssh_login_check() {
             failed+=("sshd refuses a key login of ${ADMIN_USER}: ${why}")
         fi
     fi
-    if [[ -n $home && -n $cfg ]]; then
-        while IFS= read -r f; do
-            [[ -f $f ]] || continue
-            keys="$(ssh-keygen -l -f "$f" 2>/dev/null | grep -c .)"
-            n=$((n + keys))
-        done < <(authorized_keys_paths "$ADMIN_USER" "$home" "$uid" <<<"$cfg")
-    fi
-    if [[ $n -gt 0 ]]; then
-        passed+=("${ADMIN_USER} has ${n} SSH key(s)")
+    if [[ ${1:-} == nokey ]]; then
+        skipped+=("key check skipped (--force): ${ADMIN_USER} has no SSH key and can log in only on the console")
     else
-        failed+=("${ADMIN_USER} has no SSH key in its authorized_keys")
+        if [[ -n $home ]]; then
+            while IFS= read -r f; do
+                [[ -f $f ]] || continue
+                keys="$(ssh-keygen -l -f "$f" 2>/dev/null | grep -c .)"
+                n=$((n + keys))
+            done < <(authorized_keys_paths "$ADMIN_USER" "$home" "$uid" <<<"$kcfg")
+        fi
+        # the check reads only the AuthorizedKeysFile files: it never runs an AuthorizedKeysCommand
+        akc="$(awk '$1 == "authorizedkeyscommand" { print $2; exit }' <<<"$cfg")"
+        if [[ $n -gt 0 ]]; then
+            passed+=("${ADMIN_USER} has ${n} SSH key(s)${kfrom}")
+        elif [[ -n $akc && $akc != none ]]; then
+            failed+=("${ADMIN_USER} has no SSH key in its AuthorizedKeysFile (keys from AuthorizedKeysCommand are not checked)")
+        else
+            failed+=("${ADMIN_USER} has no SSH key in its authorized_keys${kfrom}")
+        fi
     fi
     if ! have ssh-keyscan; then
         failed+=("ssh-keyscan is missing (openssh-client), no SSH handshake test")
@@ -2092,8 +2110,10 @@ ssh_login_check() {
         failed+=("no SSH handshake on 127.0.0.1:${SSH_PORT}")
     fi
     for f in "${passed[@]}"; do ok "login check: ${f}"; done
+    for f in "${skipped[@]}"; do warn "login check: ${f}"; done
     for f in "${failed[@]}"; do warn "login check: ${f}"; done
     SSH_CHECK_PASSED="$(IFS=';'; echo "${passed[*]}")"; SSH_CHECK_PASSED="${SSH_CHECK_PASSED//;/; }"
+    SSH_CHECK_SKIPPED="$(IFS=';'; echo "${skipped[*]}")"; SSH_CHECK_SKIPPED="${SSH_CHECK_SKIPPED//;/; }"
     SSH_CHECK_FAILED="$(IFS=';'; echo "${failed[*]}")"; SSH_CHECK_FAILED="${SSH_CHECK_FAILED//;/; }"
     [[ ${#failed[@]} -eq 0 ]]
 }
@@ -2166,16 +2186,19 @@ ssh_finish_move() {
 
 step_ssh() {
     compute_root_sources
-    local home nkeys=0
+    local home nkeys=0 nokey=""
     home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
     [[ -s "$home/.ssh/authorized_keys" ]] && nkeys=$(grep -cE '^[^#[:space:]]' "$home/.ssh/authorized_keys")
     if [[ $nkeys -eq 0 && $DRY_RUN -eq 0 ]]; then
         warn "${ADMIN_USER} has NO SSH key: after this step ${ADMIN_USER} can only log in on the console."
-        # --yes keeps the default (no); only --yes --force goes on, and its login check then fails on the missing key
+        # --yes keeps the default (no); only --yes --force goes on
         if ! confirm "Continue anyway (I have console/physical access)?" no; then
             note "aborted: no SSH key for ${ADMIN_USER}"; return $SKIP_RC
         fi
         note "WARNING: ${ADMIN_USER} has no SSH key"
+        # --yes --force answered yes: the automatic login check skips its key check, as the "s" answer of
+        # an interactive run skips the test, and runs the three others
+        [[ $ASSUME_YES -eq 1 && $FORCE -eq 1 ]] && nokey=nokey
     fi
     local others=() f
     for f in /etc/ssh/sshd_config.d/*; do
@@ -2276,12 +2299,13 @@ EOF
             read -r -p "  Result [y/n/s]: " answer < /dev/tty || answer=s
             case "${answer,,}" in y|n|s) break ;; esac
         done
-    elif ssh_login_check; then
-        note "automatic login check passed (${SSH_CHECK_PASSED})"
+    elif ssh_login_check "$nokey"; then
+        note "automatic login check passed (${SSH_CHECK_PASSED})${SSH_CHECK_SKIPPED:+; ${SSH_CHECK_SKIPPED}}"
+        [[ -n $SSH_CHECK_SKIPPED ]] && todo "SSH: ${ADMIN_USER} has no SSH key (--force skipped the key check of the automatic login check), so it can log in only on the console. Add your public key: set ADMIN_PUBKEY in /etc/server-prep/server-prep.conf, run sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only users --dry-run, then the same without --dry-run, and test ssh -p ${SSH_PORT} ${ADMIN_USER}@<server> from a second terminal"
     else
         local kept=""
         for p in $old_ports; do [[ $p == "$SSH_PORT" ]] || kept+="$p "; done
-        note "automatic login check failed (${SSH_CHECK_FAILED})${kept:+: old SSH port(s) ${kept}and their temporary UFW rules kept}; the rollback timer puts back the SSH configuration from before this run in 10 minutes"
+        note "automatic login check failed (${SSH_CHECK_FAILED})${SSH_CHECK_SKIPPED:+; ${SSH_CHECK_SKIPPED}}${kept:+: old SSH port(s) ${kept}and their temporary UFW rules kept}; the rollback timer puts back the SSH configuration from before this run in 10 minutes"
         todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}. Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
         return 1
     fi

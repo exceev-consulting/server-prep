@@ -16,7 +16,9 @@ Highlights of each release. The full list of merged pull requests is in each
   `DenyUsers`, the groups, `Match`), the admin has a key, and an SSH handshake on `127.0.0.1` works. If one fails, the
   old port and its temporary UFW rules stay, the rollback timer puts back the SSH configuration from before the run
   after 10 minutes, and the step fails with a to-do that names the check and says to finish with an interactive run
-  of `--only ssh,endlessh`. The check cannot see the firewall or the operator's key: keep the first run on a server
+  of `--only ssh,endlessh`. When `--force` went on with no key for the admin, the check skips only the key check, as
+  the `s` answer of an interactive run skips the test, logs it (the admin can then log in only on the console) and adds
+  a to-do to add a key. The check cannot see the firewall or the operator's key: keep the first run on a server
   interactive.
 - `server-preconfig.sh` no longer fails with `--yes` (or Enter) when the server's current name has capitals or a
   domain, such as `Web-01` or `vps123.example.net`. The default hostname is now the short name in lowercase (`web-01`,

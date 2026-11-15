@@ -6,8 +6,9 @@
 # matcher (AllowUsers, DenyUsers, the groups, PubkeyAuthentication, AuthenticationMethods) and the
 # AuthorizedKeysFile paths on sample text, ssh_login_check with fake sshd, ss and ssh-keyscan, and
 # step_ssh's choice: phase B and the timer stopped when the check passes; the old port, its temporary
-# UFW rules and the rollback timer kept when it fails. Only a temporary folder is written: no root
-# needed, nothing on the host is touched.
+# UFW rules and the rollback timer kept when it fails; with --yes --force and no admin key, the check
+# skips only its key check. Only a temporary folder is written: no root needed, nothing on the host is
+# touched.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -215,8 +216,19 @@ reset_check; SSHD_T="$(printf '%s\n' "$T_PREP" | grep -v '^allowusers admin$')"
 expect_check 'with the admin missing from AllowUsers' fail 'sshd refuses a key login of admin: AllowUsers does not list admin'
 reset_check; SSHD_T=''; SSHD_T_RC=255
 expect_check 'with sshd -T failing' fail 'sshd -T could not read the configuration for admin'
+[[ $SSH_CHECK_FAILED != *'SSH key'* && $SSH_CHECK_PASSED == *"admin has 1 SSH key(s) (OpenSSH's default AuthorizedKeysFile, as sshd -T failed)"* ]] ||
+    fail "ssh_login_check with sshd -T failing: the keys are not counted in the default files: failed '$SSH_CHECK_FAILED', passed '$SSH_CHECK_PASSED'"
+reset_check; SSHD_T=''; SSHD_T_RC=255; : > "$test_home/.ssh/authorized_keys"
+expect_check 'with sshd -T failing and no key' fail "sshd -T could not read the configuration for admin; admin has no SSH key in its authorized_keys (OpenSSH's default AuthorizedKeysFile, as sshd -T failed)"
 reset_check; printf '# no key yet\n' > "$test_home/.ssh/authorized_keys"
 expect_check 'with no key for the admin' fail 'admin has no SSH key in its authorized_keys'
+[[ $SSH_CHECK_FAILED != *AuthorizedKeysCommand* ]] || fail "ssh_login_check with no key: names an AuthorizedKeysCommand: '$SSH_CHECK_FAILED'"
+reset_check; printf '# no key yet\n' > "$test_home/.ssh/authorized_keys"
+SSHD_T="$(printf '%s\nauthorizedkeyscommand none\n' "$T_PREP")"
+expect_check 'with no key and AuthorizedKeysCommand none' fail 'admin has no SSH key in its authorized_keys'
+reset_check; printf '# no key yet\n' > "$test_home/.ssh/authorized_keys"
+SSHD_T="$(printf '%s\nauthorizedkeyscommand /usr/local/bin/fetch-keys %%u\n' "$T_PREP")"
+expect_check 'with keys from an AuthorizedKeysCommand' fail 'admin has no SSH key in its AuthorizedKeysFile (keys from AuthorizedKeysCommand are not checked)'
 reset_check; rm -f "$test_home/.ssh/authorized_keys"; cp "$tmp/admin-key.pub" "$test_home/.ssh/authorized_keys2"
 expect_check 'with the key in authorized_keys2' ok 'admin has 1 SSH key(s)'
 rm -f "$test_home/.ssh/authorized_keys2"
@@ -225,6 +237,24 @@ expect_check 'with no SSH handshake' fail 'no SSH handshake on 127.0.0.1:822'
 reset_check; LISTEN=''; KEYSCAN=0
 expect_check 'with two checks failing' fail 'sshd does not listen on 822 (it listens on: nothing); no SSH handshake on 127.0.0.1:822'
 pass 'ssh_login_check logs each check and fails, naming it, when sshd is not on the new port, refuses the admin, the admin has no key or no handshake works'
+
+# nokey (--yes --force went past the no-key guard): only the key check is skipped, and the skip is logged
+reset_check; : > "$test_home/.ssh/authorized_keys"
+skip_text='key check skipped (--force): admin has no SSH key and can log in only on the console'
+st=0; ssh_login_check nokey > "$tmp/check-out" 2>&1 || st=$?
+[[ $st -eq 0 && -z $SSH_CHECK_FAILED && $SSH_CHECK_SKIPPED == "$skip_text" &&
+    $SSH_CHECK_PASSED == 'sshd listens on 822; sshd allows a key login of admin; SSH handshake on 127.0.0.1:822' ]] ||
+    fail "ssh_login_check nokey: status $st, failed '$SSH_CHECK_FAILED', skipped '$SSH_CHECK_SKIPPED', passed '$SSH_CHECK_PASSED'"
+grep -qF "login check: $skip_text" "$tmp/check-out" || fail "ssh_login_check nokey: the skip is not shown: $(cat "$tmp/check-out")"
+grep -qF "WARN: login check: $skip_text" "$LOG_FILE" || fail 'ssh_login_check nokey: the skip is not logged as a warning'
+reset_check; : > "$test_home/.ssh/authorized_keys"; KEYSCAN=0
+st=0; ssh_login_check nokey > "$tmp/check-out" 2>&1 || st=$?
+[[ $st -ne 0 && $SSH_CHECK_FAILED == 'no SSH handshake on 127.0.0.1:822' && $SSH_CHECK_SKIPPED == "$skip_text" ]] ||
+    fail "ssh_login_check nokey, no handshake: status $st, failed '$SSH_CHECK_FAILED', skipped '$SSH_CHECK_SKIPPED'"
+reset_check
+expect_check 'without nokey' ok 'admin has 1 SSH key(s)'
+[[ -z $SSH_CHECK_SKIPPED ]] || fail "ssh_login_check without nokey skipped '$SSH_CHECK_SKIPPED'"
+pass 'ssh_login_check nokey skips only the key check, logs the skip, and still fails on another check'
 
 # --- step_ssh with --yes: the check decides between phase B and the rollback -------------------------
 # Fakes for everything that would reach the host. write_sshd_config records the ports it writes; the
@@ -300,15 +330,46 @@ grep -qF 'Continue anyway (I have console/physical access)? no (--yes keeps the 
     fail "step_ssh, no key, --yes: the answer is not shown: $(cat "$tmp/step-out")"
 pass 'step_ssh with --yes and no admin key: the guard keeps its default (no) and the step changes nothing'
 
-# --yes --force goes past the guard; the real login check then fails on the missing key
+# --yes --force goes past the guard; the real login check then skips only its key check
 eval "$real_check"
-reset_step; : > "$test_home/.ssh/authorized_keys"; FORCE=1
+run_forced() {   # run_forced: step_ssh with --yes --force, no admin key and the real login check
+    reset_step; : > "$test_home/.ssh/authorized_keys"; FORCE=1
+    LISTEN='822 22 '; SSHD_T="$T_PREP"; SSHD_T_RC=0; KEYSCAN="$1"
+    st=0; step_ssh > "$tmp/step-out" 2>&1 || st=$?
+    c="$(calls)"
+}
+run_forced 1
+[[ $st -eq 0 && $c =~ write_sshd_config\ 22\ +822\; && $c == *systemd-run* && $c == *"systemctl stop $timer"* &&
+    $c == *'write_sshd_config 822;'* && $c == *ssh_close_old_ports* ]] ||
+    fail "step_ssh, no key, --yes --force: status $st, calls '$c', notes '$STEP_NOTES'"
+grep -qF 'Continue anyway (I have console/physical access)? yes (--force)' "$tmp/step-out" ||
+    fail "step_ssh, no key, --yes --force: the forced answer is not shown: $(cat "$tmp/step-out")"
+grep -qF "login check: $skip_text" "$tmp/step-out" || fail "step_ssh, no key, --yes --force: the skip is not shown: $(cat "$tmp/step-out")"
+[[ $STEP_NOTES == *'WARNING: admin has no SSH key'* &&
+    $STEP_NOTES == *"automatic login check passed (sshd listens on 822; sshd allows a key login of admin; SSH handshake on 127.0.0.1:822); $skip_text"* &&
+    $STEP_NOTES == *'old SSH port(s) 22 closed'* ]] ||
+    fail "step_ssh, no key, --yes --force: notes '$STEP_NOTES'"
+[[ ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *'admin has no SSH key (--force skipped the key check'* && ${MANUAL_TODO[0]} == *'--only users --dry-run'* ]] ||
+    fail "step_ssh, no key, --yes --force: todo '${MANUAL_TODO[*]}'"
+no_yes 'step_ssh, no key, --yes --force'
+pass 'step_ssh with --yes --force and no admin key: the login check skips only its key check and logs it, phase B runs and the timer stops'
+
+run_forced 0
+[[ $st -eq 1 && $c =~ write_sshd_config\ 22\ +822\; && $c == *systemd-run* && $c != *"stop $timer"* &&
+    $c != *'write_sshd_config 822;'* && $c != *ssh_close_old_ports* ]] ||
+    fail "step_ssh, no key, no handshake, --yes --force: status $st, calls '$c'"
+[[ $STEP_NOTES == *"automatic login check failed (no SSH handshake on 127.0.0.1:822); $skip_text: old SSH port(s) 22 and their temporary UFW rules kept"* ]] ||
+    fail "step_ssh, no key, no handshake, --yes --force: notes '$STEP_NOTES'"
+[[ ${MANUAL_TODO[*]} == *'no SSH handshake'* && ${MANUAL_TODO[*]} != *'SSH key'* ]] ||
+    fail "step_ssh, no key, no handshake, --yes --force: todo '${MANUAL_TODO[*]}'"
+no_yes 'step_ssh, no key, no handshake, --yes --force'
+pass 'step_ssh with --yes --force and no admin key: another failed check still keeps the old port and the rollback timer'
+
+# --yes --force with a key: nothing is skipped, the key is counted
+reset_step; FORCE=1
 LISTEN='822 22 '; SSHD_T="$T_PREP"; SSHD_T_RC=0; KEYSCAN=1
 st=0; step_ssh > "$tmp/step-out" 2>&1 || st=$?
-c="$(calls)"
-[[ $st -eq 1 && $c =~ write_sshd_config\ 22\ +822\; && $c == *systemd-run* && $c != *"stop $timer"* && $c != *ssh_close_old_ports* ]] ||
-    fail "step_ssh, no key, --yes --force: status $st, calls '$c'"
-[[ $STEP_NOTES == *'WARNING: admin has no SSH key'* && $STEP_NOTES == *'admin has no SSH key in its authorized_keys'* ]] ||
-    fail "step_ssh, no key, --yes --force: notes '$STEP_NOTES'"
-pass 'step_ssh with --yes --force and no admin key: the guard says yes, the login check fails and the rollback timer stays armed'
+[[ $st -eq 0 && $STEP_NOTES == *'admin has 1 SSH key(s)'* && $STEP_NOTES != *'key check skipped'* && ${#MANUAL_TODO[@]} -eq 0 ]] ||
+    fail "step_ssh, key, --yes --force: status $st, notes '$STEP_NOTES', todo '${MANUAL_TODO[*]}'"
+pass 'step_ssh with --yes --force and an admin key: the login check counts the key'
 FORCE=0
