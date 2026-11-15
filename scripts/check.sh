@@ -268,7 +268,7 @@ section_security() {
     DETAIL="scripts/check-files.sh, on the staged copy"
     bash scripts/check-files.sh || rc=$?
     if [[ $rc -eq 1 ]]; then
-        echo "It reads the staged copy: fix the file and git add it, or git rm --cached a forbidden file."
+        echo "It reads the staged copy: stage your fix before running the check again."
     fi
     return "$rc"
 }
