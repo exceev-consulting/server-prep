@@ -48,7 +48,7 @@ window.SERVER_PREP_DATA = {
       "name": "ssh",
       "title": "SSH security",
       "gate": null,
-      "details": "port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works"
+      "details": "port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server"
     },
     {
       "name": "ips",
@@ -584,7 +584,12 @@ window.SERVER_PREP_DATA = {
     {
       "script": "server-prep.sh",
       "flag": "--yes",
-      "help": "non-interactive: use config/env values and defaults"
+      "help": "non-interactive: use config/env values and each question's default (a default-no question stays no); the SSH step checks the login itself before it closes the old port"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "--force",
+      "help": "with --yes: also yes to the default-no questions (no SSH key for the admin, Docker restart); the SSH login check still runs. Without --yes it does nothing: questions still ask"
     },
     {
       "script": "server-prep.sh",

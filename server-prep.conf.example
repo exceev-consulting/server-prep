@@ -1,5 +1,9 @@
 # server-prep.conf - settings for a non-interactive run:
 #   sudo ./server-prep.sh --config server-prep.conf --yes
+# --yes answers each question with its default, so a default-no question stays no (the SSH step when
+#   ADMIN_USER has no SSH key, restarting running containers); --force with --yes answers yes to them.
+#   It is a command-line option only. The SSH step then checks the login on the server itself before
+#   it closes the old port, and keeps the old port and the 10-minute rollback when a check fails.
 # Check it first (no root needed): ./server-prep.sh --config server-prep.conf --validate
 # Copy this file, fill it in, and NEVER commit the filled copy (it is in .gitignore).
 # Every value is optional; the interactive mode asks for each of them.

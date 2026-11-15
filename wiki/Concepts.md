@@ -31,7 +31,7 @@ Moving SSH could cut you off, so the `ssh` step works in two phases:
 2. You open a **new** terminal and test `ssh -p 822 <user>@<server>`. You answer `y` (it works), `n` (roll back now) or `s` (skip, I have console access).
 3. **Phase B.** After `y` or `s`, the timer stops, sshd listens only on the new port, and the temporary firewall rule for the old port is removed. If something the script does not edit still keeps an old port open (a `Port` line in another included file, or an `ssh.socket` override), the step keeps that rule, fails and adds a todo that says what to remove. A re-run then finishes the move.
 
-**Known limit:** with `--yes`, the script does not wait for your test, so the timer stops right away. A fix is planned in [issue #65](https://github.com/exceev-consulting/server-prep/issues/65). Until then, change SSH interactively, or have console access.
+**With `--yes`**, nobody answers the test, so the script checks the login on the server itself before phase B ([issue #65](https://github.com/exceev-consulting/server-prep/issues/65)): sshd listens on the new port, `sshd -T` lets the admin log in with a key, the admin has a key, and an SSH handshake works on `127.0.0.1`. When every check passes, phase B runs and the timer stops. When one fails, phase B does not run: the old port and its temporary firewall rule stay, the timer puts back the old SSH config, and the step fails with a to-do that names the check. The check cannot see the firewall or the key on your computer, so change SSH interactively the first time, and have console access.
 
 Once SSH has moved, the `endlessh` step can put a *tarpit* on port 22: bots that still knock there get stuck on a very slow fake SSH banner.
 
