@@ -13,6 +13,17 @@ Highlights of each release. The full list of merged pull requests is in each
   `manage_etc_hosts: false`) so the next boot does not undo the hostname or `/etc/hosts`, and `--check` reports it
   (`pre.cloud_init_hostname`, INFO when cloud-init is disabled, as on Ubuntu installed from the ISO). A `cloud.cfg.d`
   file read after the drop-in still wins: the run and `--check` name it.
+- Fix: saving the SSH or Fail2ban tab of Dokploy's server Security dialog (Dokploy 0.31 and later) undid two
+  protections of server-prep without a word. `00-dokploy.conf` is read before `00-server-prep.conf`, so root could log
+  in with a key from any address (`PermitRootLogin prohibit-password`), and `jail.d/dokploy.local` replaced fail2ban's
+  whitelist, so the office IP or a tailnet device could be banned. The `ips` step now also writes
+  `/etc/fail2ban/jail.d/zz-server-prep.local`, read after such files, which keeps their whitelist and adds the tailnet
+  range, `PANEL_IP` and `ADMIN_IPS` back to the sshd jail (`rollback.sh` deletes it). The SSH step warns and adds a
+  to-do when a file read first changes one of its login settings. The audit has two new checks, both WARN in that
+  case: `ssh.dropin_override` names the file and the settings (`ssh.root_login` names it too), and `ips.f2b_ignoreip`
+  lists the addresses missing from the whitelist and the file that set it. The wiki's Panels page says which tabs of
+  the dialog to use on a prepared server and how to undo a save. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes`.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,

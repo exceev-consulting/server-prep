@@ -14,6 +14,7 @@ ssh-access|ssh|SSH as a user sees it after server-prep
 docker-firewall|firewall|Docker vs firewall: a published port stays closed from outside
 audit-prepared|audit|Audit the prepared server: 0 FAIL
 prep-rerun|server-prep|Second run changes nothing
+dokploy-overrides|server-prep|The files of the Dokploy Security dialog: the audit and the SSH step warn, the ips step restores the whitelist
 openship-paths|server-prep|PANEL=openship: AIDE skips the deploy files, auditd watches the SSH keys
 reboot|reboot|Reboot: SSH comes back on 822 and the settings stay
 audit-rebooted|audit|Audit after the reboot: still 0 FAIL
@@ -32,6 +33,34 @@ VM_CFG=/home/ops/ci.cfg         # tests/e2e/ci.cfg plus the keys of this run
 OPENSHIP_KEY_DIRS="/etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh"
 OPENSHIP_PATHS=0                # 1 once openship-paths has re-run aide and auditd with PANEL=openship
 PRECONFIG_HOST=""               # set once preconfig renamed the VM: the reboot checks the name stays (issue #81)
+# What Dokploy 0.31's server Security dialog writes when its SSH and Fail2ban tabs are saved on a
+# prepared server (issue #204, from Dokploy's server-security.ts), with an example address for the
+# Dokploy host. The SSH tab starts from sshd -T and refuses PermitRootLogin no for a root connection.
+DOKPLOY_SSHD='# Managed by Dokploy
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+PermitRootLogin prohibit-password
+MaxAuthTries 3'
+DOKPLOY_JAIL='# Managed by Dokploy
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+ignoreip = 127.0.0.1/8 ::1 203.0.113.5
+banaction = nftables
+banaction_allports = nftables[type=allports]
+
+[sshd]
+enabled = true
+port = 822
+
+[dokploy-manual]
+enabled = true
+filter =
+backend = polling
+logpath = /dev/null
+banaction = %(banaction_allports)s
+bantime = -1'
 
 # --------------------------------------------------------------------------- helpers
 
@@ -183,8 +212,8 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
     fi
     check_eq "0 FAIL" "$(jq .summary.fail "$AUDIT_JSON")" 0
     check_eq "the audit exits 0" "$1" 0
-    for id in ssh.root_login ssh.password_auth ssh.port ssh.max_auth ssh.allow_users fw.status \
-        fw.docker_bypass net.exposure ips.fail2ban ips.crowdsec ips.crowdsec_bouncer ips.f2b_sshd_jail \
+    for id in ssh.root_login ssh.password_auth ssh.port ssh.max_auth ssh.allow_users ssh.dropin_override fw.status \
+        fw.docker_bypass net.exposure ips.fail2ban ips.crowdsec ips.crowdsec_bouncer ips.f2b_sshd_jail ips.f2b_ignoreip \
         upd.unattended upd.third_party upd.repo_keys acc.sudo_log acc.password_policy acc.password_dict kern.sysctl mon.auditd \
         dock.log_rotation res.swap panel.root_key; do
         st="$(audit_status "$id")"
@@ -507,6 +536,77 @@ sc_prep_rerun() {
     check "after it, DOCKER-USER still goes through UFW" $? "$(head -c 300 <<<"$chain")"
     grep -q CROWDSEC <<<"$chain"
     check "after it, DOCKER-USER still goes through CrowdSec" $? "$(head -c 300 <<<"$chain")"
+    finish
+}
+
+f2b_whitelist() {   # the sshd jail's ignoreip as fail2ban has it, one entry per line, once fail2ban answers
+    SSH_LIMIT=120 as_root 'for i in $(seq 1 60); do fail2ban-client get sshd ignoreip 2>/dev/null && exit 0; sleep 1; done; exit 1' \
+        < /dev/null | sed -nE 's/^[|`]- //p'
+}
+
+# Issue #204: a save in Dokploy's Security dialog on a server prepared before zz-server-prep.local
+# existed. Its two files win over server-prep's: the audit must say so, the SSH step warn, and the ips
+# step put the whitelist back. Dokploy's files go at the end, so later scenarios see the prepared server.
+sc_dokploy_overrides() {
+    begin dokploy-overrides
+    local rc st msg got ip bad
+    # sshd -T and the audit read the files, so SSH needs no reload. Dokploy restarts fail2ban.
+    as_root 'install -m 644 /dev/stdin /etc/ssh/sshd_config.d/00-dokploy.conf' <<<"$DOKPLOY_SSHD"
+    check "Dokploy's 00-dokploy.conf is in place" $?
+    as_root 'install -m 644 /dev/stdin /etc/fail2ban/jail.d/dokploy.local' <<<"$DOKPLOY_JAIL"
+    check "Dokploy's jail.d/dokploy.local is in place" $?
+    as_root 'rm -f /etc/fail2ban/jail.d/zz-server-prep.local && sshd -t && systemctl restart fail2ban' < /dev/null 2>&1 | log_to > /dev/null
+    check "without zz-server-prep.local, as before this fix: sshd -t passes and fail2ban restarts" "${PIPESTATUS[0]}"
+    got="$(f2b_whitelist)"
+    printf 'fail2ban-client get sshd ignoreip with dokploy.local:\n%s\n' "$got" >> "$OUT/$SC_ID.log"
+    grep -qxF 203.0.113.5 <<<"$got" && ! grep -qxF 100.64.0.0/10 <<<"$got"
+    check "control: dokploy.local replaces the whitelist (Dokploy's address in, the tailnet out)" $? "$(paste -sd' ' <<<"$got")"
+
+    run_audit dokploy
+    if [[ -n "$AUDIT_JSON" ]]; then
+        st="$(audit_status ssh.dropin_override)"; msg="$(audit_message ssh.dropin_override)"
+        [[ $st == WARN && $msg == *"00-dokploy.conf is read first and sets PermitRootLogin prohibit-password"* ]]
+        check "ssh.dropin_override warns: 00-dokploy.conf is read first and sets PermitRootLogin prohibit-password" $? "$st: ${msg:0:300}"
+        st="$(audit_status ssh.root_login)"; msg="$(audit_message ssh.root_login)"
+        [[ $st == WARN && $msg == *00-dokploy.conf* ]]
+        check "ssh.root_login warns and names 00-dokploy.conf" $? "$st: ${msg:0:300}"
+        st="$(audit_status ips.f2b_ignoreip)"; msg="$(audit_message ips.f2b_ignoreip)"
+        [[ $st == WARN && $msg == *100.64.0.0/10* && $msg == *198.51.100.2* && $msg == *dokploy.local* ]]
+        check "ips.f2b_ignoreip warns: the tailnet and the admin address are missing, the list set by dokploy.local" $? "$st: ${msg:0:300}"
+    else
+        check "the audit writes a JSON report" 1
+    fi
+
+    # The SSH step has nothing to write: it warns and adds a to-do. The ips step adds the addresses back.
+    run_prep dokploy --config "$VM_CFG" --yes --only ssh,ips; rc=$?
+    check_eq "a re-run of the ssh and ips steps exits 0" "$rc" 0
+    if [[ -n "$PREP_JSON" ]]; then
+        got="$(jq -r '.steps[] | select(.name == "ssh") | .result' "$PREP_JSON" 2>/dev/null)"
+        check_eq "the SSH step changes nothing (report only)" "$got" already_ok
+        got="$(jq -r '[.todo[] | select(contains("00-dokploy.conf"))] | length' "$PREP_JSON" 2>/dev/null)"
+        check_eq "the run's to-do names 00-dokploy.conf once" "$got" 1
+        jq -e '.files.created | index("/etc/fail2ban/jail.d/zz-server-prep.local")' "$PREP_JSON" > /dev/null 2>&1
+        check "the ips step creates /etc/fail2ban/jail.d/zz-server-prep.local, which rollback.sh deletes" $?
+        got="$(jq -r '[.audit.changed[] | select(.id == "ips.f2b_ignoreip") | "\(.before) \(.after)"] | first // "unchanged"' "$PREP_JSON" 2>/dev/null)"
+        check_eq "the run's own audits see ips.f2b_ignoreip go from WARN to PASS" "$got" "WARN PASS"
+    else
+        check "the run writes a JSON report" 1
+    fi
+    got="$(f2b_whitelist)"
+    printf 'fail2ban-client get sshd ignoreip after the ips step:\n%s\n' "$got" >> "$OUT/$SC_ID.log"
+    bad=""
+    for ip in 100.64.0.0/10 198.51.100.2 203.0.113.5; do grep -qxF -- "$ip" <<<"$got" || bad+=" $ip"; done
+    [[ -z $bad ]]; check "fail2ban's sshd jail ignores the tailnet and the admin address again, and keeps Dokploy's" $? "missing:$bad"
+
+    # Back to the prepared server: Dokploy's files go, zz-server-prep.local stays
+    as_root 'rm -f /etc/ssh/sshd_config.d/00-dokploy.conf /etc/fail2ban/jail.d/dokploy.local && systemctl restart fail2ban' \
+        < /dev/null 2>&1 | log_to > /dev/null
+    check "Dokploy's files are deleted and fail2ban restarts without them" "${PIPESTATUS[0]}"
+    got="$(f2b_whitelist)"
+    bad=""
+    for ip in 100.64.0.0/10 198.51.100.2; do grep -qxF -- "$ip" <<<"$got" || bad+=" missing $ip"; done
+    grep -qxF 203.0.113.5 <<<"$got" && bad+=" still 203.0.113.5"
+    [[ -z $bad ]]; check "without dokploy.local, the whitelist is server-prep's again" $? "$bad"
     finish
 }
 

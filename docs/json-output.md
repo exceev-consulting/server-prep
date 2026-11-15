@@ -128,6 +128,7 @@ score = (pass*100 + warn*50) / (pass + warn + fail)
   (`Cannot read UFW status without root`) or `acc.sudo_log`;
 - `upd.third_party` gives WARN, not INFO, when `THIRD_PARTY_AUTO_UPDATE=no`: the saved answers
   (`/etc/server-prep/server-prep.conf`) are root only;
+- `ips.f2b_ignoreip` gives INFO: it reads the addresses to look for in the same root-only file;
 - the SSH checks read the config files instead of sshd's effective config (`sshd -T`);
 - these root-only checks are missing: `ssh.root_keys`, `acc.empty_passwords`, `acc.nopasswd`, `kern.world_writable`,
   `kern.suid`, `dock.privileged`, `panel.root_key` and `panel.proxy`.
@@ -206,6 +207,7 @@ not a FAIL. The id's prefix is not always its category: `net.exposure` is in `fi
 | `ssh.x11` | X11 forwarding is off | PASS, WARN | an SSH server is installed |
 | `ssh.allow_users` | `AllowUsers` or `AllowGroups` is set | PASS, WARN | an SSH server is installed |
 | `ssh.root_keys` | root's keys are restricted with `from=` | PASS, WARN | root only, and `/root/.ssh/authorized_keys` is not empty |
+| `ssh.dropin_override` | no line that sshd reads before `00-server-prep.conf` (an earlier drop-in such as Dokploy's `00-dokploy.conf`, or the main file before its `Include`) sets one of its login settings (`PermitRootLogin`, `PasswordAuthentication`, `KbdInteractiveAuthentication`, `AuthenticationMethods`, `AllowUsers`, `MaxAuthTries`, `Port`) to another value. The message names the file and the settings | PASS, WARN, INFO | an SSH server is installed (INFO when `/etc/ssh/sshd_config.d/00-server-prep.conf` does not exist or cannot be read) |
 
 #### firewall
 
@@ -224,6 +226,7 @@ not a FAIL. The id's prefix is not always its category: `net.exposure` is in `fi
 | `ips.crowdsec_bouncer` | a firewall bouncer enforces CrowdSec's bans, also for container ports | PASS, WARN, FAIL | CrowdSec is running |
 | `ips.any` | at least one of fail2ban and CrowdSec is active | PASS, WARN, FAIL | always |
 | `ips.f2b_sshd_jail` | the fail2ban `[sshd]` jail is on and covers the SSH port | PASS, WARN, FAIL | fail2ban is installed and `/etc/fail2ban` exists |
+| `ips.f2b_ignoreip` | the `[sshd]` jail's whitelist (`ignoreip`) still holds the addresses the ips step adds: the tailnet range, `PANEL_IP` and each `ADMIN_IPS` entry of `/etc/server-prep/server-prep.conf`. A file read after `jail.local`, such as Dokploy's `jail.d/dokploy.local`, can replace it: the message names that file. The list comes from `fail2ban-client get sshd ignoreip`, or from the files when fail2ban does not answer | PASS, WARN, INFO | fail2ban is installed and `/etc/fail2ban` exists (INFO without the saved answers, which are root only, with `INSTALL_FAIL2BAN=no`, or with no address to look for) |
 | `ips.failed_logins` | failed SSH logins in the last 24 hours | PASS, WARN, FAIL | always |
 
 #### accounts
