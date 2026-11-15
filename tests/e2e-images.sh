@@ -12,23 +12,25 @@ ok()  { printf 'ok: %s\n' "$1"; }
 bad() { printf 'not ok: %s\n' "$1"; fail=1; }
 
 # The fake curl serves https://HOST/PATH from $FAKE_SITE/HOST/PATH (index.html for a folder),
-# fails like curl -f on a missing file, and logs every URL it is asked for.
+# fails like curl -f on a missing file, and logs every URL it is asked for ("HEAD URL" for -I).
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/curl" <<'EOF'
 #!/usr/bin/env bash
-out="" url=""
+out="" url="" head=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         -o) out=$2; shift 2 ;;
         --retry|--connect-timeout) shift 2 ;;
+        --head|-[!-]*I*) head="HEAD "; shift ;;
         https://*) url=$1; shift ;;
         *) shift ;;
     esac
 done
-echo "$url" >> "$FAKE_LOG"
+echo "$head$url" >> "$FAKE_LOG"
 f="$FAKE_SITE/${url#https://}"
 [[ $f == */ ]] && f+=index.html
 [[ -f $f ]] || exit 22
+[[ -n $head ]] && exit 0
 if [[ -n $out ]]; then cp "$f" "$out"; else cat "$f"; fi
 EOF
 chmod +x "$tmp/bin/curl"
@@ -48,6 +50,7 @@ mkdir -p "$E2E_DIR"
 sleep() { :; }   # fetch waits between its tries
 
 OSD="$FAKE_SITE/images.example.com/os"
+INDEX=https://images.example.com/os/   # the build list of the dated row
 reset_site() { rm -rf "$FAKE_SITE" "$CACHE_DIR" "$FAKE_LOG"; mkdir -p "$OSD"; }
 site_build() {   # site_build BUILD: a complete build folder, its image and its SHA512SUMS
     mkdir -p "$OSD/$1"
@@ -79,6 +82,13 @@ if get fixed && [[ $IMAGE_CHECKSUM == "sha256:$want" ]] && cmp -s "$IMAGE" "$FAK
     && [[ $OS_IMAGE_URL == https://images.example.com/fixed/release/os.img ]] && [[ $(fetched '/os/$') == 0 ]]; then
     ok "a fixed URL is downloaded and checked as before, with no build list"
 else bad "fixed URL"; show; fi
+
+# Before a build is picked, a dated row names its build list, not a {build} URL: results.json
+# links OS_IMAGE_URL even when the run stops before boot.
+os_load dated
+[[ $OS_IMAGE_URL == "$INDEX" && $OS_SUMS_URL == "$INDEX" ]] \
+    && ok "os_load: a dated row's URLs name the build list until a build is picked" \
+    || bad "os_load dated: $OS_IMAGE_URL $OS_SUMS_URL"
 
 # Dated builds: the newest one, compared by date then build number.
 reset_site
@@ -120,6 +130,13 @@ if get dated && [[ $OS_IMAGE_URL == */20261103-2651/* ]] && grep -q 'cannot down
     && [[ -z $(find "$CACHE_DIR" -name '*.part') ]]; then
     ok "the newest build's image is missing: the build before it is used"
 else bad "missing image"; show; fi
+# The CI cache key must name that build too, or the older image is cached under the newer key.
+: > "$FAKE_LOG"
+os_load dated
+image_resolve && [[ $OS_SUMS_URL == */20261103-2651/SHA512SUMS ]] && [[ $(fetched '^HEAD ') == 2 ]] \
+    && [[ $(fetched '^https://.*\.qcow2$') == 0 ]] \
+    && ok "image_resolve (--image-key) skips the build whose image is missing, with HEAD requests only" \
+    || { bad "image_resolve, missing image: $OS_SUMS_URL"; cat "$FAKE_LOG"; }
 
 # The newest build's image does not match its checksum (half copied).
 reset_site
@@ -152,14 +169,24 @@ else bad "no usable build (checksum '$IMAGE_CHECKSUM', url $OS_IMAGE_URL)"; show
 [[ $(sort -u "$FAKE_LOG" | grep -c 'SHA512SUMS$') == "$BUILD_TRIES" ]] && [[ $(fetched '20261001-2618') == 0 ]] \
     && ok "it tries the $BUILD_TRIES newest builds, no more" || { bad "builds tried"; cat "$FAKE_LOG"; }
 
-# The build list cannot be read, or lists no build.
+# The build list cannot be read, or lists no build: the report and the messages name the build
+# list, never a URL with {build} in it.
 reset_site
 rm -f "$OSD/index.html"
-! get dated && grep -q 'cannot read https://images.example.com/os/$' "$tmp/out" \
-    && ok "the build list cannot be read: it fails and says which page" || { bad "no build list"; show; }
+if ! get dated && grep -q 'cannot read https://images.example.com/os/$' "$tmp/out" \
+    && [[ $OS_IMAGE_URL == "$INDEX" && $OS_SUMS_URL == "$INDEX" ]]; then
+    ok "the build list cannot be read: it fails, says which page, and the report links that page"
+else bad "no build list (url $OS_IMAGE_URL)"; show; fi
+os_load dated; os_use_build 20261111-2659   # left over from an earlier choice
+if ! image_resolve 2> "$tmp/out" && grep -q 'cannot read https://images.example.com/os/$' "$tmp/out" \
+    && [[ $OS_IMAGE_URL == "$INDEX" && $OS_SUMS_URL == "$INDEX" ]]; then
+    ok "image_resolve: the build list cannot be read, it says which page"
+else bad "image_resolve, no build list (url $OS_SUMS_URL)"; show; fi
 site_index
-! get dated && grep -q 'no build folder listed in https://images.example.com/os/$' "$tmp/out" \
-    && ok "the build list holds no build: it fails and says so" || { bad "empty build list"; show; }
+if ! get dated && grep -q 'no build folder listed in https://images.example.com/os/$' "$tmp/out" \
+    && [[ $OS_IMAGE_URL == "$INDEX" ]]; then
+    ok "the build list holds no build: it fails and says so"
+else bad "empty build list (url $OS_IMAGE_URL)"; show; fi
 
 # The real images.tsv: {build} rows name it in both URLs, in the same folder, and run.sh --image-key
 # works on them against a fake copy of the build list.
@@ -183,6 +210,12 @@ for id in $(os_list); do
     key="$(E2E_CACHE="$tmp/key-cache" bash "$SCRIPT_DIR/tests/e2e/run.sh" --image-key --os "$id" 2>&1)"
     [[ $key == "$id-$(sum512 "$d/${OS_IMAGE_URL##*/}" | cut -c1-16)" ]] \
         && ok "$id: run.sh --image-key reads the newest build" || bad "$id: --image-key printed '$key'"
+    rm "${index}index.html"
+    key="$(E2E_CACHE="$tmp/key-cache" bash "$SCRIPT_DIR/tests/e2e/run.sh" --image-key --os "$id" 2>&1)" \
+        && bad "$id: --image-key with no build list printed '$key'"
+    [[ $key == "cannot read $(os_build_index)" ]] \
+        && ok "$id: run.sh --image-key with no build list names that page" \
+        || bad "$id: --image-key with no build list said '$key'"
 done
 ((n > 0)) && ok "images.tsv has $n row(s) with dated builds" || bad "no {build} row in images.tsv"
 

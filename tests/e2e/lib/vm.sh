@@ -14,6 +14,7 @@ VM_DOCKER_PORT=18080   # guest port the firewall test publishes a container on
 # also has its own dated folder (trixie/20261111-2659/), which no longer changes once published.
 # A row whose URLs hold {build} uses those folders: the newest build whose checksum file lists
 # the image and whose image downloads with that checksum, else the one before it (BUILD_TRIES).
+# Until a build is picked, its URLs name the page that lists the builds, never {build}.
 BUILD_TAG='{build}'
 BUILD_TRIES=3
 
@@ -21,8 +22,9 @@ os_load() {   # os_load ID: read the row of tests/e2e/images.tsv into OS_*
     local id="$1" row
     row="$(awk -F'\t' -v id="$id" '!/^#/ && $1 == id' "$E2E_DIR/images.tsv")"
     [[ -n "$row" ]] || return 1
-    IFS=$'\t' read -r OS_ID OS_LABEL OS_IMAGE_URL OS_SUMS_URL OS_ALGO <<<"$row"
-    OS_IMAGE_TEMPLATE="$OS_IMAGE_URL" OS_SUMS_TEMPLATE="$OS_SUMS_URL"
+    IFS=$'\t' read -r OS_ID OS_LABEL OS_IMAGE_TEMPLATE OS_SUMS_TEMPLATE OS_ALGO <<<"$row"
+    OS_IMAGE_URL="$OS_IMAGE_TEMPLATE" OS_SUMS_URL="$OS_SUMS_TEMPLATE"
+    if os_dated; then os_use_index; fi
 }
 
 os_list() { awk -F'\t' '!/^#/ && NF {print $1}' "$E2E_DIR/images.tsv"; }
@@ -35,6 +37,10 @@ os_use_build() {   # os_use_build BUILD: point OS_IMAGE_URL and OS_SUMS_URL at t
     OS_IMAGE_URL="${OS_IMAGE_TEMPLATE//"$BUILD_TAG"/$1}"
     OS_SUMS_URL="${OS_SUMS_TEMPLATE//"$BUILD_TAG"/$1}"
 }
+
+# os_use_index: no build picked yet, so OS_IMAGE_URL and OS_SUMS_URL name the build list, a real
+# page, for the report link and the error messages
+os_use_index() { OS_IMAGE_URL="$(os_build_index)" OS_SUMS_URL="$(os_build_index)"; }
 
 fetch() {   # fetch URL FILE: download with retries, atomically
     local url="$1" file="$2" try
@@ -65,13 +71,24 @@ image_checksum() {   # image_checksum: expected checksum of the image, from the 
     awk -v n="$name" '$2 == n || $2 == "*" n {print $1; exit}' "$sums"
 }
 
-image_resolve() {   # image_resolve: for a dated row, use the newest build whose sums file lists the image
-    local b
+image_there() {   # image_there: the image at OS_IMAGE_URL answers a HEAD request (no download)
+    curl -fsIL --retry 2 --connect-timeout 20 -o /dev/null "$OS_IMAGE_URL"
+}
+
+# image_resolve: for a dated row, use the newest build whose sums file lists the image and whose
+# image is there. That is the build image_get boots unless its image does not match: run.sh
+# --image-key names the CI image cache after it, so the cache must not get an older build's image.
+image_resolve() {
+    local builds b
     os_dated || return 0
-    for b in $(os_builds); do
+    os_use_index
+    builds="$(os_builds)" || { echo "cannot read $(os_build_index)" >&2; return 1; }
+    for b in $builds; do
         os_use_build "$b"
-        [[ -n "$(image_checksum)" ]] && return 0
+        [[ -n "$(image_checksum)" ]] && image_there && return 0
     done
+    os_use_index
+    echo "no build listed in $(os_build_index) has its image and its checksum" >&2
     return 1
 }
 
@@ -98,6 +115,7 @@ image_get() {   # image_get: make sure $IMAGE is the published image, downloadin
     local builds b
     IMAGE="$CACHE_DIR/images/$OS_ID.img" IMAGE_CHECKSUM=""
     os_dated || { image_fetch; return; }
+    os_use_index
     builds="$(os_builds)" || { echo "cannot read $(os_build_index)" >&2; return 1; }
     [[ -n "$builds" ]] || { echo "no build folder listed in $(os_build_index)" >&2; return 1; }
     for b in $builds; do
