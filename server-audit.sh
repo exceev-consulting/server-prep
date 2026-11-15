@@ -1031,23 +1031,30 @@ fi
 # fail2ban [sshd] jail must watch the port sshd really listens on
 # jail_option_set SECTION OPTION: "FILE<TAB>VALUE" for the file that sets OPTION in [SECTION] last in
 # fail2ban's read order (jail.conf, jail.d/*.conf, jail.local, jail.d/*.local), so the value fail2ban
-# uses; nothing when no file sets it. A value can go on over indented lines, and " ;" starts a
-# comment. F2B_DIR is /etc/fail2ban, another folder only in tests.
+# uses; nothing when no file sets it. The file is read as fail2ban's parser (Python's configparser)
+# reads it: a line indented deeper than the option line before it goes on with that option's value,
+# a line indented as much is the next option, a blank or comment line ("#" or ";" first) does not end
+# a value, " ;" starts a comment, and "=" or ":" ends the option name. Values that go on over lines
+# are joined with spaces. F2B_DIR is /etc/fail2ban, another folder only in tests.
 jail_option_set() {
     local section="$1" option="$2" d="${F2B_DIR:-/etc/fail2ban}" file value result=""
     for file in "$d"/jail.conf "$d"/jail.d/*.conf "$d"/jail.local "$d"/jail.d/*.local; do
         [[ -f "$file" ]] || continue
         value=$(awk -v sect="$section" -v opt="$option" '
-            { sub(/\r$/, "") }
-            /^[[:space:]]*\[/ { in_sect = ($0 ~ "^[[:space:]]*\\[" sect "\\][[:space:]]*$"); cont = 0; next }
-            cont && /^[[:space:]]+[^[:space:]#;]/ {
-                v = $0; sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+;.*$/, "", v); sub(/[[:space:]]+$/, "", v)
-                val = val " " v; next
+            {   # the line without its indent, comment and trailing blanks
+                sub(/\r$/, ""); c = $0; sub(/^[[:space:]]+/, "", c)
+                if (c ~ /^[#;]/) c = ""
+                sub(/[[:space:]];.*$/, "", c); sub(/[[:space:]]+$/, "", c)
             }
-            { cont = 0 }
-            in_sect && tolower($0) ~ "^[[:space:]]*" opt "[[:space:]]*=" {
-                v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); sub(/[[:space:]]+;.*$/, "", v); sub(/[[:space:]]+$/, "", v)
-                val = v; cont = 1
+            c == "" { next }
+            { ind = match($0, /[^[:space:]]/) - 1 }
+            # deeper than the last option line: more of its value (a section header ends the option)
+            inopt && ind > lvl { if (mine) val = (val == "" ? c : val " " c); next }
+            { lvl = ind; inopt = 0; mine = 0 }
+            c ~ /^\[/ { in_sect = (c == "[" sect "]"); next }
+            { inopt = 1 }
+            in_sect && tolower(c) ~ "^" opt "[[:space:]]*[=:]" {
+                val = c; sub(/^[^=:]*[=:][[:space:]]*/, "", val); mine = 1
             }
             END { if (val != "") print val }' "$file" 2>/dev/null)
         [[ -n "$value" ]] && result="${file}"$'\t'"${value}"
@@ -1183,6 +1190,11 @@ prep_conf_value() {
     done
     printf '%s' "$out$v"
 }
+# prep_conf_missing: true when PREP_CONF is not there. Without root, the folder that server-prep
+# makes for it (/etc/server-prep, mode 0700) hides whether it is: then it is unreadable, not missing.
+prep_conf_missing() {
+    [[ ! -e $PREP_CONF ]] && { [[ -x ${PREP_CONF%/*} ]] || [[ ! -e ${PREP_CONF%/*} ]]; }
+}
 port_in_list() {
     local list="$1" target="$2" tok a b IFS=','
     for tok in $list; do
@@ -1227,7 +1239,7 @@ if [[ $F2B -ge 1 && -d /etc/fail2ban ]]; then
     if [[ -n "$f2b_unset" ]]; then
         result ips.f2b_ignoreip WARN "fail2ban whitelist" "fail2ban rejects its configuration, so no jail runs (or none after its next restart): ${f2b_unset} adds to a [DEFAULT] ignoreip that no file sets, as when jail.local is deleted" \
             "Write jail.local back: sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes. Or delete ${f2b_unset##*/} with it: sudo rm ${f2b_unset} && sudo systemctl restart fail2ban"
-    elif [[ ! -e "$PREP_CONF" ]]; then
+    elif prep_conf_missing; then
         result ips.f2b_ignoreip INFO "fail2ban whitelist" "No saved server-prep answers (${PREP_CONF}): no address to look for"
     elif [[ ! -r "$PREP_CONF" ]]; then
         result ips.f2b_ignoreip INFO "fail2ban whitelist" "Cannot read ${PREP_CONF}, which lists the addresses to look for$(need_root_note)"

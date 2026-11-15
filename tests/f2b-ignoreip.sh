@@ -4,9 +4,10 @@
 # [DEFAULT] ignoreip and drop server-prep's addresses. The ips step adds them back in
 # jail.d/zz-server-prep.local (f2b_prep_local in server-prep.sh), and the audit's ips.f2b_ignoreip
 # reads the list (jail_option_set, f2b_files_ignoreip), compares it with the saved answers
-# (prep_conf_value) and names what is missing (f2b_missing, ip_bits), or warns that the file is left
-# without the [DEFAULT] ignoreip it extends (f2b_unset_known). All on sample files in a temporary
-# folder. When fail2ban is installed here, its own parser also reads server-prep's file.
+# (prep_conf_value, prep_conf_missing) and names what is missing (f2b_missing, ip_bits), or warns
+# that the file is left without the [DEFAULT] ignoreip it extends (f2b_unset_known). All on sample
+# files in a temporary folder. When fail2ban is installed here, its own parser also reads
+# server-prep's file and an indented jail.local.
 # No root needed, nothing on the host changes.
 set -u
 
@@ -21,7 +22,7 @@ fi
 trap 'rm -rf "$tmp"' EXIT
 
 # server-audit.sh runs its checks on load, so it cannot be sourced: take the functions only.
-for fn in jail_option_set get_jail_option f2b_files_ignoreip f2b_unset_known ip_bits f2b_missing prep_conf_value; do
+for fn in jail_option_set get_jail_option f2b_files_ignoreip f2b_unset_known ip_bits f2b_missing prep_conf_value prep_conf_missing; do
     eval "$(sed -n "/^${fn}() {/,/^}/p" "$SCRIPT_DIR/server-audit.sh")"
     declare -F "$fn" >/dev/null || fail "$fn not found in server-audit.sh"
 done
@@ -148,6 +149,22 @@ printf '[DEFAULT]\nignoreip = 127.0.0.1/8 ; the loopback\n           192.0.2.0/2
 files 'a value over two lines, with a " ;" comment' "$F2B_DIR/jail.d/other.local" '127.0.0.1/8 192.0.2.0/24'
 printf '[sshd]\nignoreip = 192.0.2.7\n' > "$F2B_DIR/jail.d/other.local"
 files '[sshd] ignoreip wins over [DEFAULT], without known/ it replaces it' "$F2B_DIR/jail.d/other.local" '192.0.2.7'
+# Indents, as fail2ban's parser (Python's configparser) reads them: only a line indented deeper than
+# the option line goes on with its value, so options indented alike stay apart.
+printf '[DEFAULT]\n    ignoreip = 127.0.0.1/8 192.0.2.10\n    bantime = 1h\n[sshd]\n    enabled = false\n    port = 2222\n    mode = aggressive\n' \
+    > "$F2B_DIR/jail.d/other.local"
+files 'options indented alike: ignoreip stops before bantime' "$F2B_DIR/jail.d/other.local" '127.0.0.1/8 192.0.2.10'
+[[ "$(get_jail_option sshd enabled)" == false && "$(get_jail_option sshd port)" == 2222 && "$(get_jail_option DEFAULT bantime)" == 1h ]] ||
+    fail "get_jail_option: options indented alike: enabled '$(get_jail_option sshd enabled)', port '$(get_jail_option sshd port)', bantime '$(get_jail_option DEFAULT bantime)'"
+pass 'get_jail_option: options indented alike are separate options (enabled false, port 2222, bantime 1h)'
+printf '[DEFAULT]\n  ignoreip = 127.0.0.1/8\n      # the office\n      192.0.2.0/24\n\n      198.51.100.7 ; home\n  bantime = 1h\n' > "$F2B_DIR/jail.d/other.local"
+files 'deeper lines go on with the value, over a comment and a blank line' "$F2B_DIR/jail.d/other.local" '127.0.0.1/8 192.0.2.0/24 198.51.100.7'
+printf '[DEFAULT]\nbantime = 1h\n    ignoreip = 192.0.2.7\n' > "$F2B_DIR/jail.d/other.local"
+files 'a deeper line after another option is part of its value, not an option' "$F2B_DIR/jail.local" \
+    '127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+printf '[sshd]\nport: 2200\n' > "$F2B_DIR/jail.d/other.local"
+[[ "$(get_jail_option sshd port)" == 2200 ]] || fail "get_jail_option: 'port: 2200' gives '$(get_jail_option sshd port)'"
+pass 'get_jail_option: ":" ends the option name too'
 rm "$F2B_DIR/jail.d/other.local"
 
 # --- prep_conf_value: the saved answers, read and never sourced ---------------------------------------
@@ -198,6 +215,15 @@ printf 'ADMIN_IPS=$(touch %s/pwned)\n' "$tmp" > "$PREP_CONF"
 prep_conf_value ADMIN_IPS > /dev/null
 [[ ! -e "$tmp/pwned" ]] || fail 'prep_conf_value ran a command from the file'
 pass 'prep_conf_value never runs what the file holds'
+# prep_conf_missing: a folder that cannot be searched (/etc/server-prep is 0700, root's) does not
+# mean there is no file: ips.f2b_ignoreip then says it cannot read it, not that there are no answers.
+prep_conf_missing && fail "prep_conf_missing: $PREP_CONF is there"
+PREP_CONF="$tmp/none/server-prep.conf" prep_conf_missing || fail 'prep_conf_missing: no folder, no file'
+PREP_CONF="$tmp/nothing-here.conf" prep_conf_missing || fail 'prep_conf_missing: no file in a folder that can be read'
+mkdir "$tmp/locked" && : > "$tmp/locked/server-prep.conf" && chmod 000 "$tmp/locked"
+PREP_CONF="$tmp/locked/server-prep.conf" prep_conf_missing && { chmod 700 "$tmp/locked"; fail 'prep_conf_missing: a folder that cannot be searched counts as missing'; }
+chmod 700 "$tmp/locked"
+pass 'prep_conf_missing: true without the file, false when the file or a folder that hides it is there'
 
 # --- fail2ban's own parser, when it is installed here --------------------------------------------------
 if command -v fail2ban-client >/dev/null 2>&1 && [[ -r /etc/fail2ban/jail.conf && -d /etc/fail2ban/filter.d ]]; then
@@ -230,6 +256,16 @@ if command -v fail2ban-client >/dev/null 2>&1 && [[ -r /etc/fail2ban/jail.conf &
     [[ "$(F2B_DIR="$real" f2b_unset_known)" == "$real/jail.d/zz-server-prep.local" ]] ||
         fail "f2b_unset_known does not name zz-server-prep.local, which fail2ban refuses without jail.local"
     pass "fail2ban's own parser refuses zz-server-prep.local without jail.local's [DEFAULT] ignoreip, and f2b_unset_known names it"
+    # Indents: options indented alike, and a value that goes on over deeper lines past a comment
+    rm "$real/jail.d/zz-server-prep.local"
+    printf '[DEFAULT]\n    ignoreip = 127.0.0.1/8\n        # the office\n        192.0.2.10\n    bantime = 1h\n[sshd]\n    enabled = true\n    port = 2222\n' > "$real/jail.local"
+    got="$(fail2ban-client -c "$real" -d 2>&1)"
+    [[ $got == *"['set', 'sshd', 'addignoreip', '127.0.0.1/8', '192.0.2.10']"* && $got == *"['set', 'sshd', 'bantime', '1h']"* && $got == *"['port', '2222']"* ]] ||
+        fail "fail2ban's own parser reads the indented jail.local otherwise than expected: ${got:0:300}"
+    [[ "$(F2B_DIR="$real" f2b_files_ignoreip | cut -f2)" == '127.0.0.1/8 192.0.2.10' && "$(F2B_DIR="$real" get_jail_option DEFAULT bantime)" == 1h &&
+        "$(F2B_DIR="$real" get_jail_option sshd port)" == 2222 && "$(F2B_DIR="$real" get_jail_option sshd enabled)" == true ]] ||
+        fail "jail_option_set reads the indented jail.local otherwise than fail2ban's own parser"
+    pass "fail2ban's own parser and jail_option_set read the same values from an indented jail.local"
 else
     printf 'skip: fail2ban is not installed here, its own parser is not checked\n'
 fi

@@ -24,8 +24,9 @@ Highlights of each release. The full list of merged pull requests is in each
   `sshd_config` has no `Include` of `sshd_config.d`. The audit has two new checks, both WARN in those cases:
   `ssh.dropin_override` names the file and the settings (`ssh.root_login` names it too), and `ips.f2b_ignoreip` lists
   the addresses missing from the whitelist and the file that set it, or says that `zz-server-prep.local` is left
-  without `jail.local`. The wiki's Panels page says which tabs of the dialog to use on a prepared server and how to
-  undo a save. On a server prepared earlier, run
+  without `jail.local`. It and `ips.f2b_sshd_jail` read the jail files as fail2ban does: a value goes on over lines
+  indented deeper than its option, and ` ;` starts a comment. The wiki's Panels page says which tabs of the dialog to
+  use on a prepared server and how to undo a save. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes`.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
