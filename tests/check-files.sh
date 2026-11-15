@@ -227,7 +227,7 @@ expect_check() {   # expect_check WANT_STATUS LABEL CI TEXT...: runs check.sh --
     shift 3
     (cd "$tmp" && CI="$ci" XDG_CACHE_HOME="$tmp/cache" bash "$repo/scripts/check.sh" --only security) >"$tmp/out" 2>&1 || status=$?
     for text in "$@"; do
-        grep -qF -- "$text" "$tmp/out" || missing="$text"
+        grep -qF -- "$text" "$tmp/out" || missing+="${missing:+, }$text"
     done
     if [[ $status -ne $want || -n $missing ]]; then
         printf 'not ok: check.sh --only security %s (status %s, want %s%s)\n' "$label" "$status" "$want" \
