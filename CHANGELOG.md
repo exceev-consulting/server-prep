@@ -13,6 +13,14 @@ Highlights of each release. The full list of merged pull requests is in each
   UFW from the same addresses as the run's SSH rule, deletes the Endlessh rule, which would have left the old SSH open
   to everyone on 22, and checks the restored files with `sshd -t`. It starts with a warning to run it from the console,
   not over SSH, and prints what it does not undo.
+- Fix: the SSH step left the old SSH port open when `/etc/ssh/sshd_config` or another file in
+  `/etc/ssh/sshd_config.d/` had its own `Port` line (for example `Port 22`). sshd listens on every `Port` line it reads,
+  so every re-run moved SSH again, Endlessh skipped port 22 and the audit kept warning about it. The step now comments
+  out those `Port` lines, in the file a symlinked drop-in points to (each file is backed up first and put back by
+  `rollback.sh`). If SSH still listens on an old port after the move, the step fails, names the port and keeps that
+  port's temporary UFW rules; once the line that sets it is gone, a re-run restarts SSH and deletes them. On a server
+  prepared earlier, run `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh --dry-run`,
+  then the same command without `--dry-run` (not `--yes`, which skips the second-terminal login test).
 - With `PANEL=openship`, the daily AIDE check no longer fills with Openship's deploy changes: it now leaves out
   `/var/lib/openship` (except its SSH key folders), `/etc/openship/modules`, the OpenResty configs (`/etc/openresty`,
   `/usr/local/openresty/nginx/conf`) and the certificates certbot rewrites (`live`, `archive`, `csr` and `keys` under
@@ -38,6 +46,11 @@ Highlights of each release. The full list of merged pull requests is in each
   stable values (`changed`, `already_ok`, `skipped`, `failed`, `would_change`). The file holds no token and no full
   public key. Both report copies in your home are now written as your user, mode 600. The Markdown report's "Root SSH
   allowed from" row now lists the sources on a run without the users and ssh steps too, as the JSON does.
+- The SSH safety check now warns when `ADMIN_IPS` is empty, the firewall is on and SSH is allowed only from the panel's
+  IP (`PANEL_ACCESS=public` with `PANEL_IP`) or only through the Cloudflare tunnel (`PANEL_ACCESS=cloudflared`). The
+  firewall then blocks the test command with the local IP from your machine, so it says to test from the panel's host
+  as root with the panel key or through the tunnel with `cloudflared access ssh` instead, or to add your IP to
+  `ADMIN_IPS` and re-run the firewall step. The test command itself is unchanged.
 - **Security:** CrowdSec, cloudflared, Telegraf and Tailscale now get their security fixes automatically. They come from
   their own repositories, which unattended-upgrades skipped, so a fix waited until someone upgraded by hand. The
   `unattended` step adds their repositories (new setting `THIRD_PARTY_AUTO_UPDATE`, `yes` by default), and the new audit
