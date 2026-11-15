@@ -365,7 +365,9 @@ if [[ -z $ONLY || $ONLY == lint ]]; then
     find_shellcheck
 fi
 BATS=""
-if [[ -z $ONLY || $ONLY == tests ]]; then
+# Only when the tests section can run: without ssh-keygen the loop below shows it as SKIP (FAIL in
+# CI) before calling it, so bats-core is not downloaded for nothing.
+if [[ -z $ONLY || $ONLY == tests ]] && command -v ssh-keygen >/dev/null 2>&1; then
     find_bats
 fi
 
