@@ -50,6 +50,7 @@ Run these from the repo root. `scripts/check.sh` runs the checks of CI (`.github
 ./scripts/check.sh              # every CI lint check: bash -n, pinned ShellCheck -S warning, --help, site data, design tokens, tests
 ./scripts/check.sh --list       # the sections
 ./scripts/check.sh --only lint  # one section
+./scripts/check.sh --only tests # unit tests of the server-prep.sh helpers (bats tests/unit, pinned bats-core)
 scripts/check-files.sh          # after git add: no report, filled config, key or CLAUDE.local.md is tracked; every IPv4 is an example
 ./server-prep.sh --list-steps   # the step names, in run order
 ```
@@ -88,6 +89,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
   - Site data: `scripts/gen-data.sh` after changing a step, a setting, an audit check or those README tables. CI runs `scripts/gen-data.sh --check`.
   - Design tokens: `scripts/check-tokens.sh` after changing `site/tokens.css`, a copy of it (the e2e report's `report.css`) or the brand page's colour ramps (2.2 and 2.4). Other values on that page are checked by eye. CI runs it.
   - Exit status: `bash tests/exit-status.sh` checks argument validation and the real main function with host-changing calls stubbed out.
+  - Unit tests: `./scripts/check.sh --only tests` runs `tests/unit/*.bats` with bats-core pinned to 1.14.0, downloaded once to `${XDG_CACHE_HOME:-~/.cache}/server-prep/` with its SHA-256 checked on every run. Run it after changing a helper of `server-prep.sh` (`yes_`, `step_selected`, `valid_pubkey`, `write_file`, `set_kv`, `compute_root_sources`, `add_key`, the config loading). A new helper gets a test there. Once the script is sourced, `run` is its own `run()`, not the bats helper, and calls that change files go through `as_script` (errexit off, as in the script). No CI job runs them yet.
   - Audit matchers: `bash tests/audit-docker-user.sh` checks the audit's DOCKER-USER matcher on sample `iptables -S` output, `bash tests/audit-logind-lid.sh` its lid-switch parser (`lid_ignored`, used by `sys.laptop`) on sample `systemd-analyze cat-config` output, and `bash tests/audit-ufw-ports.sh` the UFW port matcher (`ufw_port_access`) on sample `ufw status` output (no root). `tests/exit-status.sh` runs all three, so CI covers them.
   - Audit JSON: `bash tests/audit-json.sh` checks the JSON writer's keys and `schema_version` against `docs/schemas/server-audit.schema.json` and that `docs/json-output.md` lists every check id in its category's table, with no stale row (no root). `tests/exit-status.sh` runs it too, so CI covers it.
   - Upgrade: `bash tests/upgrade.sh` checks `--upgrade` against a fake release served by a fake `curl` (no network, no root). `tests/exit-status.sh` runs it too, so CI covers it.
