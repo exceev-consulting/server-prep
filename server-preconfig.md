@@ -125,7 +125,7 @@ A fact that was not found, and a check without a fix, is `""`.
 | `pre.internet` | `ping 1.1.1.1` answers | PASS, FAIL | always |
 | `pre.dns` | `debian.org` resolves | PASS, FAIL | always |
 | `pre.dns_upstream` | Tailscale DNS has an upstream server | PASS, WARN | only with Tailscale DNS (MagicDNS) |
-| `pre.ssh_boot` | `ssh` starts at boot | PASS, FAIL | always |
+| `pre.ssh_boot` | `ssh` starts at boot (the message names `ssh.socket` when SSH is socket-activated, as on Ubuntu 24.04 and later) | PASS, FAIL | always |
 | `pre.tailscaled_boot` | `tailscaled` starts at boot | PASS, FAIL | Tailscale installed |
 | `pre.sleep` | sleep, suspend and hibernate are masked | PASS, WARN | always |
 | `pre.tailscale` | Tailscale is connected | PASS, FAIL, WARN (not installed) | always |

@@ -634,8 +634,9 @@ run_checks() {
     for s in "$ssh_unit" tailscaled; do
         [[ $s == tailscaled ]] && ! have tailscale && continue
         st=$(systemctl is-enabled "$s" 2>/dev/null)
-        if [[ $st == enabled ]]; then chk "pre.${s}_boot" PASS "$s enabled at boot"
-        else chk "pre.${s}_boot" FAIL "$s not enabled at boot ($st)" "sudo systemctl enable --now $s"; fi
+        # The id stays pre.ssh_boot when SSH is socket-activated: only the message names ssh.socket.
+        if [[ $st == enabled ]]; then chk "pre.${s%%.*}_boot" PASS "$s enabled at boot"
+        else chk "pre.${s%%.*}_boot" FAIL "$s not enabled at boot ($st)" "sudo systemctl enable --now $s"; fi
     done
 
     local t bad=""

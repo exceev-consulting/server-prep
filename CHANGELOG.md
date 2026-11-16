@@ -5,6 +5,8 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- `server-preconfig.sh --check --json` names the SSH boot check `pre.ssh_boot` on Ubuntu 24.04 and 26.04 too, as the
+  guide says. Where SSH starts from `ssh.socket`, the id was `pre.ssh.socket_boot`; now only the message names `ssh.socket`.
 - `server-preconfig.sh` no longer fails with `--yes` (or Enter) when the server's current name has capitals or a
   domain, such as `Web-01` or `vps123.example.net`. The default hostname is now the short name in lowercase (`web-01`,
   `vps123`), and the script says when it differs from the current name. The `127.0.1.1` line of `/etc/hosts` keeps its
