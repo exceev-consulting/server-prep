@@ -190,7 +190,22 @@ allows 'an outgoing rule' no 822 '822/tcp                    ALLOW OUT   Anywher
 allows 'a route rule' no 822 'Anywhere                   ALLOW FWD   Anywhere'
 allows 'a comment that names the port' no 822 '22/tcp                     ALLOW IN    Anywhere                   # 822/tcp ALLOW IN'
 allows 'no rule' no 822 ''
+# UFW applies the first rule that matches: a DENY or REJECT from any source before the ALLOW blocks
+# the port, a ban of one source does not
+L_LIMIT='822/tcp                    LIMIT IN    Anywhere                   # server-prep: ssh'
+allows 'DENY before the LIMIT' no 822 "$(printf '%s\n%s' '822/tcp                    DENY IN     Anywhere' "$L_LIMIT")"
+allows 'REJECT before the LIMIT' no 822 "$(printf '%s\n%s' '822/tcp                    REJECT IN   Anywhere' "$L_LIMIT")"
+allows 'DENY of every port before the LIMIT' no 822 "$(printf '%s\n%s' 'Anywhere                   DENY IN     Anywhere' "$L_LIMIT")"
+allows 'DENY before the LIMIT, plain ufw status' no 822 "$(printf '%s\n%s' '822/tcp                    DENY        Anywhere' '822/tcp                    LIMIT       Anywhere')"
+allows 'IPv4 DENY before both LIMIT rules' no 822 "$(printf '%s\n%s\n%s' '822/tcp                    DENY IN     Anywhere' "$L_LIMIT" '822/tcp (v6)               LIMIT IN    Anywhere (v6)')"
+allows 'DENY after the LIMIT' yes 822 "$(printf '%s\n%s' "$L_LIMIT" '822/tcp                    DENY IN     Anywhere')"
+allows 'DENY of one source before the LIMIT (a ban)' yes 822 "$(printf '%s\n%s' '822/tcp                    DENY IN     198.51.100.2' "$L_LIMIT")"
+allows 'REJECT of one source on every port before the LIMIT' yes 822 "$(printf '%s\n%s' 'Anywhere                   REJECT IN   198.51.100.2' "$L_LIMIT")"
+allows 'DENY of another port before the LIMIT' yes 822 "$(printf '%s\n%s' '22/tcp                     DENY IN     Anywhere' "$L_LIMIT")"
+allows 'outgoing DENY before the LIMIT' yes 822 "$(printf '%s\n%s' '822/tcp                    DENY OUT    Anywhere' "$L_LIMIT")"
+allows 'IPv6 DENY after the IPv4 LIMIT' yes 822 "$(printf '%s\n%s' "$L_LIMIT" '822/tcp (v6)               DENY IN     Anywhere (v6)')"
 pass 'ufw_allows_port finds an incoming ALLOW or LIMIT rule for the port, the IPv6 copy, an interface, a profile or every port, and nothing else'
+pass 'ufw_allows_port fails when a DENY or REJECT from any source comes first, and skips a ban of one source'
 
 # --- ssh_login_check: each check, with fake sshd, ss, ufw and ssh-keyscan ---------------------------
 test_home="$tmp/home/admin"   # not "home": the functions under test have a local of that name
@@ -283,7 +298,9 @@ pass 'ssh_login_check logs each check and fails, naming it, when sshd is not on 
 reset_check; UFW_OUT="$(ufw_rules '822/tcp                    LIMIT IN    Anywhere')"
 expect_check 'with UFW letting the new port in' ok 'UFW lets port 822 in'
 reset_check; UFW_OUT="$(ufw_rules '22/tcp                     LIMIT IN    Anywhere')"
-expect_check 'with UFW active and no rule for the new port' fail 'UFW is active and no ALLOW or LIMIT rule lets port 822 in (the firewall step adds it)'
+expect_check 'with UFW active and no rule for the new port' fail 'UFW is active and no ALLOW or LIMIT rule lets port 822 in, or a DENY or REJECT rule for it comes first (the firewall step adds the ALLOW or LIMIT rule)'
+reset_check; UFW_OUT="$(ufw_rules "$(printf '%s\n%s' '822/tcp                    DENY IN     Anywhere' '822/tcp                    LIMIT IN    Anywhere')")"
+expect_check 'with UFW denying the new port before its LIMIT rule' fail 'UFW is active and no ALLOW or LIMIT rule lets port 822 in, or a DENY or REJECT rule for it comes first'
 reset_check; UFW_OUT="$(ufw_rules '' | sed 's/Default: deny (incoming)/Default: allow (incoming)/')"
 expect_check 'with UFW letting every port in by default' ok 'SSH handshake on 127.0.0.1:822'
 [[ $SSH_CHECK_PASSED != *UFW* ]] || fail "ssh_login_check, UFW default allow: a UFW check ran: '$SSH_CHECK_PASSED'"
@@ -293,7 +310,7 @@ PANEL_ACCESS=''
 reset_check
 expect_check 'with UFW off' ok 'admin has 1 SSH key(s)'
 [[ $SSH_CHECK_PASSED != *UFW* ]] || fail "ssh_login_check, UFW off: a UFW check ran: '$SSH_CHECK_PASSED'"
-pass 'ssh_login_check fails when UFW is active and lets the new port in by no rule, and needs none when UFW is off, lets everything in or SSH comes only through the tunnel'
+pass 'ssh_login_check fails when UFW is active and lets the new port in by no rule or denies it first, and needs none when UFW is off, lets everything in or SSH comes only through the tunnel'
 
 # A ListenAddress without 0.0.0.0 or 127.0.0.1: the handshake failure says why
 reset_check; KEYSCAN=0; SSHD_T="$(printf '%s\nlistenaddress 192.0.2.10:822\n' "$T_PREP")"

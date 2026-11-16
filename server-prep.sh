@@ -2045,11 +2045,18 @@ authorized_keys_paths() {
 # ufw_allows_port PORT: `ufw status verbose` on stdin has a rule that lets PORT/tcp in: ALLOW or LIMIT,
 # incoming (not an OUT or FWD rule), for PORT, PORT/tcp, a profile on PORT/tcp (22/tcp (OpenSSH)) or
 # every port (Anywhere), from any source, on any interface, IPv4 or IPv6. A port list or range does not
-# count: the check then fails, the safe way, and the firewall step never writes one for SSH.
+# count: the check then fails, the safe way, and the firewall step never writes one for SSH. UFW applies
+# the first rule that matches, in the order it prints them: a DENY or REJECT from any source for the
+# port (or every port) printed before that ALLOW or LIMIT blocks it, and the check fails, even when the
+# two rules are on other interfaces or the IPv6 list still lets the port in (the safe way again). A DENY
+# or REJECT from one source (a ban) is skipped: it blocks only that source.
 ufw_allows_port() {
-    local label=' \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)'
-    grep -Ev '[[:space:]](ALLOW|LIMIT)[[:space:]]+(OUT|FWD)([[:space:]]|$)' |
-        grep -Eq "^(([^[:space:]#]+ )?${1}(/tcp)?(${label})?|Anywhere)( \(v6\))?( on [^[:space:]()]+)?[[:space:]]+(ALLOW|LIMIT)([[:space:]]+IN)?[[:space:]]"
+    local label=' \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)' first
+    local to="^(([^[:space:]#]+ )?${1}(/tcp)?(${label})?|Anywhere)( \(v6\))?( on [^[:space:]()]+)?[[:space:]]+"
+    first="$(grep -Ev '[[:space:]](ALLOW|LIMIT|DENY|REJECT)[[:space:]]+(OUT|FWD)([[:space:]]|$)' |
+        grep -E "${to}((ALLOW|LIMIT)([[:space:]]+IN)?[[:space:]]|(DENY|REJECT)([[:space:]]+IN)?[[:space:]]+Anywhere)" |
+        sed -n 1p)"
+    [[ $first =~ ${to}(ALLOW|LIMIT) ]]
 }
 
 # ssh_login_check [nokey]: run with --yes once SSH has restarted on its phase A ports, in place of the
@@ -2122,7 +2129,7 @@ ssh_login_check() {
         elif ufw_allows_port "$SSH_PORT" <<<"$ufw_out"; then
             passed+=("UFW lets port ${SSH_PORT} in")
         else
-            failed+=("UFW is active and no ALLOW or LIMIT rule lets port ${SSH_PORT} in (the firewall step adds it)")
+            failed+=("UFW is active and no ALLOW or LIMIT rule lets port ${SSH_PORT} in, or a DENY or REJECT rule for it comes first (the firewall step adds the ALLOW or LIMIT rule)")
         fi
     fi
     if ! have ssh-keyscan; then
