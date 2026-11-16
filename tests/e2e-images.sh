@@ -48,6 +48,7 @@ mkdir -p "$E2E_DIR"
 # shellcheck source=tests/e2e/lib/vm.sh
 . "$SCRIPT_DIR/tests/e2e/lib/vm.sh"
 sleep() { :; }   # fetch waits between its tries
+export -f sleep  # also in the run.sh --image-key child below
 
 OSD="$FAKE_SITE/images.example.com/os"
 INDEX=https://images.example.com/os/   # the build list of the dated row
