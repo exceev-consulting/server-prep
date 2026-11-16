@@ -102,7 +102,9 @@ pkg_versions() {   # the installed packages, one "name version" line each
 
 pkg_moves() {   # pkg_moves BEFORE AFTER: what changed between two pkg_versions lists, one line each:
     # "upgraded NAME OLD NEW" (a new version: full-upgrade only goes up), "installed NAME VERSION"
-    # or "removed NAME VERSION". Fails when a list is empty: it was not read.
+    # or "removed NAME VERSION". Fails when a list is empty: it was not read. A release that adds a
+    # new package (a new kernel package pulled by linux-image-generic) shows as "installed", so
+    # update_upgrades_only still fails the scenario for it.
     # Versions compare as strings: as numbers, 1.1 and 1.10 (or 2.0 and 2.00) would be equal.
     [[ -s $1 && -s $2 ]] || return 1
     awk 'NR == FNR {old[$1] = $2; next}
