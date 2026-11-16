@@ -4,7 +4,8 @@
 # under --yes, and yes only with --force; the Docker restart and the SSH step's no-key guard follow it.
 # Then the automatic login check that replaces the operator's test in a run with --yes: the sshd -T
 # matcher (AllowUsers, DenyUsers, the groups, PubkeyAuthentication, AuthenticationMethods) and the
-# AuthorizedKeysFile paths on sample text, ssh_login_check with fake sshd, ss and ssh-keyscan, and
+# AuthorizedKeysFile paths on sample text, the UFW rule matcher on sample `ufw status verbose` lines,
+# ssh_login_check with fake sshd, ss, ufw and ssh-keyscan, and
 # step_ssh's choice: phase B and the timer stopped when the check passes; the old port, its temporary
 # UFW rules and the rollback timer kept when it fails; with --yes --force and no admin key, the check
 # skips only its key check. Only a temporary folder is written: no root needed, nothing on the host is
@@ -154,7 +155,44 @@ got="$(authorized_keys_paths admin /home/admin 1001 <<<'authorizedkeysfile none'
 [[ -z $got ]] || fail "authorized_keys_paths: none gave '$got'"
 pass 'authorized_keys_paths expands %h, %u, %U and %%, puts a relative path under the home and skips none'
 
-# --- ssh_login_check: each check, with fake sshd, ss and ssh-keyscan --------------------------------
+# --- ufw_allows_port: an ALLOW or LIMIT rule that lets the port in, on sample `ufw status verbose` ----
+UFW_HEAD='Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----'
+ufw_rules() { printf '%s\n%s\n' "$UFW_HEAD" "$1"; }
+allows() {   # allows LABEL yes|no PORT RULE-LINES
+    local st=0
+    ufw_rules "$4" | ufw_allows_port "$3" || st=1
+    if [[ $2 == yes ]]; then
+        [[ $st -eq 0 ]] || fail "ufw_allows_port $1: no rule found for port $3"
+    else
+        [[ $st -ne 0 ]] || fail "ufw_allows_port $1: a rule found for port $3"
+    fi
+}
+allows 'LIMIT from anywhere' yes 822 '822/tcp                    LIMIT IN    Anywhere                   # server-prep: ssh'
+allows 'the IPv6 copy, from a network' yes 822 '822/tcp (v6)               ALLOW IN    2001:db8::/32'
+allows 'on tailscale0' yes 822 '822/tcp on tailscale0      ALLOW IN    Anywhere                   # server-prep: ssh tailscale'
+allows 'IPv6 on tailscale0' yes 822 '822/tcp (v6) on tailscale0 ALLOW IN    Anywhere (v6)'
+allows 'both protocols, from an address' yes 822 '822                        ALLOW IN    198.51.100.2'
+allows 'to one address of the server' yes 822 '192.168.1.50 822/tcp       ALLOW IN    Anywhere'
+allows 'every port on an interface' yes 822 'Anywhere on tailscale0     ALLOW IN    Anywhere'
+allows 'a profile on the port' yes 22 '22/tcp (OpenSSH)           ALLOW IN    Anywhere'
+allows 'another port' no 822 '22/tcp                     LIMIT IN    Anywhere'
+allows 'a longer port' no 822 '8220/tcp                   ALLOW IN    Anywhere'
+allows 'a port that ends with it' no 822 '1822/tcp                   ALLOW IN    Anywhere'
+allows 'udp only' no 822 '822/udp                    ALLOW IN    Anywhere'
+allows 'DENY' no 822 '822/tcp                    DENY IN     Anywhere'
+allows 'an outgoing rule' no 822 '822/tcp                    ALLOW OUT   Anywhere'
+allows 'a route rule' no 822 'Anywhere                   ALLOW FWD   Anywhere'
+allows 'a comment that names the port' no 822 '22/tcp                     ALLOW IN    Anywhere                   # 822/tcp ALLOW IN'
+allows 'no rule' no 822 ''
+pass 'ufw_allows_port finds an incoming ALLOW or LIMIT rule for the port, the IPv6 copy, an interface, a profile or every port, and nothing else'
+
+# --- ssh_login_check: each check, with fake sshd, ss, ufw and ssh-keyscan ---------------------------
 test_home="$tmp/home/admin"   # not "home": the functions under test have a local of that name
 mkdir -p "$test_home/.ssh"
 ssh-keygen -q -t ed25519 -N '' -C admin@example.com -f "$tmp/admin-key" > /dev/null || fail 'ssh-keygen could not make a test key'
@@ -177,6 +215,8 @@ sshd() {
     esac
 }
 timeout() { shift; "$@"; }
+ufw_status() { [[ -n $UFW_OUT ]] && printf '%s\n' "$UFW_OUT"; }   # empty: UFW missing or off
+ADMIN_IPS=''; PANEL_ACCESS=''; PANEL_IP=''   # ufw_allow_ssh then wants SSH from anywhere: a rule is needed
 ssh-keyscan() {   # stdout gets the host keys after a key exchange; the banner comment goes to stderr
     [[ "$*" == "-T 10 -p $SSH_PORT 127.0.0.1" ]] || return 1
     printf '# 127.0.0.1:%s SSH-2.0-OpenSSH_10.0\n' "$SSH_PORT" >&2
@@ -184,7 +224,7 @@ ssh-keyscan() {   # stdout gets the host keys after a key exchange; the banner c
     return 0
 }
 reset_check() {   # every check passes
-    LISTEN='822 22 '; SSHD_T="$T_PREP"; SSHD_T_RC=0; KEYSCAN=1
+    LISTEN='822 22 '; SSHD_T="$T_PREP"; SSHD_T_RC=0; KEYSCAN=1; UFW_OUT=''
     printf 'from="198.51.100.2" %s\n' "$(cat "$tmp/admin-key.pub")" > "$test_home/.ssh/authorized_keys"
 }
 expect_check() {   # expect_check LABEL ok|fail [TEXT in SSH_CHECK_FAILED, or in SSH_CHECK_PASSED when ok]
@@ -237,6 +277,23 @@ expect_check 'with no SSH handshake' fail 'no SSH handshake on 127.0.0.1:822'
 reset_check; LISTEN=''; KEYSCAN=0
 expect_check 'with two checks failing' fail 'sshd does not listen on 822 (it listens on: nothing); no SSH handshake on 127.0.0.1:822'
 pass 'ssh_login_check logs each check and fails, naming it, when sshd is not on the new port, refuses the admin, the admin has no key or no handshake works'
+
+# The handshake goes to 127.0.0.1, which UFW always lets in: an active UFW needs its own rule for the
+# new port, or a --only ssh run after the port changed would close the old port behind it
+reset_check; UFW_OUT="$(ufw_rules '822/tcp                    LIMIT IN    Anywhere')"
+expect_check 'with UFW letting the new port in' ok 'UFW lets port 822 in'
+reset_check; UFW_OUT="$(ufw_rules '22/tcp                     LIMIT IN    Anywhere')"
+expect_check 'with UFW active and no rule for the new port' fail 'UFW is active and no ALLOW or LIMIT rule lets port 822 in (the firewall step adds it)'
+reset_check; UFW_OUT="$(ufw_rules '' | sed 's/Default: deny (incoming)/Default: allow (incoming)/')"
+expect_check 'with UFW letting every port in by default' ok 'SSH handshake on 127.0.0.1:822'
+[[ $SSH_CHECK_PASSED != *UFW* ]] || fail "ssh_login_check, UFW default allow: a UFW check ran: '$SSH_CHECK_PASSED'"
+reset_check; UFW_OUT="$(ufw_rules '')"; PANEL_ACCESS=cloudflared
+expect_check 'with SSH only through the Cloudflare tunnel' ok 'UFW needs no rule for 822: SSH comes only through the Cloudflare tunnel, on loopback'
+PANEL_ACCESS=''
+reset_check
+expect_check 'with UFW off' ok 'admin has 1 SSH key(s)'
+[[ $SSH_CHECK_PASSED != *UFW* ]] || fail "ssh_login_check, UFW off: a UFW check ran: '$SSH_CHECK_PASSED'"
+pass 'ssh_login_check fails when UFW is active and lets the new port in by no rule, and needs none when UFW is off, lets everything in or SSH comes only through the tunnel'
 
 # A ListenAddress without 0.0.0.0 or 127.0.0.1: the handshake failure says why
 reset_check; KEYSCAN=0; SSHD_T="$(printf '%s\nlistenaddress 192.0.2.10:822\n' "$T_PREP")"

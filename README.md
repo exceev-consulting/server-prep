@@ -68,12 +68,12 @@ see [SECURITY.md](SECURITY.md#supported-versions)), shows what changes and asks 
 when the admin has no SSH key, and running containers are not restarted for Docker's log rotation (a to-do says when to).
 Add `--force` to answer yes to those too; without `--yes`, `--force` does nothing. With `--yes` nobody tests a login from
 a second terminal, so the SSH step checks it on the server before it closes the old port: sshd listens on the new port,
-it allows the admin to log in with a key, the admin has a key, and an SSH handshake on `127.0.0.1` works. When `--force`
-went on with no key for the admin, the key check is skipped and logged (the admin can then log in only on the console),
-and the three others still run. If a check fails, the old port and its firewall rule stay, the 10-minute rollback puts
-back the old SSH configuration, and the step fails with a to-do that names the check: finish with an interactive run of
-`--only ssh,endlessh`. This check cannot see the firewall or the key on your computer, so make the first run on a server
-interactive.
+it allows the admin to log in with a key, the admin has a key, UFW (when it is on) lets the new port in, and an SSH
+handshake on `127.0.0.1` works. When `--force` went on with no key for the admin, the key check is skipped and logged
+(the admin can then log in only on the console), and the others still run. If a check fails, the old port and its
+firewall rule stay, the 10-minute rollback puts back the old SSH configuration, and the step fails with a to-do that
+names the check: finish with an interactive run of `--only ssh,endlessh`. This check cannot see a firewall outside the
+server (a cloud security group) or the key on your computer, so make the first run on a server interactive.
 Check the file first, no root needed: `./server-prep.sh --config web-01.conf --validate` reads it without running it
 and prints one line per problem, with its line number and what to do. It runs on Linux, or on any machine with bash 4
 or later (the `/bin/bash` of macOS is too old: install a current bash first). The saved answers in `/etc/server-prep/` can

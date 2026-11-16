@@ -13,7 +13,7 @@ description: Analyse server-audit.sh output pasted by the user (or a report file
    - **Next action:** one command if possible.
 3. **Prefer server-prep re-runs** over manual edits, so that the saved config stays the source of truth:
    `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <steps> --yes`
-   Leave out `--yes` when the steps include `ssh`: it replaces the second-terminal login test with a check on the server itself, which cannot see the firewall or the user's key (#65). Never add `--force`: it answers yes to the default-no questions.
+   Leave out `--yes` when the steps include `ssh`: it replaces the second-terminal login test with a check on the server itself, which cannot see a firewall outside the server (a cloud security group) or the user's key (#65). Never add `--force`: it answers yes to the default-no questions.
 4. **Before suggesting a fix,** check `AGENTS.md` → *Hard-won gotchas*. Several "regressions" after a reboot are already known (log_martians, suid_dumpable, sudo-rs).
 
 ## Expected WARNs on this fleet

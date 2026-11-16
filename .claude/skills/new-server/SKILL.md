@@ -79,7 +79,7 @@ sudo ./server-prep.sh --dry-run
 ## 5. If a step fails
 Re-run only that step:
 `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>`.
-The saved answers are the defaults, so the user mostly presses Enter. `--yes` skips the questions (each one gets its default, so a default-no question stays no), but never use it for the `ssh` step: instead of the second-terminal login test, it only checks the login on the server itself, which cannot see the firewall or the user's key (#65). Never add `--force` unless the user asks for it: it answers yes to the default-no questions.
+The saved answers are the defaults, so the user mostly presses Enter. `--yes` skips the questions (each one gets its default, so a default-no question stays no), but never use it for the `ssh` step: instead of the second-terminal login test, it only checks the login on the server itself, which cannot see a firewall outside the server (a cloud security group) or the user's key (#65). Never add `--force` unless the user asks for it: it answers yes to the default-no questions.
 
 Check the known fixes in `AGENTS.md` → *Hard-won gotchas*. The log is in `/var/log/server-prep/` and only root can read it, so ask the user to paste the errors of the last run:
 `sudo sh -c 'grep -n -i -E "error|fail|warn" "$(ls -t /var/log/server-prep/run-*.log | head -1)"'`.

@@ -106,7 +106,7 @@ These rules apply to any agent, in any session:
 - Never run `sudo`, and never change the server outside the scripts.
 - Always propose `--dry-run` before a real run.
 - When a step fails, re-run only that step with `--only <step>`, and check the *Hard-won gotchas* in `AGENTS.md` first.
-- Never go past the SSH step until you can reach a console (provider console, IPMI/KVM or a screen) and a login from a **second terminal** works. The SSH step rolls back after 10 minutes unless the login is confirmed. With `--yes`, a check on the server itself confirms it instead of you ([#65](https://github.com/exceev-consulting/server-prep/issues/65)), and that check cannot see the firewall or the key on your computer, so never use `--yes` for the `ssh` step.
+- Never go past the SSH step until you can reach a console (provider console, IPMI/KVM or a screen) and a login from a **second terminal** works. The SSH step rolls back after 10 minutes unless the login is confirmed. With `--yes`, a check on the server itself confirms it instead of you ([#65](https://github.com/exceev-consulting/server-prep/issues/65)), and that check cannot see a firewall outside the server (a cloud security group) or the key on your computer, so never use `--yes` for the `ssh` step.
 - Never propose `--force` unless the operator asks for it: with `--yes`, it answers yes to the questions whose default is no.
 - Never push to `main`. Every change goes through a branch and a PR.
 - Never commit `CLAUDE.local.md`, a filled config, an audit file or a report.

@@ -1924,8 +1924,8 @@ SSH_AGAIN="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --on
 # --- The automatic login check of a run with --yes (issue #65) -------------------------------------
 # With --yes nobody tests a login from a second terminal, so before phase B closes the old port the
 # step checks on the server itself that the admin could log in on the new port (ssh_login_check).
-# It cannot see the firewall or the key on the operator's computer: an interactive run stays the
-# real test. The helpers below only read stdin and their arguments.
+# It sees UFW, but not a firewall outside the server (a cloud security group) or the key on the
+# operator's computer: an interactive run stays the real test. The helpers below only read stdin and their arguments.
 
 # ssh_glob STRING PATTERN: OpenSSH's match_pattern: * and ? are wildcards, every other character is literal
 ssh_glob() {
@@ -2042,19 +2042,30 @@ authorized_keys_paths() {
     done
 }
 
+# ufw_allows_port PORT: `ufw status verbose` on stdin has a rule that lets PORT/tcp in: ALLOW or LIMIT,
+# incoming (not an OUT or FWD rule), for PORT, PORT/tcp, a profile on PORT/tcp (22/tcp (OpenSSH)) or
+# every port (Anywhere), from any source, on any interface, IPv4 or IPv6. A port list or range does not
+# count: the check then fails, the safe way, and the firewall step never writes one for SSH.
+ufw_allows_port() {
+    local label=' \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)'
+    grep -Ev '[[:space:]](ALLOW|LIMIT)[[:space:]]+(OUT|FWD)([[:space:]]|$)' |
+        grep -Eq "^(([^[:space:]#]+ )?${1}(/tcp)?(${label})?|Anywhere)( \(v6\))?( on [^[:space:]()]+)?[[:space:]]+(ALLOW|LIMIT)([[:space:]]+IN)?[[:space:]]"
+}
+
 # ssh_login_check [nokey]: run with --yes once SSH has restarted on its phase A ports, in place of the
 # operator's test. Each check is logged: sshd listens on SSH_PORT; sshd -T for the admin from 127.0.0.1
 # allows a key login (AllowUsers, DenyUsers, the groups, Match); the admin has a key in an
-# AuthorizedKeysFile; an SSH handshake (banner and key exchange, no key needed) works on
-# 127.0.0.1:SSH_PORT. Status 1 when one fails, with SSH_CHECK_FAILED saying which. "nokey": --yes --force
-# went past the no-key guard, so the key check is skipped (as the "s" answer skips the operator's test)
-# and SSH_CHECK_SKIPPED says so; the three other checks still run. Read-only: safe while the rollback
-# timer runs.
+# AuthorizedKeysFile; when UFW is active and filters incoming traffic, a rule lets SSH_PORT in (none
+# is needed when ufw_allow_ssh adds none: SSH only through the Cloudflare tunnel, on loopback); an SSH
+# handshake (banner and key exchange, no key needed) works on 127.0.0.1:SSH_PORT, which UFW always
+# lets in. Status 1 when one fails, with SSH_CHECK_FAILED saying which. "nokey": --yes --force went
+# past the no-key guard, so the key check is skipped (as the "s" answer skips the operator's test) and
+# SSH_CHECK_SKIPPED says so; the other checks still run. Read-only: safe while the rollback timer runs.
 SSH_CHECK_FAILED=""
 SSH_CHECK_PASSED=""
 SSH_CHECK_SKIPPED=""
 ssh_login_check() {
-    local live cfg kcfg kfrom="" akc home uid groups why f n=0 keys failed=() passed=() skipped=()
+    local live cfg kcfg kfrom="" akc home uid groups why f n=0 keys ufw_out failed=() passed=() skipped=()
     live="$(ssh_listen_ports)"
     if [[ " $live " == *" $SSH_PORT "* ]]; then
         passed+=("sshd listens on ${SSH_PORT}")
@@ -2099,6 +2110,19 @@ ssh_login_check() {
             failed+=("${ADMIN_USER} has no SSH key in its AuthorizedKeysFile (keys from AuthorizedKeysCommand are not checked)")
         else
             failed+=("${ADMIN_USER} has no SSH key in its authorized_keys${kfrom}")
+        fi
+    fi
+    # The handshake below goes to 127.0.0.1, which UFW always lets in, so it says nothing about the
+    # firewall: a --only ssh run after the port changed, with no firewall step, would close the old
+    # port behind a UFW that filters the new one.
+    ufw_out="$(ufw_status verbose 2>/dev/null)"
+    if [[ $ufw_out == *"Status: active"* && $ufw_out != *"Default: allow (incoming)"* ]]; then
+        if [[ -z "$(ufw_allow_ssh "$SSH_PORT" check echo)" ]]; then
+            passed+=("UFW needs no rule for ${SSH_PORT}: SSH comes only through the Cloudflare tunnel, on loopback")
+        elif ufw_allows_port "$SSH_PORT" <<<"$ufw_out"; then
+            passed+=("UFW lets port ${SSH_PORT} in")
+        else
+            failed+=("UFW is active and no ALLOW or LIMIT rule lets port ${SSH_PORT} in (the firewall step adds it)")
         fi
     fi
     if ! have ssh-keyscan; then
