@@ -1902,7 +1902,7 @@ sshd_override_text() {
 # writes, so a dry run and a first run see it too. Port lines are left out: write_sshd_config comments
 # them out in every file it reads (the audit counts them).
 ssh_report_overrides() {
-    local over
+    local over panel_file=""
     over="$(sshd_dropin_overrides "$1" <(sshd_prep_conf "$SSH_PORT") | awk -F'\t' 'tolower($2) != "port"' | sshd_override_text)"
     [[ -n $over ]] || return 1
     warn "$over"
@@ -1910,7 +1910,8 @@ ssh_report_overrides() {
     if [[ $over == *"no Include line"* ]]; then
         todo "SSH: ${over}. Add the line 'Include /etc/ssh/sshd_config.d/*.conf' at the top of /etc/ssh/sshd_config, then check and reload SSH: sudo sshd -t && sudo systemctl reload ssh"
     else
-        todo "SSH: ${over}. If you did not choose them, remove them from that file, or delete the file if a panel wrote it (Dokploy's server Security dialog writes 00-dokploy.conf), then check and reload SSH: sudo sshd -t && sudo systemctl reload ssh"
+        [[ ${PANEL,,} == dokploy ]] && panel_file=" (Dokploy's server Security dialog writes 00-dokploy.conf)"
+        todo "SSH: ${over}. If you did not choose them, remove them from that file, or delete the file if a panel wrote it${panel_file}, then check and reload SSH: sudo sshd -t && sudo systemctl reload ssh"
     fi
     return 0
 }

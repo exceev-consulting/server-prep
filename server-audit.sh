@@ -749,7 +749,7 @@ else
     elif [[ -n "$SSH_OVR" ]]; then
         ovr_files="$(awk -F'\t' '!seen[$1]++ { printf "%s%s", (n++ ? ", " : ""), $1 }' <<<"$SSH_OVR")"
         result ssh.dropin_override WARN "SSH settings override" "$(sshd_override_text <<<"$SSH_OVR")" \
-            "Remove these settings from ${ovr_files} (or the whole file if a panel wrote it: Dokploy's server Security dialog writes 00-dokploy.conf), then: sudo sshd -t && sudo systemctl reload ssh"
+            "Remove these settings from ${ovr_files} (or the whole file if a panel wrote it, such as 00-dokploy.conf), then: sudo sshd -t && sudo systemctl reload ssh"
     else
         result ssh.dropin_override PASS "SSH settings override" "No file read before 00-server-prep.conf changes its login settings$(need_root_note)"
     fi

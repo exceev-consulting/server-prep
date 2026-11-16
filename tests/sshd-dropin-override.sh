@@ -203,6 +203,13 @@ grep -qF '00-dokploy.conf is read first and sets PermitRootLogin prohibit-passwo
 [[ ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *00-dokploy.conf*'sudo sshd -t'* ]] ||
     fail "the step's to-do does not name 00-dokploy.conf and the sshd -t check: ${MANUAL_TODO[*]}"
 pass "the SSH step warns, notes and adds a to-do naming 00-dokploy.conf, compared with the text it writes (sshd_prep_conf)"
+[[ ${MANUAL_TODO[0]} != *"Dokploy's server Security dialog"* ]] ||
+    fail "PANEL=${PANEL}: the to-do names Dokploy's dialog on another panel: ${MANUAL_TODO[0]}"
+STEP_NOTES="" MANUAL_TODO=()
+PANEL=dokploy ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1
+[[ ${MANUAL_TODO[0]:-} == *"Dokploy's server Security dialog writes 00-dokploy.conf"* ]] ||
+    fail "PANEL=dokploy: the to-do does not say which Dokploy dialog writes 00-dokploy.conf: ${MANUAL_TODO[*]}"
+pass "the to-do names Dokploy's Security dialog only when the panel is Dokploy"
 setup
 STEP_NOTES="" MANUAL_TODO=()
 if ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || [[ -n $STEP_NOTES || ${#MANUAL_TODO[@]} -gt 0 ]]; then
