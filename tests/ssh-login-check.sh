@@ -238,6 +238,14 @@ reset_check; LISTEN=''; KEYSCAN=0
 expect_check 'with two checks failing' fail 'sshd does not listen on 822 (it listens on: nothing); no SSH handshake on 127.0.0.1:822'
 pass 'ssh_login_check logs each check and fails, naming it, when sshd is not on the new port, refuses the admin, the admin has no key or no handshake works'
 
+# A ListenAddress without 0.0.0.0 or 127.0.0.1: the handshake failure says why
+reset_check; KEYSCAN=0; SSHD_T="$(printf '%s\nlistenaddress 192.0.2.10:822\n' "$T_PREP")"
+expect_check 'with sshd on another address only' fail "no SSH handshake on 127.0.0.1:822 (sshd's ListenAddress leaves out 127.0.0.1"
+reset_check; KEYSCAN=0; SSHD_T="$(printf '%s\nlistenaddress [::]:822\nlistenaddress 0.0.0.0:822\n' "$T_PREP")"
+expect_check 'with sshd on every address and no handshake' fail 'no SSH handshake on 127.0.0.1:822'
+[[ $SSH_CHECK_FAILED != *ListenAddress* ]] || fail "ssh_login_check, sshd on 0.0.0.0: blames ListenAddress: '$SSH_CHECK_FAILED'"
+pass 'ssh_login_check names ListenAddress when sshd listens on no address 127.0.0.1 can reach'
+
 # nokey (--yes --force went past the no-key guard): only the key check is skipped, and the skip is logged
 reset_check; : > "$test_home/.ssh/authorized_keys"
 skip_text='key check skipped (--force): admin has no SSH key and can log in only on the console'

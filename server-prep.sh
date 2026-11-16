@@ -2106,7 +2106,13 @@ ssh_login_check() {
     elif timeout 30 ssh-keyscan -T 10 -p "$SSH_PORT" 127.0.0.1 2>/dev/null | grep -q '^[^#]'; then
         passed+=("SSH handshake on 127.0.0.1:${SSH_PORT}")
     else
-        failed+=("no SSH handshake on 127.0.0.1:${SSH_PORT}")
+        # sshd -T lists every ListenAddress (IPv6 sockets are IPv6 only): without 0.0.0.0 or
+        # 127.0.0.1, sshd never answers here, so say why instead of a bare failure
+        why=""
+        if grep -q '^listenaddress ' <<<"$cfg" && ! grep -Eq '^listenaddress (0\.0\.0\.0|127\.0\.0\.1):' <<<"$cfg"; then
+            why=" (sshd's ListenAddress leaves out 127.0.0.1, so this check cannot reach it: run the SSH step without --yes)"
+        fi
+        failed+=("no SSH handshake on 127.0.0.1:${SSH_PORT}${why}")
     fi
     for f in "${passed[@]}"; do ok "login check: ${f}"; done
     for f in "${skipped[@]}"; do warn "login check: ${f}"; done
