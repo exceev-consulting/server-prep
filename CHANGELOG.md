@@ -12,9 +12,10 @@ Highlights of each release. The full list of merged pull requests is in each
   their IPv6 copies too. The plan lists them before you confirm, and `--dry-run` shows the `ufw delete` commands. Every
   rule server-prep adds now has a comment that starts with `server-prep: `. A rule from an older version counts as
   server-prep's only when it has one of its old comments (`ssh admin`, `http`...) on the exact shape server-prep gave
-  it: the next firewall run tags it, or deletes it when the answers no longer ask for it. Rules you added yourself are
-  never touched, even with the same port. When one of them contradicts the answers, such as a `deny 80/tcp` with
-  `EXPOSE_WEB=yes`, the run warns and its to-do gives the `ufw` command that applies the answers. The temporary SSH
+  it: the next firewall run tags it, or deletes it when the answers no longer ask for it. Any other rule, such as one
+  you added yourself, is never touched, even with the same port, unless you gave it a `server-prep: ` comment. When
+  such a rule contradicts the answers, such as a `deny 80/tcp` with `EXPOSE_WEB=yes`, the run warns and its to-do
+  gives the `ufw` command that applies the answers. The temporary SSH
   rules stay while SSH is moving to its new port. When UFW was on before a run, its `rollback.sh` now also puts back
   the UFW rules of that time. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --dry-run` to see what goes.
