@@ -112,9 +112,8 @@ Usage: sudo $0 [options]
                        the release's SHA256SUMS (asks first; --yes to skip the question, --dry-run to only show)
   --yes                non-interactive: use config/env values and each question's default (a default-no
                        question stays no); the SSH step checks the login itself before it closes the old port
-  --force              with --yes: also yes to the default-no questions (no SSH key for the admin, Docker
-                       restart); with no admin key, the SSH login check skips only its key check (the admin
-                       can then log in only on the console). Without --yes it does nothing: questions still ask
+  --force              with --yes: also yes to the default-no questions (Docker restart, no SSH key for the
+                       admin: the login check skips its key check, console login only). Without --yes: nothing
   --dry-run            show what would change, change nothing
   --only a,b,c         run only these steps
   --skip a,b,c         skip these steps

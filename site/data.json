@@ -588,7 +588,7 @@
     {
       "script": "server-prep.sh",
       "flag": "--force",
-      "help": "with --yes: also yes to the default-no questions (no SSH key for the admin, Docker restart); with no admin key, the SSH login check skips only its key check (the admin; can then log in only on the console). Without --yes it does nothing: questions still ask"
+      "help": "with --yes: also yes to the default-no questions (Docker restart, no SSH key for the admin: the login check skips its key check, console login only). Without --yes: nothing"
     },
     {
       "script": "server-prep.sh",
