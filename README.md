@@ -176,8 +176,9 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 - A firewall re-run makes UFW match the current answers. It deletes the rules server-prep added for earlier ones: an
   address removed from `ADMIN_IPS`, SSH from anywhere once you give sources, 80/443 after `EXPOSE_WEB=no`, a removed
   extra port. The plan lists them before you confirm, and `--dry-run` shows them. It adds the new rules first, so SSH
-  stays reachable. It deletes only its own rules, the ones with a comment that starts with `server-prep: `
-  (`sudo ufw status`): a rule you added yourself stays, unless you gave it such a comment.
+  stays reachable. It deletes only its own rules: the ones with a comment that starts with `server-prep: `
+  (`sudo ufw status`), or from an older version, with one of its old comments on the exact rule it added. A rule you
+  added yourself stays, unless you gave it such a comment.
 - Found a security problem? Report it privately: see [SECURITY.md](SECURITY.md).
 
 ## Community
