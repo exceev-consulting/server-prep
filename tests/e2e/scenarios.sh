@@ -506,8 +506,11 @@ sc_prep_rerun() {
     if [[ -n "$PREP_REPORT" ]]; then
         report_steps "$PREP_REPORT" > "$WORK/steps-second.json"
         pkg_versions > "$WORK/pkgs-after-second"
-        moves="$(pkg_moves "$WORK/pkgs-before-second" "$WORK/pkgs-after-second")"
-        [[ -z $moves ]] || printf 'packages the second run changed:\n%s\n' "$moves" >> "$OUT/$SC_ID.log"
+        if moves="$(pkg_moves "$WORK/pkgs-before-second" "$WORK/pkgs-after-second")"; then
+            [[ -z $moves ]] || printf 'packages the second run changed:\n%s\n' "$moves" >> "$OUT/$SC_ID.log"
+        else
+            printf 'a package list could not be read (pkgs-before-second or pkgs-after-second is empty): update CHANGED stays strict\n' >> "$OUT/$SC_ID.log"
+        fi
         # Issue #207: a third-party repo (Docker's docker-compose-plugin...) can publish a release between
         # the two runs. The update step then upgrades it and rightly says CHANGED: accept that change
         # alone and name the packages. A package installed or any other change in update still fails.

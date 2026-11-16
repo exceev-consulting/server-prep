@@ -198,6 +198,9 @@ expect_eq "without the JSON report the check stays strict" "$STATUS|$DETAIL" "fa
 rerun compose empty
 expect_eq "when the packages after the run cannot be read, the check stays strict" "$STATUS|$DETAIL" \
     "failed|not ok: update CHANGED"
+grep -q '^a package list could not be read' "$OUT/prep-rerun.log" ||
+    fail "the scenario log does not say a package list could not be read: $(cat "$OUT/prep-rerun.log")"
+pass "the scenario log says when a package list could not be read"
 
 printf '[{"step":"update","label":"System update & base packages","result":"FAILED"}]\n' > "$tmp/failed-steps.json"
 expect_eq "steps_moved never leaves out a FAILED step" "$(steps_moved "$tmp/failed-steps.json" update)" "update FAILED"
