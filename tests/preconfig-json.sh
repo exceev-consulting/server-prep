@@ -40,6 +40,13 @@ esac
 EOF
 cat > "$stub/systemctl" <<'EOF'
 #!/bin/sh
+# STUB_SSH_SOCKET=1: SSH is socket-activated (ssh.socket enabled), as on Ubuntu 24.04 and later.
+if [ "${STUB_SSH_SOCKET:-}" = 1 ]; then
+    case "$*" in
+        "is-enabled --quiet ssh.socket") exit 0 ;;
+        "is-enabled ssh.socket") echo enabled; exit 0 ;;
+    esac
+fi
 case "$1 $2" in
     "is-enabled ssh"|"is-enabled tailscaled"|"is-enabled networking") echo enabled ;;
     is-enabled\ *.target) echo masked ;;
@@ -86,10 +93,11 @@ EOF
 chmod +x "$stub"/*
 
 STUB_TS_STATE=Running
+STUB_SSH_SOCKET=
 run_pre() {   # run_pre NAME ARGS...: runs server-preconfig.sh with the fakes, output in $tmp/NAME.out/.err
     local name=$1 status=0
     shift
-    env -u SUDO_USER PATH="$stub:$PATH" STUB_HOME="$tmp/home" STUB_TS_STATE="$STUB_TS_STATE" \
+    env -u SUDO_USER PATH="$stub:$PATH" STUB_HOME="$tmp/home" STUB_TS_STATE="$STUB_TS_STATE" STUB_SSH_SOCKET="$STUB_SSH_SOCKET" \
         TS_AUTHKEY=canary-not-a-key bash "$PRE" "$@" >"$tmp/$name.out" 2>"$tmp/$name.err" </dev/null || status=$?
     return "$status"
 }
@@ -184,6 +192,17 @@ else
         '[.checks[].id] | index("pre.cloud_init_hostname") | not'
 fi
 expect_same_as_text running "$status"
+
+# SSH started by ssh.socket (Ubuntu 24.04 and later): the id stays pre.ssh_boot, the message names the unit (#223).
+STUB_SSH_SOCKET=1
+status=0; run_pre sshsocket --check --json || status=$?
+expect_common sshsocket "$status"
+expect_jq sshsocket "sshsocket: pre.ssh_boot is PASS and names ssh.socket" \
+    '.checks[] | select(.id == "pre.ssh_boot") | .status == "PASS" and .message == "ssh.socket enabled at boot"'
+expect_jq sshsocket "sshsocket: every _boot id has one dot" \
+    '[.checks[].id | select(endswith("_boot"))] | all(split(".") | length == 2)'
+expect_same_as_text sshsocket "$status"
+STUB_SSH_SOCKET=
 
 # Tailscale not logged in: FAIL with its fix, exit 1 with and without --json.
 STUB_TS_STATE=NeedsLogin
