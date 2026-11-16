@@ -681,8 +681,14 @@ else
         result ssh.root_login WARN "SSH root login" "Root can log in with a key from any address (PermitRootLogin ${ROOT_EXT}${ROOT_BY_MSG})$(need_root_note)" \
             "$root_fix"
     else
+        # A file read first decides: a line in 00-hardening.conf would change nothing
+        if [[ -n "$ROOT_BY" ]]; then
+            root_fix="Remove PermitRootLogin from ${ROOT_BY}: server-prep's PermitRootLogin no + Match Address block then decides (see ssh.dropin_override)"
+        else
+            root_fix="Set PermitRootLogin no in /etc/ssh/sshd_config.d/00-hardening.conf"
+        fi
         result ssh.root_login FAIL "SSH root login" "Root login with password is allowed (PermitRootLogin ${ROOT_EXT:-yes}${ROOT_BY_MSG})" \
-            "Set PermitRootLogin no in /etc/ssh/sshd_config.d/00-hardening.conf"
+            "$root_fix"
     fi
 
     if [[ "${PASS_EXT,,}" == "no" ]]; then
