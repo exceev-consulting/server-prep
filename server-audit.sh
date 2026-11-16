@@ -725,10 +725,13 @@ UFW_OWN_ADDRS=" "
 # ufw_cache_addrs: reads the server's own addresses once, in the main shell, with `ip -o addr show`,
 # so the $(ufw_port_access ...) subshells of the exposure loop find them in UFW_OWN_ADDRS. Private and
 # tailnet addresses count too: behind 1:1 NAT or a port forward, the internet reaches the server on a
-# private address. Loopback addresses are left out, as no packet from outside reaches them. Without
-# `ip` the list stays empty, and a rule to an address then only counts for a socket bound to that
-# address. The list is reset first, so a second call adds nothing twice. Field 3 is inet or inet6,
-# field 4 the address with its prefix (or alone, before "peer" on a point-to-point link).
+# private address. Loopback and link-local (fe80::/10) addresses are left out, as no packet from
+# outside the server (loopback) or from beyond its link (link-local) reaches them: a rule to one then
+# opens nothing, like a rule to an address the server does not have, and a socket bound to a
+# link-local address is already listed as LAN only by classify_addr. Without `ip` the list stays
+# empty, and a rule to an address then only counts for a socket bound to that address. The list is
+# reset first, so a second call adds nothing twice. Field 3 is inet or inet6, field 4 the address
+# with its prefix (or alone, before "peer" on a point-to-point link).
 ufw_cache_addrs() {
     local fam addr
     UFW_OWN_ADDRS=" "
@@ -738,7 +741,10 @@ ufw_cache_addrs() {
         [[ "$fam" == inet || "$fam" == inet6 ]] || continue
         addr="${addr%%/*}"
         [[ "$addr" != 127.* && "$addr" != ::1 ]] || continue
-        addr_hex "$addr" && UFW_OWN_ADDRS+="$ADDR_HEX "
+        addr_hex "$addr" || continue
+        # Link-local: fe80::/10, the first 10 bits, so fe80 to febf in any spelling.
+        [[ ${#ADDR_HEX} -ne 32 || "${ADDR_HEX:0:3}" != fe[89ab] ]] || continue
+        UFW_OWN_ADDRS+="$ADDR_HEX "
     done < <(ip -o addr show 2>/dev/null)
     return 0
 }

@@ -73,7 +73,7 @@ ufw() {
 # "peer", without a prefix) and the tailnet addresses on tailscale0. Tailscale's own resolver
 # addresses, 100.100.100.100 and fd7a:115c:a1e0::53, stand for the node's: scripts/check-files.sh
 # allows no other address in 100.64.0.0/10, and that one only without the /32 that ip prints after
-# it. Loopback is left out by ufw_cache_addrs.
+# it. Loopback and link-local are left out by ufw_cache_addrs.
 ip() {
     if [[ "$*" != '-o addr show' ]]; then
         printf 'unexpected ip %s\n' "$*" | tee -a "$tmp/ip-unexpected" >&2
@@ -356,18 +356,19 @@ fields_are 'Anywhere/tcp' '' Anywhere/tcp
 # --- Rules to an address or a network (issue #162) ------------------------------------------------
 # The server's addresses come from the ip stub. A rule to one of them counts like a rule to Anywhere
 # for the sockets that receive that address: one bound to it, or one on all addresses of its family
-# (0.0.0.0 for IPv4; :: and *, which can be dual-stack, for both). Private, tailnet and link-local
-# addresses count too: behind 1:1 NAT or a port forward, the internet reaches the server on a private
-# address.
+# (0.0.0.0 for IPv4; :: and *, which can be dual-stack, for both). Private and tailnet addresses
+# count too: behind 1:1 NAT or a port forward, the internet reaches the server on a private address.
+# Link-local addresses (fe80::/10) are left out like loopback: no packet from beyond the link reaches
+# them.
 HEADER=$VERBOSE_HEADER
 set_rules '3000/tcp' 'ALLOW IN' 'Anywhere'
 : >"$tmp/ip-calls"
 ufw_cache_addrs
-want=' cb00710a 20010db8000000000000000000000001 fe800000000000000000000000000001 c0a80132 0a110001 0a080001 64646464 fd7a115ca1e000000000000000000053 '
+want=' cb00710a 20010db8000000000000000000000001 c0a80132 0a110001 0a080001 64646464 fd7a115ca1e000000000000000000053 '
 [[ "$UFW_OWN_ADDRS" == "$want" ]] || fail "ufw_cache_addrs gave '$UFW_OWN_ADDRS', want '$want'"
 ufw_cache_addrs
 [[ "$UFW_OWN_ADDRS" == "$want" ]] || fail "a second ufw_cache_addrs gave '$UFW_OWN_ADDRS', want '$want'"
-printf 'ok: ufw_cache_addrs reads the server addresses, without loopback or prefix, and resets the list\n'
+printf 'ok: ufw_cache_addrs reads the server addresses, without loopback, link-local or prefix, and resets the list\n'
 
 # The two cases that recorded the old behaviour (a rule to the server's own address was firewalled).
 # `ufw allow proto tcp to 192.168.1.50` prints the address and the protocol in To, Anywhere in From.
@@ -428,8 +429,9 @@ expect 22 tcp restricted "port to the server's address from one source"
 expect 22 tcp none "port to the server's address from one source, socket on an IPv6 address" '[2001:db8::1]'
 set_rules '203.0.113.10 22/tcp on eth0' 'ALLOW IN' 'Anywhere'
 expect 22 tcp restricted "port to the server's address on an interface"
-# Private, tailnet and link-local addresses of the server count like public ones (1:1 NAT, port
-# forward), with no class of their own: any, restricted or none, as for every other rule.
+# Private and tailnet addresses of the server count like public ones (1:1 NAT, port forward), with no
+# class of their own: any, restricted or none, as for every other rule. A link-local address is not
+# in the list, so a rule to it opens nothing: the internet never reaches it.
 set_rules '192.168.1.50 8080/tcp' 'ALLOW IN' 'Anywhere'
 expect 8080 tcp any "port to the server's LAN address (1:1 NAT or port forward)"
 expect 8080 tcp none "port to the server's LAN address, socket on the public address" 203.0.113.10
@@ -440,7 +442,10 @@ expect 9100 tcp any "port to the Docker bridge address"
 set_rules '10.8.0.1 51820' 'ALLOW IN' 'Anywhere'
 expect 51820 udp any "port to a point-to-point address (ip prints it before peer)"
 set_rules 'fe80::1 22/tcp' 'ALLOW IN' 'Anywhere (v6)'
-expect 22 tcp any "port to a link-local address"
+expect 22 tcp none "port to a link-local address"
+expect 22 tcp none "port to a link-local address, socket on all IPv6 addresses" '[::]'
+set_rules 'fe80::/10 22/tcp' 'ALLOW IN' 'Anywhere (v6)'
+expect 22 tcp none "port to the whole link-local range"
 set_rules '100.100.100.100 3000/tcp' 'ALLOW IN' 'Anywhere'
 expect 3000 tcp any "port to the tailnet address"
 expect 3000 tcp any "port to the tailnet address, socket on all IPv4 addresses" 0.0.0.0
