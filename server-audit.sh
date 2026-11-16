@@ -1041,10 +1041,13 @@ fi
 # reads it: a line indented deeper than the option line before it goes on with that option's value,
 # a line indented as much is the next option, a blank or comment line ("#" or ";" first) does not end
 # a value, " ;" starts a comment, and "=" or ":" ends the option name. Values that go on over lines
-# are joined with spaces. F2B_DIR is /etc/fail2ban, another folder only in tests.
+# are joined with spaces. F2B_DIR is /etc/fail2ban, another folder only in tests. With BEFORE (a
+# file path as this function prints it), only the files read before that one count: what fail2ban
+# had for OPTION when it read BEFORE.
 jail_option_set() {
-    local section="$1" option="$2" d="${F2B_DIR:-/etc/fail2ban}" file value result=""
+    local section="$1" option="$2" before="${3:-}" d="${F2B_DIR:-/etc/fail2ban}" file value result=""
     for file in "$d"/jail.conf "$d"/jail.d/*.conf "$d"/jail.local "$d"/jail.d/*.local; do
+        [[ -n "$before" && "$file" == "$before" ]] && break
         [[ -f "$file" ]] || continue
         value=$(awk -v sect="$section" -v opt="$option" '
             {   # the line without its indent, comment and trailing blanks
@@ -1074,34 +1077,38 @@ get_jail_option() {   # get_jail_option SECTION OPTION: the value of jail_option
     printf '%s\n' "${r#*$'\t'}"
 }
 # f2b_files_ignoreip: the sshd jail's whitelist as the files set it, "FILE<TAB>LIST". [sshd] ignoreip
-# wins over [DEFAULT]'s. In [sshd], %(known/ignoreip)s is the value an earlier file gave [sshd], else
-# the [DEFAULT] one: as no file but server-prep's zz-server-prep.local sets [sshd] ignoreip, it becomes
-# the [DEFAULT] list. FILE is the one that set the list: [DEFAULT]'s file when [sshd] only extends it.
+# wins over [DEFAULT]'s. In [sshd], %(known/ignoreip)s is the value a file read earlier gave [sshd]
+# (fail2ban's KNOWN/sshd section), else the [DEFAULT] one, which is the usual case: no file but
+# server-prep's zz-server-prep.local sets [sshd] ignoreip. FILE is the one that set the list that
+# [sshd] only extends: that earlier file, else [DEFAULT]'s.
 f2b_files_ignoreip() {
-    local d s dv="" sv known='%(known/ignoreip)s'
+    local d s k kv="" sv known='%(known/ignoreip)s'
     d="$(jail_option_set DEFAULT ignoreip)"
     s="$(jail_option_set sshd ignoreip)"
-    [[ -n "$d" ]] && dv="${d#*$'\t'}"
     sv="${s#*$'\t'}"
     if [[ -z "$s" ]]; then
         [[ -n "$d" ]] && printf '%s\n' "$d"
     elif [[ "$sv" == *"$known"* ]]; then
-        printf '%s\t%s\n' "${d%%$'\t'*}" "${sv//"$known"/"$dv"}"
+        k="$(jail_option_set sshd ignoreip "${s%%$'\t'*}")"
+        [[ -n "$k" ]] || k="$d"
+        [[ -n "$k" ]] && kv="${k#*$'\t'}"
+        printf '%s\t%s\n' "${k%%$'\t'*}" "${sv//"$known"/"$kv"}"
     else
         printf '%s\n' "$s"
     fi
     return 0
 }
-# f2b_unset_known: the file whose [sshd] ignoreip extends the [DEFAULT] list with %(known/ignoreip)s
-# (server-prep's zz-server-prep.local) when no file sets a [DEFAULT] ignoreip, as after jail.local was
-# deleted without it. fail2ban then has no value for %(known/ignoreip)s and rejects its whole
-# configuration ("Bad value substitution ... 'known/ignoreip'"): it does not start, or not after its
-# next restart. Nothing when the list resolves. As f2b_files_ignoreip, it takes that file to be the
-# only one that sets [sshd] ignoreip.
+# f2b_unset_known: the file whose [sshd] ignoreip extends the list with %(known/ignoreip)s (server-prep's
+# zz-server-prep.local) when no file sets a [DEFAULT] ignoreip and no file read before it sets an
+# [sshd] one, as after jail.local was deleted without it. fail2ban then has no value for
+# %(known/ignoreip)s and rejects its whole configuration ("Bad value substitution ... 'known/ignoreip'"):
+# it does not start, or not after its next restart. Nothing when the list resolves, also from an
+# [sshd] ignoreip that an operator wrote in jail.local in place of the [DEFAULT] one.
 f2b_unset_known() {
     local s
     s="$(jail_option_set sshd ignoreip)"
-    [[ ${s#*$'\t'} == *'%(known/ignoreip)s'* && -z "$(jail_option_set DEFAULT ignoreip)" ]] && printf '%s\n' "${s%%$'\t'*}"
+    [[ ${s#*$'\t'} == *'%(known/ignoreip)s'* && -z "$(jail_option_set sshd ignoreip "${s%%$'\t'*}")" \
+        && -z "$(jail_option_set DEFAULT ignoreip)" ]] && printf '%s\n' "${s%%$'\t'*}"
     return 0
 }
 # ip_bits ADDR: an IPv4 or IPv6 address, without a prefix, as its 32 or 128 bits (a string of 0 and 1);

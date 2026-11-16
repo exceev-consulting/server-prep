@@ -138,6 +138,18 @@ mv "$F2B_DIR/jail.local" "$tmp/jail.local"
 [[ "$(f2b_unset_known)" == "$F2B_DIR/jail.d/zz-server-prep.local" ]] ||
     fail "f2b_unset_known: jail.local deleted, zz-server-prep.local left: got '$(f2b_unset_known)'"
 pass 'f2b_unset_known: jail.local deleted, zz-server-prep.local left alone: names it'
+# A hand-made layout: an [sshd] ignoreip in a file read earlier fills %(known/ignoreip)s (fail2ban's
+# KNOWN/sshd section), with or without a [DEFAULT] one, and wins over it
+printf '[sshd]\nenabled = true\nignoreip = 192.0.2.10\n' > "$F2B_DIR/jail.local"
+[[ -z "$(f2b_unset_known)" ]] || fail "f2b_unset_known: jail.local sets an [sshd] ignoreip, got '$(f2b_unset_known)'"
+pass 'f2b_unset_known: nothing when a file read earlier sets the [sshd] ignoreip that zz-server-prep.local extends'
+files 'zz-server-prep.local extends the [sshd] list of a file read earlier' "$F2B_DIR/jail.local" \
+    '192.0.2.10 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+printf '[DEFAULT]\nignoreip = 198.51.100.7\n' > "$F2B_DIR/jail.local"
+printf '[sshd]\nignoreip = 192.0.2.10\n' > "$F2B_DIR/jail.d/aa-other.local"
+files 'an earlier [sshd] list wins over the [DEFAULT] one' "$F2B_DIR/jail.d/aa-other.local" \
+    '192.0.2.10 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+rm "$F2B_DIR/jail.local" "$F2B_DIR/jail.d/aa-other.local"
 printf '%s\n' "$DOKPLOY" > "$F2B_DIR/jail.d/dokploy.local"
 [[ -z "$(f2b_unset_known)" ]] || fail "f2b_unset_known: dokploy.local sets [DEFAULT] ignoreip, got '$(f2b_unset_known)'"
 pass "f2b_unset_known: nothing when another file (Dokploy's) sets a [DEFAULT] ignoreip"
@@ -256,6 +268,20 @@ if command -v fail2ban-client >/dev/null 2>&1 && [[ -r /etc/fail2ban/jail.conf &
     [[ "$(F2B_DIR="$real" f2b_unset_known)" == "$real/jail.d/zz-server-prep.local" ]] ||
         fail "f2b_unset_known does not name zz-server-prep.local, which fail2ban refuses without jail.local"
     pass "fail2ban's own parser refuses zz-server-prep.local without jail.local's [DEFAULT] ignoreip, and f2b_unset_known names it"
+    # An [sshd] ignoreip in a file read earlier fills %(known/ignoreip)s, with no [DEFAULT] one or before it
+    printf '[sshd]\nignoreip = 192.0.2.10\n' > "$real/jail.local"
+    got="$(fail2ban-client -c "$real" -d 2>&1 | grep -F "['set', 'sshd', 'addignoreip'")"
+    [[ $got == *"'192.0.2.10', '127.0.0.1/8', '::1', '100.64.0.0/10'"* ]] ||
+        fail "fail2ban's own parser: an [sshd] ignoreip in jail.local does not fill %(known/ignoreip)s: ${got:0:300}"
+    [[ -z "$(F2B_DIR="$real" f2b_unset_known)" ]] ||
+        fail "f2b_unset_known names zz-server-prep.local, which fail2ban accepts with an [sshd] ignoreip in jail.local"
+    printf '[DEFAULT]\nignoreip = 198.51.100.7\n\n[sshd]\nignoreip = 192.0.2.10\n' > "$real/jail.local"
+    got="$(fail2ban-client -c "$real" -d 2>&1 | grep -F "['set', 'sshd', 'addignoreip'")"
+    [[ $got == *"'192.0.2.10', '127.0.0.1/8', '::1', '100.64.0.0/10'"* && $got != *198.51.100.7* ]] ||
+        fail "fail2ban's own parser: the earlier [sshd] ignoreip does not win over the [DEFAULT] one: ${got:0:300}"
+    [[ "$(F2B_DIR="$real" f2b_files_ignoreip | cut -f2)" == '192.0.2.10 127.0.0.1/8 ::1 100.64.0.0/10' ]] ||
+        fail "f2b_files_ignoreip gives another list than fail2ban's own parser with an earlier [sshd] ignoreip"
+    pass "fail2ban's own parser fills %(known/ignoreip)s from an earlier [sshd] ignoreip first, as f2b_unset_known and f2b_files_ignoreip read it"
     # Indents: options indented alike, and a value that goes on over deeper lines past a comment
     rm "$real/jail.d/zz-server-prep.local"
     printf '[DEFAULT]\n    ignoreip = 127.0.0.1/8\n        # the office\n        192.0.2.10\n    bantime = 1h\n[sshd]\n    enabled = true\n    port = 2222\n' > "$real/jail.local"
