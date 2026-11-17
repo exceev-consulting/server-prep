@@ -457,6 +457,8 @@ step_hostname() {
 comment_out_iface() {   # comment_out_iface IFACE < interfaces: its "iface IFACE inet" blocks and lone auto/allow-hotplug lines commented out
     # ifupdown ends a block only at the next stanza keyword: an option after a comment, a blank or an
     # unindented line still belongs to it. Left active, it becomes an option of the block above (often lo).
+    # Keywords: read_interfaces_defn() in ifupdown's config.c. allow-.+ and source.* are a bit wider,
+    # which only ends a block early and never comments out a source line.
     # A block this script commented out earlier counts too, so a re-run repairs a file an older version
     # left half done.
     awk -v ifc="$1" '
