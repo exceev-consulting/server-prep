@@ -457,12 +457,15 @@ step_hostname() {
 comment_out_iface() {   # comment_out_iface IFACE < interfaces: its "iface IFACE inet" blocks and lone auto/allow-hotplug lines commented out
     # ifupdown ends a block only at the next stanza keyword: an option after a comment, a blank or an
     # unindented line still belongs to it. Left active, it becomes an option of the block above (often lo).
+    # A block this script commented out earlier counts too, so a re-run repairs a file an older version
+    # left half done.
     awk -v ifc="$1" '
         skip && ($1 ~ /^#/ || NF == 0) { print; next }
         skip && $1 !~ /^(iface|mapping|auto|allow-.+|rename|source.*|no-auto-down|no-scripts)$/ { print "#preconfig# " $0; next }
         { skip = 0 }
         ($1 == "allow-hotplug" || $1 == "auto") && $2 == ifc && NF == 2 { print "#preconfig# " $0; next }
         $1 == "iface" && $2 == ifc && $3 == "inet" { skip = 1; print "#preconfig# " $0; next }
+        $1 == "#preconfig#" && $2 == "iface" && $3 == ifc && $4 == "inet" { skip = 1; print; next }
         { print }'
 }
 

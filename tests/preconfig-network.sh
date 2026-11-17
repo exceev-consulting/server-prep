@@ -142,9 +142,30 @@ printf '%s\n' \
     '#preconfig# iface ens18 inet dhcp' \
     'rename eth2=ens20' > "$tmp/keywords.want"
 
+# (d) The installer file as an older version left it: the block commented out only up to the comment,
+# dns-nameservers and dns-search still active under lo. A re-run must repair it.
+printf '%s\n' \
+    '# This file describes the network interfaces available on your system' \
+    'source /etc/network/interfaces.d/*' \
+    '' \
+    '# The loopback network interface' \
+    'auto lo' \
+    'iface lo inet loopback' \
+    '' \
+    '# The primary network interface' \
+    '#preconfig# allow-hotplug ens18' \
+    '#preconfig# iface ens18 inet static' \
+    $'#preconfig# \taddress 192.168.1.50/24' \
+    $'#preconfig# \tgateway 192.168.1.1' \
+    $'\t# dns-* options are implemented by the resolvconf package, if installed' \
+    $'\tdns-nameservers 192.168.1.1' \
+    $'\tdns-search example.com' > "$tmp/oldrun.in"
+cp "$tmp/installer.want" "$tmp/oldrun.want"
+[[ -n $(iface_options < "$tmp/oldrun.in") ]] || not_ok "oldrun: the fixture does not show the old bug" "$tmp/oldrun.in"
+
 cases() {   # cases LABEL: every case, run once per awk
     local l=$1 name out
-    for name in installer blocks keywords; do
+    for name in installer blocks keywords oldrun; do
         comment_out_iface ens18 < "$tmp/$name.in" > "$tmp/$name.got"
         diff "$tmp/$name.want" "$tmp/$name.got" > "$tmp/$name.diff" || not_ok "$l: $name" "$tmp/$name.diff"
         printf 'ok: %s: %s: the ens18 inet block is commented out, every other line byte for byte\n' "$l" "$name"
@@ -157,6 +178,9 @@ cases() {   # cases LABEL: every case, run once per awk
     out=$(iface_options < "$tmp/installer.got")
     [[ -z $out ]] || not_ok "$l: installer: options left active: $out"
     printf 'ok: %s: installer: dns-nameservers and dns-search are no longer options of lo\n' "$l"
+    out=$(iface_options < "$tmp/oldrun.got")
+    [[ -z $out ]] || not_ok "$l: oldrun: options left active after a re-run: $out"
+    printf 'ok: %s: oldrun: a re-run repairs a file an older version left half done\n' "$l"
     out=$(iface_options < "$tmp/blocks.got")
     [[ $out == $'ens18 inet6: address 2001:db8::50/64\nens19 inet: metric 200' ]] \
         || not_ok "$l: blocks: ifupdown would read: $out"

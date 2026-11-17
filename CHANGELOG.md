@@ -216,7 +216,8 @@ Highlights of each release. The full list of merged pull requests is in each
   when the block had a comment, a blank line or an unindented line in the middle, as in the block the Debian installer
   writes for a fixed IP. The lines after it, such as `dns-nameservers`, then became options of the loopback interface
   `lo`. The script now comments out every line of the old block, up to the next `iface`, `auto`, `allow-*`, `source` or
-  other stanza line, and leaves comments and blank lines as they are.
+  other stanza line, and leaves comments and blank lines as they are. A re-run also repairs a file an older version
+  left half commented out.
 
 ## [1.1.1] - 2026-10-19
 
