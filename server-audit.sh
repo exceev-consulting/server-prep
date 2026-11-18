@@ -1203,6 +1203,20 @@ prep_conf_value() {
     done
     printf '%s' "$out$v"
 }
+# f2b_wanted: the addresses the ips step whitelists in fail2ban (ips_whitelist in server-prep.sh), one per
+# line, from the saved answers (PREP_CONF), without the loopback: Tailscale's IPv4 and IPv6 ranges when
+# PANEL_ACCESS has tailscale (TAILNET_RANGES in server-prep.sh, tests/f2b-ignoreip.sh checks they are
+# the same), PANEL_IP and each ADMIN_IPS entry. The old COOLIFY_* names count too, as in server-prep.sh.
+f2b_wanted() {
+    local access panel admin=() tailnet=(100.64.0.0/10 fd7a:115c:a1e0::/48)
+    access="$(prep_conf_value PANEL_ACCESS)"; [[ -n "$access" ]] || access="$(prep_conf_value COOLIFY_ACCESS)"
+    panel="$(prep_conf_value PANEL_IP)"; [[ -n "$panel" ]] || panel="$(prep_conf_value COOLIFY_IP)"
+    [[ "$access" == *tailscale* ]] && printf '%s\n' "${tailnet[@]}"
+    [[ -n "$panel" ]] && printf '%s\n' "$panel"
+    IFS=$' \t\n,' read -r -d '' -a admin <<<"$(prep_conf_value ADMIN_IPS)"
+    [[ ${#admin[@]} -gt 0 ]] && printf '%s\n' "${admin[@]}"
+    return 0
+}
 # prep_conf_missing: true when PREP_CONF is not there. Without root, the folder that server-prep
 # makes for it (/etc/server-prep, mode 0700) hides whether it is: then it is unreadable, not missing.
 prep_conf_missing() {
@@ -1244,9 +1258,10 @@ if [[ $F2B -ge 1 && -d /etc/fail2ban ]]; then
         fi
     fi
 
-    # The addresses the ips step whitelists (tailnet, PANEL_IP, ADMIN_IPS) must still be in the sshd
-    # jail's ignoreip: a jail.d/*.local file read after jail.local, such as Dokploy's dokploy.local,
-    # can replace the list (issue #204). fail2ban's own list when it answers, else the files. First,
+    # The addresses the ips step whitelists (f2b_wanted: both tailnet ranges, PANEL_IP, ADMIN_IPS) must
+    # still be in the sshd jail's ignoreip: a jail.d/*.local file read after jail.local, such as Dokploy's
+    # dokploy.local, can replace the list (issue #204), and a server prepared before issue #227 has the
+    # tailnet's IPv4 range only. fail2ban's own list when it answers, else the files. First,
     # zz-server-prep.local left without the jail.local it extends, which stops fail2ban (f2b_unset_known).
     f2b_unset="$(f2b_unset_known)"
     if [[ -n "$f2b_unset" ]]; then
@@ -1259,13 +1274,7 @@ if [[ $F2B -ge 1 && -d /etc/fail2ban ]]; then
     elif f2b_inst="$(prep_conf_value INSTALL_FAIL2BAN)" && [[ -n "$f2b_inst" && ! "${f2b_inst,,}" =~ ^(y|yes|true|1)$ ]]; then
         result ips.f2b_ignoreip INFO "fail2ban whitelist" "server-prep does not set up fail2ban here (INSTALL_FAIL2BAN=${f2b_inst})"
     else
-        f2b_access="$(prep_conf_value PANEL_ACCESS)"; [[ -n "$f2b_access" ]] || f2b_access="$(prep_conf_value COOLIFY_ACCESS)"
-        f2b_panel="$(prep_conf_value PANEL_IP)"; [[ -n "$f2b_panel" ]] || f2b_panel="$(prep_conf_value COOLIFY_IP)"
-        f2b_want=()
-        [[ "$f2b_access" == *tailscale* ]] && f2b_want+=(100.64.0.0/10)
-        [[ -n "$f2b_panel" ]] && f2b_want+=("$f2b_panel")
-        IFS=$' \t\n,' read -r -d '' -a f2b_admin <<<"$(prep_conf_value ADMIN_IPS)"
-        f2b_want+=("${f2b_admin[@]}")
+        mapfile -t f2b_want < <(f2b_wanted)
         if [[ ${#f2b_want[@]} -eq 0 ]]; then
             result ips.f2b_ignoreip INFO "fail2ban whitelist" "No tailnet, PANEL_IP or ADMIN_IPS in the saved answers: no address to look for"
         else

@@ -114,9 +114,20 @@ panels_tsv() {
     sed -n '/^set_panel_label()/,/^}/p' "$PREP" \
         | sed -n 's/^[[:space:]]*\([a-z][a-z0-9-]*\)) PANEL_LABEL="\([^"]*\)".*/\1\t\2/p'
 }
+# A source written "${NAME[@]}" is a top-level NAME=(...) array of server-prep.sh (TAILNET_RANGES): its words.
 access_tsv() {
+    local id src name words
     sed -n '/^compute_root_sources()/,/^}/p' "$PREP" \
-        | sed -n 's/.*\*\([a-z]*\)\*.*ROOT_SOURCES+=(\(.*\))$/\1\t\2/p' | tr -d '"$'
+        | sed -n 's/.*\*\([a-z]*\)\*.*ROOT_SOURCES+=(\(.*\))$/\1\t\2/p' \
+        | while IFS=$'\t' read -r id src; do
+            while [[ $src =~ \"?\$\{([A-Za-z_][A-Za-z0-9_]*)\[@\]\}\"? ]]; do
+                name="${BASH_REMATCH[1]}"
+                words="$(sed -n "s/^${name}=(\\(.*\\))\$/\\1/p" "$PREP" | head -1)"
+                [[ -n $words ]] || die "compute_root_sources uses \${${name}[@]}, but server-prep.sh has no ${name}=(...) line"
+                src="${src/"${BASH_REMATCH[0]}"/$words}"
+            done
+            printf '%s\t%s\n' "$id" "$src"
+        done | tr -d '"$'
 }
 
 # --- usage options of each script (continuation lines joined to their flag, ${PROJECT_URL} expanded) ---

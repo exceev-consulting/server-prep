@@ -28,6 +28,12 @@ Highlights of each release. The full list of merged pull requests is in each
   indented deeper than its option, and ` ;` starts a comment. The wiki's Panels page says which tabs of the dialog to
   use on a prepared server and how to undo a save. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes`.
+- Fix: with `PANEL_ACCESS=tailscale`, the `ips` step whitelisted only the tailnet's IPv4 range (`100.64.0.0/10`) in
+  fail2ban and CrowdSec, while SSH also trusts its IPv6 range (`fd7a:115c:a1e0::/48`). A tailnet device that connected
+  over IPv6 (MagicDNS can give that address first) could be banned after a few failed logins. Both ranges are now
+  whitelisted, and the audit's `ips.f2b_ignoreip` warns when the IPv6 one is missing. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --dry-run`, then the same command with
+  `--yes`.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,

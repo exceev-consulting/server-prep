@@ -559,8 +559,8 @@ sc_dokploy_overrides() {
     check "without zz-server-prep.local, as before this fix: sshd -t passes and fail2ban restarts" "${PIPESTATUS[0]}"
     got="$(f2b_whitelist)"
     printf 'fail2ban-client get sshd ignoreip with dokploy.local:\n%s\n' "$got" >> "$OUT/$SC_ID.log"
-    grep -qxF 203.0.113.5 <<<"$got" && ! grep -qxF 100.64.0.0/10 <<<"$got"
-    check "control: dokploy.local replaces the whitelist (Dokploy's address in, the tailnet out)" $? "$(paste -sd' ' <<<"$got")"
+    grep -qxF 203.0.113.5 <<<"$got" && ! grep -qxF 100.64.0.0/10 <<<"$got" && ! grep -qxF fd7a:115c:a1e0::/48 <<<"$got"
+    check "control: dokploy.local replaces the whitelist (Dokploy's address in, both tailnet ranges out)" $? "$(paste -sd' ' <<<"$got")"
 
     run_audit dokploy
     if [[ -n "$AUDIT_JSON" ]]; then
@@ -571,8 +571,8 @@ sc_dokploy_overrides() {
         [[ $st == WARN && $msg == *00-dokploy.conf* ]]
         check "ssh.root_login warns and names 00-dokploy.conf" $? "$st: ${msg:0:300}"
         st="$(audit_status ips.f2b_ignoreip)"; msg="$(audit_message ips.f2b_ignoreip)"
-        [[ $st == WARN && $msg == *100.64.0.0/10* && $msg == *198.51.100.2* && $msg == *dokploy.local* ]]
-        check "ips.f2b_ignoreip warns: the tailnet and the admin address are missing, the list set by dokploy.local" $? "$st: ${msg:0:300}"
+        [[ $st == WARN && $msg == *100.64.0.0/10* && $msg == *fd7a:115c:a1e0::/48* && $msg == *198.51.100.2* && $msg == *dokploy.local* ]]
+        check "ips.f2b_ignoreip warns: both tailnet ranges and the admin address are missing, the list set by dokploy.local" $? "$st: ${msg:0:300}"
     else
         check "the audit writes a JSON report" 1
     fi
@@ -595,8 +595,8 @@ sc_dokploy_overrides() {
     got="$(f2b_whitelist)"
     printf 'fail2ban-client get sshd ignoreip after the ips step:\n%s\n' "$got" >> "$OUT/$SC_ID.log"
     bad=""
-    for ip in 100.64.0.0/10 198.51.100.2 203.0.113.5; do grep -qxF -- "$ip" <<<"$got" || bad+=" $ip"; done
-    [[ -z $bad ]]; check "fail2ban's sshd jail ignores the tailnet and the admin address again, and keeps Dokploy's" $? "missing:$bad"
+    for ip in 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 203.0.113.5; do grep -qxF -- "$ip" <<<"$got" || bad+=" $ip"; done
+    [[ -z $bad ]]; check "fail2ban's sshd jail ignores both tailnet ranges and the admin address again, and keeps Dokploy's" $? "missing:$bad"
 
     # Back to the prepared server: Dokploy's files go, zz-server-prep.local stays
     as_root 'rm -f /etc/ssh/sshd_config.d/00-dokploy.conf /etc/fail2ban/jail.d/dokploy.local && systemctl restart fail2ban' \
@@ -604,7 +604,7 @@ sc_dokploy_overrides() {
     check "Dokploy's files are deleted and fail2ban restarts without them" "${PIPESTATUS[0]}"
     got="$(f2b_whitelist)"
     bad=""
-    for ip in 100.64.0.0/10 198.51.100.2; do grep -qxF -- "$ip" <<<"$got" || bad+=" missing $ip"; done
+    for ip in 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2; do grep -qxF -- "$ip" <<<"$got" || bad+=" missing $ip"; done
     grep -qxF 203.0.113.5 <<<"$got" && bad+=" still 203.0.113.5"
     [[ -z $bad ]]; check "without dokploy.local, the whitelist is server-prep's again" $? "$bad"
     finish

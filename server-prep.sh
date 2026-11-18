@@ -1416,11 +1416,16 @@ step_update() {
     return 0
 }
 
+# Tailscale's address ranges, IPv4 and IPv6: a tailnet device can connect over either (MagicDNS can
+# give the IPv6 address first). With PANEL_ACCESS=tailscale, root may log in from both
+# (compute_root_sources), and both are on the whitelists of fail2ban and CrowdSec (ips_whitelist).
+# The audit's f2b_wanted (server-audit.sh) looks for the same two in fail2ban's whitelist.
+TAILNET_RANGES=(100.64.0.0/10 fd7a:115c:a1e0::/48)
 ROOT_SOURCES=()
 compute_root_sources() {
     ROOT_SOURCES=()
     [[ "$PANEL_ACCESS" == *cloudflared* ]] && ROOT_SOURCES+=(127.0.0.1 ::1)
-    [[ "$PANEL_ACCESS" == *tailscale* ]] && ROOT_SOURCES+=(100.64.0.0/10 fd7a:115c:a1e0::/48)
+    [[ "$PANEL_ACCESS" == *tailscale* ]] && ROOT_SOURCES+=("${TAILNET_RANGES[@]}")
     [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]] && ROOT_SOURCES+=("$PANEL_IP")
     return 0
 }
@@ -2253,11 +2258,21 @@ ignoreip = %(known/ignoreip)s ${ips[*]}
 EOF
 }
 
-step_ips() {
-    local did=0 ignore="127.0.0.1/8 ::1"
-    [[ "$PANEL_ACCESS" == *tailscale* ]] && ignore+=" 100.64.0.0/10"
+# ips_whitelist: the addresses the ips step whitelists in fail2ban (ignoreip of jail.local and
+# zz-server-prep.local) and CrowdSec, separated by spaces: the loopback, the tailnet's ranges
+# (TAILNET_RANGES) when PANEL_ACCESS has tailscale, PANEL_IP and ADMIN_IPS. The audit's
+# ips.f2b_ignoreip looks for all but the loopback (f2b_wanted in server-audit.sh).
+ips_whitelist() {
+    local ignore="127.0.0.1/8 ::1"
+    [[ "$PANEL_ACCESS" == *tailscale* ]] && ignore+=" ${TAILNET_RANGES[*]}"
     [[ -n "$PANEL_IP" ]] && ignore+=" $PANEL_IP"
     ignore+=" ${ADMIN_IPS//,/ }"
+    printf '%s\n' "$ignore"
+}
+
+step_ips() {
+    local did=0 ignore
+    ignore="$(ips_whitelist)"
 
     if yes_ "$INSTALL_FAIL2BAN"; then
         did=1

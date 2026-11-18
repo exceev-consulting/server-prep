@@ -5,9 +5,11 @@
 # jail.d/zz-server-prep.local (f2b_prep_local in server-prep.sh), and the audit's ips.f2b_ignoreip
 # reads the list (jail_option_set, f2b_files_ignoreip), compares it with the saved answers
 # (prep_conf_value, prep_conf_missing) and names what is missing (f2b_missing, ip_bits), or warns
-# that the file is left without the [DEFAULT] ignoreip it extends (f2b_unset_known). All on sample
-# files in a temporary folder. When fail2ban is installed here, its own parser also reads
-# server-prep's file and an indented jail.local.
+# that the file is left without the [DEFAULT] ignoreip it extends (f2b_unset_known). Issue #227: the
+# list holds both of Tailscale's ranges, IPv4 and IPv6 (ips_whitelist and TAILNET_RANGES in
+# server-prep.sh, f2b_wanted in server-audit.sh), and a list with the IPv4 range only gets a WARN.
+# All on sample files in a temporary folder. When fail2ban is installed here, its own parser also
+# reads server-prep's file and an indented jail.local.
 # No root needed, nothing on the host changes.
 set -u
 
@@ -22,7 +24,7 @@ fi
 trap 'rm -rf "$tmp"' EXIT
 
 # server-audit.sh runs its checks on load, so it cannot be sourced: take the functions only.
-for fn in jail_option_set get_jail_option f2b_files_ignoreip f2b_unset_known ip_bits f2b_missing prep_conf_value prep_conf_missing; do
+for fn in jail_option_set get_jail_option f2b_files_ignoreip f2b_unset_known ip_bits f2b_missing prep_conf_value prep_conf_missing f2b_wanted; do
     eval "$(sed -n "/^${fn}() {/,/^}/p" "$SCRIPT_DIR/server-audit.sh")"
     declare -F "$fn" >/dev/null || fail "$fn not found in server-audit.sh"
 done
@@ -47,6 +49,10 @@ missing 'IPv6: another spelling of the same address' '' '2001:0db8:0:0:0:0:0:1' 
 missing 'IPv6: an address inside a /48' '' '2001:db8:1:2::5' '2001:db8:1::/48'
 missing 'IPv6: an address outside it' '2001:db8:2::5' '2001:db8:2::5' '2001:db8:1::/48'
 missing 'IPv4 and IPv6 never hold each other' '192.0.2.10' '192.0.2.10' '::/0'
+missing "the tailnet's IPv6 range, as fail2ban-client prints it" '' 'fd7a:115c:a1e0::/48' $'127.0.0.0/8\n::1\n100.64.0.0/10\nfd7a:115c:a1e0::/48'
+missing "the tailnet's IPv4 range does not hold its IPv6 one (issue #227)" 'fd7a:115c:a1e0::/48' \
+    '100.64.0.0/10 fd7a:115c:a1e0::/48' '127.0.0.1/8 ::1 100.64.0.0/10'
+missing 'a tailnet device over IPv6 is inside the range' '' 'fd7a:115c:a1e0::5' 'fd7a:115c:a1e0::/48'
 missing '0.0.0.0/0 holds every IPv4 address' '' '192.0.2.10 100.64.0.0/10' '0.0.0.0/0'
 missing 'a host name must be listed as written' 'web-02.example.com' 'web-01.example.com web-02.example.com' 'WEB-01.example.com'
 missing 'an empty list misses everything' '192.0.2.10' '192.0.2.10' ''
@@ -69,7 +75,7 @@ cat > "$F2B_DIR/jail.local" <<'EOF'
 [DEFAULT]
 bantime = 1h
 backend = systemd
-ignoreip = 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2
+ignoreip = 127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2
 
 [sshd]
 enabled = true
@@ -105,7 +111,7 @@ files() {   # files LABEL WANT-FILE WANT-LIST: what f2b_files_ignoreip gives
     [[ $got == "$want" ]] || fail "f2b_files_ignoreip: $1: got '${got//$'\t'/<TAB>}', want '${want//$'\t'/<TAB>}'"
     pass "f2b_files_ignoreip: $1"
 }
-files 'jail.local alone' "$F2B_DIR/jail.local" '127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+files 'jail.local alone' "$F2B_DIR/jail.local" '127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2'
 [[ "$(get_jail_option sshd port)" == 822 && "$(get_jail_option sshd enabled)" == true && -z "$(get_jail_option sshd ignoreip)" ]] ||
     fail 'get_jail_option: [sshd] port 822 and enabled true from jail.local, no [sshd] ignoreip'
 pass 'get_jail_option still gives the last value in read order, "" when no file sets it'
@@ -117,20 +123,47 @@ files "dokploy.local is read after jail.local and replaces the list" "$F2B_DIR/j
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/server-prep.sh" --yes
 declare -F f2b_prep_local >/dev/null || fail 'f2b_prep_local not found in server-prep.sh'
-f2b_prep_local '127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2 ' > "$F2B_DIR/jail.d/zz-server-prep.local"
-grep -qxF 'ignoreip = %(known/ignoreip)s 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2' "$F2B_DIR/jail.d/zz-server-prep.local" ||
+f2b_prep_local '127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2 ' > "$F2B_DIR/jail.d/zz-server-prep.local"
+grep -qxF 'ignoreip = %(known/ignoreip)s 127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2' "$F2B_DIR/jail.d/zz-server-prep.local" ||
     fail "f2b_prep_local: no 'ignoreip = %(known/ignoreip)s <addresses>' line: $(cat "$F2B_DIR/jail.d/zz-server-prep.local")"
 awk '/^\[/ {s = $0} /^ignoreip/ {print s}' "$F2B_DIR/jail.d/zz-server-prep.local" | grep -qxF '[sshd]' ||
     fail 'f2b_prep_local: ignoreip must be in [sshd], not [DEFAULT], where %(known/ignoreip)s points back to itself'
 pass 'f2b_prep_local: [sshd] ignoreip = %(known/ignoreip)s and the addresses, separated by single spaces'
+
+# --- ips_whitelist: what step_ips writes to both files (and CrowdSec's whitelist) -----------------------
+declare -F ips_whitelist >/dev/null || fail 'ips_whitelist not found in server-prep.sh'
+[[ "${TAILNET_RANGES[*]:-}" == '100.64.0.0/10 fd7a:115c:a1e0::/48' ]] ||
+    fail "server-prep.sh's TAILNET_RANGES: got '${TAILNET_RANGES[*]:-}', want Tailscale's IPv4 and IPv6 ranges"
+whitelist() {   # whitelist LABEL WANT PANEL_ACCESS PANEL_IP ADMIN_IPS: ips_whitelist's words
+    local got words=()
+    got="$(PANEL_ACCESS="$3" PANEL_IP="$4" ADMIN_IPS="$5" ips_whitelist)"
+    read -r -a words <<<"$got"
+    [[ "${words[*]}" == "$2" ]] || fail "ips_whitelist: $1: got '$got', want '$2'"
+    pass "ips_whitelist: $1"
+}
+whitelist "ci.cfg's answers: the jail.local sample above" '127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2' \
+    tailscale,public 198.51.100.2 198.51.100.2
+whitelist "tailscale: the tailnet's IPv4 and IPv6 ranges (issue #227)" '127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48' tailscale '' ''
+whitelist 'cloudflared: no tailnet range, a comma in ADMIN_IPS separates too' '127.0.0.1/8 ::1 192.0.2.10 192.0.2.0/24' \
+    cloudflared '' '192.0.2.10,192.0.2.0/24'
+whitelist 'PANEL_IP is whitelisted whatever PANEL_ACCESS says' '127.0.0.1/8 ::1 192.0.2.10' cloudflared 192.0.2.10 ''
+# One definition: root may log in from the same tailnet ranges (compute_root_sources)
+PANEL_ACCESS=tailscale PANEL_IP='' compute_root_sources
+[[ "${ROOT_SOURCES[*]}" == "${TAILNET_RANGES[*]}" ]] ||
+    fail "compute_root_sources: tailscale gives '${ROOT_SOURCES[*]}', not TAILNET_RANGES"
+pass 'compute_root_sources and ips_whitelist take the tailnet from TAILNET_RANGES'
+f2b_prep_local "$(PANEL_ACCESS=tailscale PANEL_IP='' ADMIN_IPS='' ips_whitelist)" > "$tmp/zz.local"
+grep -qxF 'ignoreip = %(known/ignoreip)s 127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48' "$tmp/zz.local" ||
+    fail "zz-server-prep.local from ips_whitelist, tailscale: $(grep '^ignoreip' "$tmp/zz.local")"
+pass "zz-server-prep.local from ips_whitelist holds both tailnet ranges"
 files "zz-server-prep.local keeps Dokploy's list and adds server-prep's addresses" "$F2B_DIR/jail.d/dokploy.local" \
-    '127.0.0.1/8 ::1 203.0.113.5 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
-[[ -z "$(f2b_missing '100.64.0.0/10 198.51.100.2' "$(f2b_files_ignoreip | cut -f2)")" ]] ||
+    '127.0.0.1/8 ::1 203.0.113.5 127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2'
+[[ -z "$(f2b_missing '100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2' "$(f2b_files_ignoreip | cut -f2)")" ]] ||
     fail 'with zz-server-prep.local, the list still misses an address'
 pass 'with zz-server-prep.local, nothing is missing'
 rm "$F2B_DIR/jail.d/dokploy.local"
 files 'without Dokploy, zz-server-prep.local extends the list of jail.local' "$F2B_DIR/jail.local" \
-    '127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+    '127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2 127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2'
 [[ -z "$(f2b_unset_known)" ]] || fail "f2b_unset_known: jail.local sets [DEFAULT] ignoreip, got '$(f2b_unset_known)'"
 pass 'f2b_unset_known: nothing while jail.local sets the [DEFAULT] ignoreip that zz-server-prep.local extends'
 # zz-server-prep.local needs a [DEFAULT] ignoreip: without jail.local, fail2ban rejects its configuration
@@ -144,11 +177,11 @@ printf '[sshd]\nenabled = true\nignoreip = 192.0.2.10\n' > "$F2B_DIR/jail.local"
 [[ -z "$(f2b_unset_known)" ]] || fail "f2b_unset_known: jail.local sets an [sshd] ignoreip, got '$(f2b_unset_known)'"
 pass 'f2b_unset_known: nothing when a file read earlier sets the [sshd] ignoreip that zz-server-prep.local extends'
 files 'zz-server-prep.local extends the [sshd] list of a file read earlier' "$F2B_DIR/jail.local" \
-    '192.0.2.10 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+    '192.0.2.10 127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2'
 printf '[DEFAULT]\nignoreip = 198.51.100.7\n' > "$F2B_DIR/jail.local"
 printf '[sshd]\nignoreip = 192.0.2.10\n' > "$F2B_DIR/jail.d/aa-other.local"
 files 'an earlier [sshd] list wins over the [DEFAULT] one' "$F2B_DIR/jail.d/aa-other.local" \
-    '192.0.2.10 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+    '192.0.2.10 127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2'
 rm "$F2B_DIR/jail.local" "$F2B_DIR/jail.d/aa-other.local"
 printf '%s\n' "$DOKPLOY" > "$F2B_DIR/jail.d/dokploy.local"
 [[ -z "$(f2b_unset_known)" ]] || fail "f2b_unset_known: dokploy.local sets [DEFAULT] ignoreip, got '$(f2b_unset_known)'"
@@ -173,7 +206,7 @@ printf '[DEFAULT]\n  ignoreip = 127.0.0.1/8\n      # the office\n      192.0.2.0
 files 'deeper lines go on with the value, over a comment and a blank line' "$F2B_DIR/jail.d/other.local" '127.0.0.1/8 192.0.2.0/24 198.51.100.7'
 printf '[DEFAULT]\nbantime = 1h\n    ignoreip = 192.0.2.7\n' > "$F2B_DIR/jail.d/other.local"
 files 'a deeper line after another option is part of its value, not an option' "$F2B_DIR/jail.local" \
-    '127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2'
+    '127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2'
 printf '[sshd]\nport: 2200\n' > "$F2B_DIR/jail.d/other.local"
 [[ "$(get_jail_option sshd port)" == 2200 ]] || fail "get_jail_option: 'port: 2200' gives '$(get_jail_option sshd port)'"
 pass 'get_jail_option: ":" ends the option name too'
@@ -237,6 +270,38 @@ PREP_CONF="$tmp/locked/server-prep.conf" prep_conf_missing && { chmod 700 "$tmp/
 chmod 700 "$tmp/locked"
 pass 'prep_conf_missing: true without the file, false when the file or a folder that hides it is there'
 
+# --- f2b_wanted: what ips.f2b_ignoreip looks for, from the saved answers --------------------------------
+wanted() {   # wanted LABEL WANT CONF-LINE...
+    local got
+    printf '%s\n' "${@:3}" > "$tmp/wanted.conf"
+    got="$(PREP_CONF="$tmp/wanted.conf" f2b_wanted | paste -sd' ')"
+    [[ $got == "$2" ]] || fail "f2b_wanted: $1: got '$got', want '$2'"
+    pass "f2b_wanted: $1"
+}
+# The audit keeps its own copy of the ranges: it must be server-prep.sh's TAILNET_RANGES
+wanted "tailscale: server-prep.sh's TAILNET_RANGES, IPv4 and IPv6" "${TAILNET_RANGES[*]}" 'PANEL_ACCESS=tailscale'
+wanted "ci.cfg's answers" '100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2 198.51.100.2' \
+    'PANEL_ACCESS=tailscale\,public' 'PANEL_IP=198.51.100.2' 'ADMIN_IPS=198.51.100.2'
+wanted 'the old COOLIFY_* names' '100.64.0.0/10 fd7a:115c:a1e0::/48 192.0.2.10' 'COOLIFY_ACCESS=tailscale' 'COOLIFY_IP=192.0.2.10'
+wanted 'cloudflared: no tailnet range' '192.0.2.10 192.0.2.0/24' 'PANEL_ACCESS=cloudflared' 'ADMIN_IPS=192.0.2.10\ 192.0.2.0/24'
+wanted 'nothing to look for' '' 'PANEL_ACCESS=cloudflared'
+
+# A server prepared before issue #227: jail.local whitelists the tailnet's IPv4 range only. The audit
+# names the IPv6 range (WARN), and once the ips step has run again (jail.local and zz-server-prep.local
+# from ips_whitelist), nothing is missing (PASS).
+mkdir -p "$tmp/f2b-227/jail.d"
+printf '[DEFAULT]\nignoreip = 127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2 198.51.100.2\n\n[sshd]\nenabled = true\n' > "$tmp/f2b-227/jail.local"
+printf 'PANEL_ACCESS=tailscale\\,public\nPANEL_IP=198.51.100.2\nADMIN_IPS=198.51.100.2\n' > "$tmp/ci.conf"
+got="$(f2b_missing "$(PREP_CONF="$tmp/ci.conf" f2b_wanted)" "$(F2B_DIR="$tmp/f2b-227" f2b_files_ignoreip | cut -f2)")"
+[[ $got == 'fd7a:115c:a1e0::/48' ]] || fail "ips.f2b_ignoreip before #227: missing '$got', want 'fd7a:115c:a1e0::/48'"
+pass 'ips.f2b_ignoreip on a server prepared before #227: the list misses the IPv6 tailnet range (WARN)'
+new_list="$(PANEL_ACCESS=tailscale,public PANEL_IP=198.51.100.2 ADMIN_IPS=198.51.100.2 ips_whitelist)"
+printf '[DEFAULT]\nignoreip = %s\n\n[sshd]\nenabled = true\n' "$new_list" > "$tmp/f2b-227/jail.local"
+f2b_prep_local "$new_list" > "$tmp/f2b-227/jail.d/zz-server-prep.local"
+got="$(f2b_missing "$(PREP_CONF="$tmp/ci.conf" f2b_wanted)" "$(F2B_DIR="$tmp/f2b-227" f2b_files_ignoreip | cut -f2)")"
+[[ -z $got ]] || fail "ips.f2b_ignoreip after a re-run of the ips step: still misses '$got'"
+pass 'ips.f2b_ignoreip after a re-run of the ips step: nothing missing (PASS)'
+
 # --- fail2ban's own parser, when it is installed here --------------------------------------------------
 if command -v fail2ban-client >/dev/null 2>&1 && [[ -r /etc/fail2ban/jail.conf && -d /etc/fail2ban/filter.d ]]; then
     real="$tmp/real"
@@ -245,12 +310,22 @@ if command -v fail2ban-client >/dev/null 2>&1 && [[ -r /etc/fail2ban/jail.conf &
     cp /etc/fail2ban/paths-*.conf "$real/" 2>/dev/null
     cp "$F2B_DIR/jail.local" "$real/jail.local"
     printf '%s\n' "$DOKPLOY" > "$real/jail.d/dokploy.local"
-    f2b_prep_local '127.0.0.1/8 ::1 100.64.0.0/10 198.51.100.2' > "$real/jail.d/zz-server-prep.local"
+    f2b_prep_local '127.0.0.1/8 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2' > "$real/jail.d/zz-server-prep.local"
     got="$(fail2ban-client -c "$real" -d 2>&1 | grep -F "['set', 'sshd', 'addignoreip'")"
-    for ip in 203.0.113.5 100.64.0.0/10 198.51.100.2; do
+    for ip in 203.0.113.5 100.64.0.0/10 fd7a:115c:a1e0::/48 198.51.100.2; do
         [[ $got == *"'$ip'"* ]] || fail "fail2ban $(fail2ban-client --version 2>/dev/null | head -1): the sshd jail does not ignore $ip with dokploy.local and zz-server-prep.local: ${got:0:300}"
     done
     pass "fail2ban's own parser: the sshd jail keeps Dokploy's address and gets server-prep's back"
+    # fail2ban's own address code: the IPv6 tailnet range is a valid network, printed as written (what
+    # fail2ban-client get sshd ignoreip shows and the e2e test looks for), and holds a tailnet address
+    if python3 -I -c 'import fail2ban.server.ipdns' 2>/dev/null; then
+        got="$(python3 -I -c 'from fail2ban.server.ipdns import IPAddr
+n = IPAddr("fd7a:115c:a1e0::/48")
+print(n.isValid, str(n), IPAddr("fd7a:115c:a1e0::5").isInNet(n), IPAddr("fd7b::5").isInNet(n))' 2>&1)"
+        [[ $got == 'True fd7a:115c:a1e0::/48 True False' ]] ||
+            fail "fail2ban's IPAddr reads fd7a:115c:a1e0::/48 otherwise than expected: $got"
+        pass "fail2ban's own address code: fd7a:115c:a1e0::/48 is a network that holds the tailnet's IPv6 addresses"
+    fi
     # The form in [DEFAULT] that does not work, and why the file uses [sshd]: only a note either way
     printf '[DEFAULT]\nignoreip = %%(known/ignoreip)s 100.64.0.0/10\n' > "$real/jail.d/zz-server-prep.local"
     if fail2ban-client -c "$real" -d > /dev/null 2>&1; then
