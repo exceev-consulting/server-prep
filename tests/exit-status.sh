@@ -534,6 +534,8 @@ bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-logind-lid.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-hostname.sh" || exit 1
+# ... and how server-preconfig.sh comments out the old ifupdown block of the interface (issue #224).
+bash "$SCRIPT_DIR/tests/preconfig-network.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
