@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # check.sh - run the lint checks of CI on your machine: syntax, ShellCheck, --help, site data,
-# design tokens and the quick tests. It runs the checks of .github/workflows/lint.yml, with
-# ShellCheck pinned to 0.11.0 (CI may use another ShellCheck version until lint.yml runs this
-# script). Besides those, it runs the unit tests of tests/unit with a pinned bats-core. No CI job
-# runs them yet: the maintainer adds a "Unit tests" step that runs `./scripts/check.sh --only tests`
-# to the lint job of .github/workflows/lint.yml (#37). It never calls sudo, needs no root and
-# changes nothing on the system.
+# design tokens, the quick tests and the committed-file guard. It runs the checks of
+# .github/workflows/lint.yml, with ShellCheck pinned to 0.11.0 (CI may use another ShellCheck
+# version until lint.yml runs this script). Besides those, it runs the unit tests of tests/unit
+# with a pinned bats-core. No CI job runs them yet: the maintainer adds a "Unit tests" step that
+# runs `./scripts/check.sh --only tests` to the lint job of .github/workflows/lint.yml (#37). It
+# never calls sudo, needs no root and changes nothing on the system.
 #
 # Usage:
 #   scripts/check.sh                    run every section
@@ -29,6 +29,9 @@
 #   tests         bats tests/unit: unit tests of the server-prep.sh helpers, with the pinned bats-core
 #                 (needs ssh-keygen); no CI job runs it yet
 #   consistency   scripts/check-consistency.sh (#35), only when that file exists
+#   security      scripts/check-files.sh: no report, filled config, key or CLAUDE.local.md is tracked,
+#                 every IPv4 address is an example (needs git and .git; reads the staged copy: run it after
+#                 git add)
 #
 # ShellCheck: the lint section uses ShellCheck 0.11.0. A shellcheck on PATH is used only when it
 # is that version. Otherwise the release archive for your system is downloaded once to
@@ -41,15 +44,16 @@
 # and run from there. A checksum mismatch stops the script.
 #
 # Needs bash 5, curl, tar and sha256sum (or shasum on macOS). Some sections also need jq, ssh-keygen,
-# unzip and python3 (see the list above). When one is missing, the sections that need it show SKIP on
-# your machine; CI has them all, and there a missing one is a FAIL.
+# unzip, python3 and git (see the list above). When one is missing, the sections that need it show
+# SKIP on your machine; CI has them all, and there a missing one is a FAIL. The same goes for .git:
+# without it (a release tarball) security shows SKIP, and with CI=true it is a FAIL.
 # Linux is the reference platform (CI runs ubuntu-latest). On macOS, syntax, lint and help match
 # CI; the other sections may need the GNU tools.
 #
 # Exit status: 0 every section passed or was skipped, 1 a section failed, 2 a usage error, bash
 # older than 5, or no verified ShellCheck or bats-core.
 #
-# Add a section (consistency #35, docs #39, security #40): one line in SECTIONS and one
+# Add a section (consistency #35, docs #39): one line in SECTIONS and one
 # section_<name> function (a dash in the name becomes an underscore).
 if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ]; then echo "bash 5 needed (macOS: brew install bash)" >&2; exit 2; fi
 set -euo pipefail
@@ -83,8 +87,10 @@ FILES=(server-prep.sh server-audit.sh server-preconfig.sh extras/github-runners/
 HELP_SCRIPTS=(server-prep.sh server-preconfig.sh server-audit.sh)
 
 # One line per section, in run order: name|gate|tools|description
-#   gate: a file the section needs; when it is missing, the section is skipped. "-": always runs
-#         (a missing file is then a FAIL, as in CI).
+#   gate: a file the section needs; when it is missing, the section is skipped, in CI too (a script
+#         still to come). "ci:<file>": skipped only on your machine; with CI=true a missing file is a
+#         FAIL, as a missing tool is (.git: a release tarball has none, a CI checkout must). "-": always
+#         runs (a missing file is then a FAIL, as in CI).
 #   tools: commands the section needs, space-separated. "-": none.
 SECTIONS=(
     "syntax|-|-|bash -n on every script, one file per call"
@@ -98,6 +104,7 @@ SECTIONS=(
     "e2e-pages|-|jq unzip python3|the e2e pages builder with a stub gh (tests/e2e-pages.sh)"
     "tests|-|ssh-keygen|unit tests of the server-prep.sh helpers, with the pinned bats-core $BATS_VERSION (bats tests/unit)"
     "consistency|scripts/check-consistency.sh|-|steps, README, config example and audit agree (#35)"
+    "security|ci:.git|git|no forbidden file is tracked, every IPv4 address is an example (scripts/check-files.sh)"
 )
 NAMES=()
 NAME_WIDTH=0
@@ -117,8 +124,9 @@ list_sections() {
     for entry in "${SECTIONS[@]}"; do
         IFS='|' read -r name gate _ desc <<<"$entry"
         if [[ $gate != - ]]; then
-            if [[ -e $gate ]]; then state=present; else state=missing; fi
-            desc="$desc; runs when $gate exists ($state)"
+            if [[ -e ${gate#ci:} ]]; then state=present; else state=missing; fi
+            desc="$desc; runs when ${gate#ci:} exists ($state)"
+            [[ $gate != ci:* ]] || desc="$desc, fails in CI without it"
         fi
         printf '%-*s  %s\n' "$NAME_WIDTH" "$name" "$desc"
     done
@@ -331,6 +339,16 @@ section_consistency() {
     bash scripts/check-consistency.sh
 }
 
+section_security() {
+    local rc=0
+    DETAIL="scripts/check-files.sh, on the staged copy"
+    bash scripts/check-files.sh || rc=$?
+    if [[ $rc -eq 1 ]]; then
+        echo "It reads the staged copy: stage your fix before running the check again."
+    fi
+    return "$rc"
+}
+
 # --- Options -----------------------------------------------------------------
 
 ONLY=""
@@ -387,9 +405,15 @@ for entry in "${SECTIONS[@]}"; do
     IFS='|' read -r name gate tools _ <<<"$entry"
     [[ -z $ONLY || $ONLY == "$name" ]] || continue
 
-    if [[ $gate != - && ! -e $gate ]]; then
-        line SKIP "$name" "$gate not found"
-        n_skip=$((n_skip + 1))
+    if [[ $gate != - && ! -e ${gate#ci:} ]]; then
+        if [[ $gate == ci:* && ${CI:-} == true ]]; then
+            line FAIL "$name" "${gate#ci:} not found (CI needs it)"
+            n_fail=$((n_fail + 1))
+            failed+=("$name")
+        else
+            line SKIP "$name" "${gate#ci:} not found"
+            n_skip=$((n_skip + 1))
+        fi
         continue
     fi
 

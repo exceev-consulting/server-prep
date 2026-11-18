@@ -110,6 +110,9 @@ expect_no_terminal() {   # expect_no_terminal WANT_STATUS WANT_OUTPUT ARGS...
 if have_terminal_tool 'no-terminal tests' setsid --wait; then
     expect_no_terminal 2 'No terminal: use --yes with --config' --dry-run
     expect_no_terminal 0 'loaded: INTERACTIVE=0' --dry-run --yes
+    # --force only changes what --yes answers (issue #65): alone, it says so and the questions still ask
+    expect_no_terminal 2 $'--force does nothing without --yes: each question still asks.\nNo terminal: use --yes with --config' --dry-run --force
+    expect_no_terminal 0 'loaded: INTERACTIVE=0' --dry-run --yes --force
 
     # A failed terminal open must keep the same message and status in POSIX mode.
     status=0
@@ -499,6 +502,9 @@ run() { :; }
 have() { [[ "$1" == docker ]]; }   # Docker is installed, jq is not
 jq() { return 127; }               # hides a real jq on this host, like a missing command
 docker() { :; }                    # "docker compose version" must not reach a real Docker
+real_pkg_from="$(declare -f pkg_from)"
+pkg_from() { return 1; }           # not Docker CE from download.docker.com: the host's apt sources stay out (tests/apt-repo-keys.sh)
+OS_ID=debian; OS_CODENAME=trixie   # preflight sets them in a real run
 INSTALL_DOCKER=yes
 expect_docker() {   # expect_docker LABEL DRY_RUN WANT_STATUS WANT_TEXT
     local label="$1" status=0
@@ -516,14 +522,18 @@ expect_docker() {   # expect_docker LABEL DRY_RUN WANT_STATUS WANT_TEXT
 expect_docker 'dry run without jq says what it would merge' 1 0 '[dry-run] check /etc/docker/daemon.json and merge log rotation (10m x 3) if missing'
 expect_docker 'real run without jq fails with a clear note' 0 1 'jq is missing - /etc/docker/daemon.json left untouched'
 eval "$real_have"
+eval "$real_pkg_from"
 unset -f jq docker
+unset OS_ID OS_CODENAME
 DRY_RUN=0
 
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69), the
-# audit's lid-switch parser test (issue #80) and the server-preconfig.sh --check --json test (issue #13).
+# audit's lid-switch parser test (issue #80), the server-preconfig.sh --check --json test (issue #13)
+# and the server-preconfig.sh hostname, /etc/hosts and cloud-init test (issue #81).
 bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-logind-lid.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
+bash "$SCRIPT_DIR/tests/preconfig-hostname.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
@@ -535,10 +545,16 @@ bash "$SCRIPT_DIR/tests/audit-locale.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-release.sh" || exit 1
 # ... and the audit's JSON format: writer keys, schema_version, the schema and every check id in its category's table in docs/json-output.md (issue #16).
 bash "$SCRIPT_DIR/tests/audit-json.sh" || exit 1
+# ... and the audit's console output: control characters in result text never reach the terminal (issue #79).
+bash "$SCRIPT_DIR/tests/audit-console.sh" || exit 1
 # ... and server-prep.sh --upgrade against a fake release (no network).
 bash "$SCRIPT_DIR/tests/upgrade.sh" || exit 1
 # ... and the audit's third-party update matcher (issue #155).
 bash "$SCRIPT_DIR/tests/audit-third-party.sh" || exit 1
+# ... and the third-party apt repository key check of the docker, ips, telegraf and cloudflared steps, and the
+# audit's upd.repo_keys helpers (issue #70).
+bash "$SCRIPT_DIR/tests/apt-repo-keys.sh" || exit 1
+bash "$SCRIPT_DIR/tests/audit-repo-keys.sh" || exit 1
 
 # ... and the skills check: .agents/skills links to .claude/skills for Codex, SKILL.md frontmatter (issue #33).
 bash "$SCRIPT_DIR/tests/skills-sync.sh" || exit 1
@@ -548,10 +564,14 @@ bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/rollback.sh" || exit 1
 # ... and the sshd Port line helpers of the SSH step (issue #72).
 bash "$SCRIPT_DIR/tests/sshd-ports.sh" || exit 1
+# ... and what --yes and --yes --force answer, and the automatic SSH login check of --yes (issue #65).
+bash "$SCRIPT_DIR/tests/ssh-login-check.sh" || exit 1
 # ... and the Openship AIDE excludes and auditd watch (issue #54).
 bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1
 # ... and the label taxonomy check on .github/labels.yml (issue #24).
 bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
+# ... and how the e2e harness picks its cloud image: Debian's dated build folders (issue #212).
+bash "$SCRIPT_DIR/tests/e2e-images.sh" || exit 1
 # ... and the committed-file guard (issue #40): on this repository first, so CI fails on a tracked
 # report, filled config or key, or an IPv4 address that is not an example; then on temp repos.
 bash "$SCRIPT_DIR/tests/check-files.sh" || exit 1

@@ -7,7 +7,8 @@ Known problems with server-prep, grouped by area: what you see, why it happens, 
   sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step> --yes
   ```
   `--list-steps` prints the step names. Every step is safe to run again: it only changes what is missing.
-- Do **not** use `--yes` for the `ssh` step. Today `--yes` skips the SSH safety check and stops the 10-minute auto-rollback ([#65](https://github.com/exceev-consulting/server-prep/issues/65)). Run it without `--yes` and answer the questions.
+- Run the `ssh` step without `--yes` and answer the questions. With `--yes`, nobody tests a login from a second terminal: the step only checks the login on the server itself before it closes the old port ([#65](https://github.com/exceev-consulting/server-prep/issues/65)), and that check cannot see a firewall outside the server (a cloud security group) or the key on your computer.
+- `--yes` answers each question with its default, so a question whose default is no stays no (the SSH step when the admin has no key, restarting running containers). `--force`, with `--yes`, answers yes to them: use it only when you mean it. With no SSH key for the admin, the SSH login check then skips its key check, and the admin can log in only on the console.
 - Keep a console open the first time: your provider's web console on a VPS, or IPMI / KVM / a screen on a dedicated server.
 - After a fix, run the audit again. It changes nothing:
   ```bash
@@ -54,6 +55,13 @@ systemctl list-timers 'server-prep-ssh-rollback-*'
 
 You see one line while the timer is waiting, and none once you confirmed or it ran.
 
+With `--yes`, the automatic login check confirms instead of you. When it fails, the `ssh` step fails with a to-do that names the check (SSH not on the new port, the admin refused by `sshd -T` or without a key, no SSH handshake). The key check reads only the `AuthorizedKeysFile` files: keys that an `AuthorizedKeysCommand` gives are not seen, so such a server fails it. The old port and its temporary UFW rule stay, and the timer still puts back the old SSH config after 10 minutes. Fix the cause, then run the step interactively and test a login from a second terminal when it asks:
+
+```bash
+sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh --dry-run
+sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh
+```
+
 To restore only the SSH config by hand, from the console:
 
 ```bash
@@ -80,6 +88,7 @@ From the first setup with `server-preconfig.sh` (see [server-preconfig.md](https
 | `Could not open lock file … are you root?` | in `sudo a && b`, only `a` runs as root | `sudo a && sudo b` |
 | `Authentication failed` at `[sudo: authenticate]` | a token or the next command was pasted at sudo's password prompt | type the server password, and run commands one at a time |
 | `sudo: unable to resolve host <name>` | the hostname changed before `/etc/hosts` | harmless: the script updates `/etc/hosts` first |
+| The hostname or `/etc/hosts` is back to the provider's name after a reboot | cloud-init puts it back (`preserve_hostname: false` or `manage_etc_hosts: true`) | run `sudo ./server-preconfig.sh --hostname web-01` again: it writes a cloud-init drop-in that keeps them. If `--check` still warns, the file it names, or the provider's user-data, sets them again |
 | No internet or SSH after a power cut | the IP was set by hand and never saved | `sudo ./server-preconfig.sh --static-ip current` |
 | `Some peers are advertising routes but --accept-routes is false` | another device shares a subnet | ignore it; don't turn on `--accept-routes` on a LAN server |
 | Server not visible in Tailscale | logged in with another account, or waiting for approval | `tailscale switch --list`, or approve it in the admin console under Machines |

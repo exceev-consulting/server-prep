@@ -30,7 +30,8 @@ Usage: tests/e2e/run.sh --os ID [options]
   --cpus N         VM vCPUs (default 2)
   --memory MB      VM memory (default 4096)
   --list-os        print the system ids
-  --image-key      print a cache key for the image (reads only the checksum file)
+  --image-key      print a cache key for the image (reads only the checksum file, and for
+                   Debian the list of dated builds and the headers of the build's image)
   -h, --help       this help
 
 Scenarios: ${SCENARIOS[*]}
@@ -71,6 +72,7 @@ if [[ $MODE == list ]]; then os_list; exit 0; fi
 [[ -n "$OS_ARG" ]] || { echo "--os is required (see --list-os)" >&2; exit 2; }
 os_load "$OS_ARG" || { echo "Unknown system: $OS_ARG (valid: $(os_list | paste -sd' '))" >&2; exit 2; }
 if [[ $MODE == key ]]; then
+    image_resolve || exit 1   # it says why
     sum="$(image_checksum)" && [[ -n "$sum" ]] || { echo "cannot read $OS_SUMS_URL" >&2; exit 1; }
     echo "$OS_ID-${sum:0:16}"
     exit 0
@@ -144,7 +146,7 @@ selected() {   # selected ID: in --only, or needed by a scenario in --only
     if [[ $1 == prep-run ]]; then
         # every scenario after the real run needs a prepared server
         for s in $ONLY; do
-            [[ " audit-fresh preconfig prep-dry-run prep-interactive " == *" $s "* ]] || return 0
+            [[ " boot audit-fresh preconfig prep-dry-run prep-interactive " == *" $s "* ]] || return 0
         done
     fi
     return 1

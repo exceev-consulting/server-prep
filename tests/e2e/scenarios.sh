@@ -31,6 +31,7 @@ VM_CFG=/home/ops/ci.cfg         # tests/e2e/ci.cfg plus the keys of this run
 # Where the Openship API keeps SSH keys (OPENSHIP_KEY_DIRS in server-prep.sh, issue #54)
 OPENSHIP_KEY_DIRS="/etc/openship/ssh-keys /var/lib/openship/ssh-keys /var/lib/openship/host-ssh"
 OPENSHIP_PATHS=0                # 1 once openship-paths has re-run aide and auditd with PANEL=openship
+PRECONFIG_HOST=""               # set once preconfig renamed the VM: the reboot checks the name stays (issue #81)
 
 # --------------------------------------------------------------------------- helpers
 
@@ -184,7 +185,7 @@ check_audit_clean() {   # 0 FAIL, and the checks a prepared server must pass
     check_eq "the audit exits 0" "$1" 0
     for id in ssh.root_login ssh.password_auth ssh.port ssh.max_auth ssh.allow_users fw.status \
         fw.docker_bypass net.exposure ips.fail2ban ips.crowdsec ips.crowdsec_bouncer ips.f2b_sshd_jail \
-        upd.unattended upd.third_party acc.sudo_log acc.password_policy acc.password_dict kern.sysctl mon.auditd \
+        upd.unattended upd.third_party upd.repo_keys acc.sudo_log acc.password_policy acc.password_dict kern.sysctl mon.auditd \
         dock.log_rotation res.swap panel.root_key; do
         st="$(audit_status "$id")"
         check_eq "$id passes" "$st" PASS
@@ -208,9 +209,20 @@ check_regressions() {   # the "hard-won gotchas" of AGENTS.md that a reboot or a
     check "/etc/ufw/sysctl.conf does not turn log_martians off" $?
     as_root 'iptables -S DOCKER-USER 2>/dev/null | grep -q ufw-user-forward'
     check "the DOCKER-USER chain sends traffic through UFW (ufw-docker)" $?
+    # Issue #70: the installed crowdsec and docker-ce come from their vendor's repository and are pinned at 900,
+    # whatever their version string says (a distro crowdsec 1.4.6-10.1 has no ubuntu, deb or esm in it). apt shows a
+    # package pin on the installed version's line (" *** 1.8.2 900"), not on the repository line below it.
+    local installed_from='/^ \*\*\* / { i = 1; p = $3; next } /^     [^ ]/ { i = 0 } i && index($0, t) { f = 1 }
+        END { exit !(f && p == 900) }'
     v="$(as_root 'dpkg-query -W -f "\${Version}" crowdsec 2>/dev/null')"
-    [[ -n "$v" && ! "$v" =~ ubuntu|deb|esm ]]
-    check "CrowdSec comes from packagecloud, not an old distro or ESM build" $? "version '$v'"
+    as_root "apt-cache policy crowdsec | awk -v t=packagecloud.io/crowdsec/crowdsec/ '$installed_from'"
+    check "CrowdSec comes from packagecloud, pinned at 900, not an old distro or ESM build" $? "version '$v'"
+    v="$(as_root 'dpkg-query -W -f "\${Version}" docker-ce 2>/dev/null')"
+    as_root "apt-cache policy docker-ce | awk -v t=download.docker.com/linux/ '$installed_from'"
+    check "Docker CE comes from download.docker.com, pinned at 900" $? "version '$v'"
+    # the names of Docker's guide and of CrowdSec's install script, so a source they left names the same key
+    as_root 'test -s /etc/apt/keyrings/docker.asc && test -s /etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg'
+    check "the Docker and CrowdSec keys are checked into /etc/apt/keyrings" $?
     as_root 'ss -Hltn "sport = :8091" | grep -q LISTEN'
     check "the CrowdSec API listens on 8091, away from Traefik's 8080" $?
     as_root 'test -e /var/cache/cracklib/cracklib_dict.pwd'
@@ -266,9 +278,11 @@ no_ssh_banner() {   # no_ssh_banner PORT: true when the port gives no SSH greeti
 
 sc_boot() {
     begin boot
-    image_get >> "$OUT/$SC_ID.log" 2>&1
-    [[ -f "$IMAGE" ]]; check "the image matches its published checksum" $? "${IMAGE_CHECKSUM:-none}"
-    [[ -f "$IMAGE" ]] || { finish; return 1; }
+    local img=0
+    # image_get's status, not the file: after a failed download the old cached image is still there
+    image_get >> "$OUT/$SC_ID.log" 2>&1 || img=1
+    check "the image matches its published checksum" "$img" "${IMAGE_CHECKSUM:-none}"
+    ((img == 0)) || { finish; return 1; }
     make_keys && make_seed
     vm_start >> "$OUT/$SC_ID.log" 2>&1
     vm_running; check "QEMU starts the VM ($ACCEL)" $?
@@ -316,7 +330,7 @@ preconfig_fails() {   # preconfig_fails LOG: the FAIL lines that are not explain
 
 sc_preconfig() {
     begin preconfig
-    local rc fails log="$WORK/preconfig.out"
+    local rc fails host line out log="$WORK/preconfig.out"
     if as_root 'ping -c1 -W3 1.1.1.1 >/dev/null 2>&1'; then NO_ICMP=0; else NO_ICMP=1; fi
     as_root 'curl -fsS -o /dev/null --max-time 20 https://deb.debian.org/'
     check "the VM reaches the internet over HTTPS" $? "ICMP blocked: $NO_ICMP"
@@ -332,7 +346,18 @@ sc_preconfig() {
     rc=$?; log_to < "$log" > /dev/null
     fails="$(preconfig_fails "$log")"
     [[ -z "$fails" ]]; check "--check after the run reports no FAIL" $? "${fails//$'\n'/; }"
-    check_eq "the hostname is e2e-web-01" "$(as_root 'hostname')" e2e-web-01
+    host="$(as_root 'hostname')"
+    check_eq "the hostname is e2e-web-01" "$host" e2e-web-01
+    [[ $host == e2e-web-01 ]] && PRECONFIG_HOST=$host
+    # issue #81: /etc/hosts maps the new name, and cloud-init will not put the VM's name back at boot.
+    # The OK line, not the drop-in file: an image whose stock config is already safe gets no drop-in.
+    line="$(as_root "awk '\$1 == \"127.0.1.1\"' /etc/hosts")"
+    [[ " $line " == *[[:space:]]e2e-web-01[[:space:]]* ]]
+    check "/etc/hosts maps e2e-web-01 on 127.0.1.1" $? "${line//$'\n'/; }"
+    out="$(ansi_strip < "$log")"
+    grep -q '^  OK    cloud-init keeps the hostname and /etc/hosts at boot' <<<"$out"
+    check "--check: cloud-init keeps the hostname and /etc/hosts at boot" $? \
+        "$(grep -m1 'cloud-init' <<<"$out" || true)"
     finish
 }
 
@@ -372,7 +397,7 @@ sc_prep_interactive() {
 
 sc_prep_run() {
     begin prep-run
-    local rc failed
+    local rc failed v
     plant_port_line   # also here: --only ssh-access skips prep-dry-run
     run_prep first --config "$VM_CFG" --yes; rc=$?
     check_eq "server-prep.sh exits 0" "$rc" 0
@@ -383,6 +408,16 @@ sc_prep_run() {
         [[ -z "$failed" ]]; check "no step FAILED" $? "$failed"
     fi
     check_prep_json applied
+    # issue #65: with --yes, an automatic login check replaces the operator's test before the old port closes
+    if [[ -n "$PREP_JSON" ]]; then
+        v="$(jq -r '.steps[] | select(.name == "ssh") | .details' "$PREP_JSON" 2>/dev/null)"
+        [[ $v == *'automatic login check passed'* && $v == *'old SSH port(s) 22 closed'* ]]
+        check "the SSH step reports the automatic login check passed, then closes port 22" $? "${v:0:300}"
+    fi
+    v="$(as_root "ss -Hltnp | awk '/\"sshd\"/ {p=\$4; sub(/.*:/, \"\", p); print p}' | sort -u | paste -sd' ' -" < /dev/null)"
+    check_eq "sshd listens on 822 only" "$v" 822
+    v="$(as_root 'systemctl list-timers --all --no-legend "server-prep-ssh-rollback-*" && echo listed' < /dev/null 2>&1)"
+    [[ $v == listed ]]; check "no SSH rollback timer is left armed" $? "${v:0:300}"
     # issue #54: the Openship paths are only for PANEL=openship (this run uses coolify)
     as_root 'f=/etc/aide/aide.conf.d/99_server-prep; r=/etc/audit/rules.d/50-server-prep.rules
         test -f "$f" && test -f "$r" && ! grep -qiE "openship|openresty|letsencrypt" "$f" "$r"' < /dev/null
@@ -550,7 +585,7 @@ sc_openship_paths() {
 
 sc_reboot() {
     begin reboot
-    local failed
+    local failed line
     vm_reboot "$BOOT_TIMEOUT"; check "the server reboots and root logs in again on 822" $?
     as_root 'systemctl is-system-running --wait >/dev/null 2>&1; systemctl --failed --no-legend --plain' \
         > "$WORK/failed-units" 2>&1
@@ -559,6 +594,14 @@ sc_reboot() {
     check_eq "the admin logs in on 822" "$(ssh_as admin admin "$P822" 'id -un' 2>&1)" admin
     no_ssh_banner "$P22"; check "port 22 still gives no SSH login" $?
     check_tarpit
+    # issue #81: the seed's user-data sets the VM's name. The cloud-init drop-in of preconfig
+    # must keep the new hostname and its /etc/hosts line across the reboot.
+    if [[ -n $PRECONFIG_HOST ]]; then
+        check_eq "the hostname is still $PRECONFIG_HOST" "$(as_root 'hostname')" "$PRECONFIG_HOST"
+        line="$(as_root "awk '\$1 == \"127.0.1.1\"' /etc/hosts")"
+        [[ " $line " == *[[:space:]]"$PRECONFIG_HOST"[[:space:]]* ]]
+        check "/etc/hosts still maps $PRECONFIG_HOST on 127.0.1.1" $? "${line//$'\n'/; }"
+    fi
     finish
 }
 

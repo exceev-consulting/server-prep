@@ -36,7 +36,7 @@ window.SERVER_PREP_DATA = {
       "name": "docker",
       "title": "Docker CE",
       "gate": "INSTALL_DOCKER",
-      "details": "Docker CE from download.docker.com if missing, container log rotation"
+      "details": "Docker CE from the official download.docker.com repo if missing (key fingerprint checked, pinned at 900; a Docker CE already installed from that repo gets the same check), container log rotation"
     },
     {
       "name": "firewall",
@@ -48,13 +48,13 @@ window.SERVER_PREP_DATA = {
       "name": "ssh",
       "title": "SSH security",
       "gate": null,
-      "details": "port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works"
+      "details": "port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server"
     },
     {
       "name": "ips",
       "title": "Intrusion prevention",
       "gate": null,
-      "details": "fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER), panel/admin IPs whitelisted, LAPI moved off 8080"
+      "details": "fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted, LAPI moved off 8080"
     },
     {
       "name": "unattended",
@@ -120,7 +120,7 @@ window.SERVER_PREP_DATA = {
       "name": "telegraf",
       "title": "Telegraf (metrics agent)",
       "gate": "INSTALL_TELEGRAF",
-      "details": "Telegraf metrics agent from the official InfluxData repo (key fingerprint checked); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md))"
+      "details": "Telegraf metrics agent from the official InfluxData repo (key fingerprint checked, pinned at 900); installed but left stopped until you configure it with `extras/telegraf/telegraf.conf.example` ([docs/monitoring.md](docs/monitoring.md))"
     },
     {
       "name": "telegram",
@@ -132,7 +132,7 @@ window.SERVER_PREP_DATA = {
       "name": "cloudflared",
       "title": "Cloudflare Tunnel",
       "gate": null,
-      "details": "install the Cloudflare Tunnel connector with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md)"
+      "details": "install the Cloudflare Tunnel connector from Cloudflare's official repo (key fingerprint checked, pinned at 900) with your token. With Coolify, you can run it as a service instead: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md)"
     },
     {
       "name": "suid",
@@ -584,7 +584,12 @@ window.SERVER_PREP_DATA = {
     {
       "script": "server-prep.sh",
       "flag": "--yes",
-      "help": "non-interactive: use config/env values and defaults"
+      "help": "non-interactive: use config/env values and each question's default (a default-no question stays no); the SSH step checks the login itself before it closes the old port"
+    },
+    {
+      "script": "server-prep.sh",
+      "flag": "--force",
+      "help": "with --yes: also yes to the default-no questions (Docker restart, no SSH key for the admin: the login check skips its key check, console login only). Without --yes: nothing"
     },
     {
       "script": "server-prep.sh",
@@ -718,7 +723,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 63,
+    "checks": 64,
     "sections": [
       {
         "key": "system",
@@ -789,6 +794,15 @@ window.SERVER_PREP_DATA = {
           {
             "id": "upd.third_party",
             "title": "Third-party tool updates",
+            "statuses": [
+              "INFO",
+              "PASS",
+              "WARN"
+            ]
+          },
+          {
+            "id": "upd.repo_keys",
+            "title": "Third-party repositories",
             "statuses": [
               "INFO",
               "PASS",

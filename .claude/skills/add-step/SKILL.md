@@ -5,7 +5,7 @@ description: Checklist for adding or changing a step in server-prep.sh (new pack
 
 # Add or change a server-prep step
 
-Use the Telegraf step as the reference implementation: `grep -n -i telegraf server-prep.sh server-audit.sh`.
+Use the Telegraf step as the reference implementation: `grep -n -i telegraf server-prep.sh server-audit.sh`. For a third-party apt repository, follow `cloudflared_repo` instead (`grep -n -i cloudflared server-prep.sh server-audit.sh`): Telegraf does not call `drop_other_sources`.
 
 ## Checklist (all of them, in this order)
 1. **`ALL_STEPS`** near line 31: insert the name in run order.
@@ -33,7 +33,9 @@ Use the Telegraf step as the reference implementation: `grep -n -i telegraf serv
 
 ## Rules
 - **Third-party apt repo:**
-  - verify the key fingerprint (`gpg --with-colons --show-keys`, then match `^fpr:+<FPR>:$`);
+  - add the key with `apt_repo_key NAME URL FPR /etc/apt/keyrings/<name>.gpg`: it keeps only one key with the published fingerprint (a bundle or a secret key is refused) and checks a key in place on every run;
+  - then call `drop_other_sources <repo URL without scheme> <your source file name>` before writing your source, so apt never sees the repository with two keys (never before `apt_repo_key`: a failed key check must leave the old source in place);
+  - add the tool to `REPO_SPECS` in `server-audit.sh` (check `upd.repo_keys`);
   - add a `signed-by` source;
   - add an `/etc/apt/preferences.d/<name>` pin at priority 900 (beats Ubuntu Pro ESM's 510).
 - **Services that need configuration first** (agents, tunnels): install, then `systemctl disable --now` and add a `todo`. Never leave a service crash-looping.

@@ -115,6 +115,17 @@ CURRENT_CAT="general"
 
 out() { [[ $QUIET -eq 1 ]] || printf '%s\n' "$*"; }
 
+# tty_safe TEXT: TEXT for the terminal. Tabs and newlines become spaces and any other control character a '?',
+# as ls shows them, so an escape sequence in a file or process name never reaches the screen. Under LC_ALL=C,
+# [[:cntrl:]] matches the C0 controls and DEL only, so the C1 controls in UTF-8 (U+0080 to U+009F, the bytes
+# C2 80 to C2 9F) are replaced first: xterm and VTE terminals read U+009B as CSI and U+009D as OSC. Other UTF-8
+# characters, such as 'é' or a no-break space, stay.
+tty_safe() {
+    local s="${1//[$'\t\n']/ }"
+    s=${s//$'\xc2'[$'\x80'-$'\x9f']/?}
+    printf '%s' "${s//[[:cntrl:]]/?}"
+}
+
 section() {
     CURRENT_CAT="$1"
     out ""
@@ -129,9 +140,9 @@ result() {
     case "$status" in
         PASS) color=$C_GREEN ;; WARN) color=$C_YELLOW ;; FAIL) color=$C_RED ;; *) color=$C_GRAY ;;
     esac
-    out "${color}[${status}]${C_0} ${title} ${C_GRAY}- ${msg}${C_0}"
+    out "${color}[${status}]${C_0} $(tty_safe "$title") ${C_GRAY}- $(tty_safe "$msg")${C_0}"
     if [[ -n "$fix" && "$status" != "PASS" && "$status" != "INFO" ]]; then
-        out "       ${C_GRAY}fix: ${fix}${C_0}"
+        out "       ${C_GRAY}fix: $(tty_safe "$fix")${C_0}"
     fi
 }
 
@@ -216,6 +227,68 @@ third_party_uncovered() {
         grep -qE "\"(o|origin)=${origin}(,|\")|Allowed-Origins:: \"${origin}:" <<<"$dump" || out+=("$pkg")
     done
     printf '%s' "${out[*]}"
+}
+
+# repo_status TEXT: reads `apt-cache policy PKG` on stdin and prints where the installed version comes from:
+# "pinned" when a source whose line contains TEXT offers it and a pin gives it priority 900, "unpinned" when such
+# a source offers it at another priority, "other" when none does, nothing when PKG is not installed. apt shows a
+# package pin (Package: crowdsec*) on the version line, never on the source lines below it.
+repo_status() {
+    awk -v t="$1" '
+        /^ \*\*\* / { inst = 1; prio = $3; next }
+        /^     [^ ]/ { inst = 0; next }
+        inst && index($0, t) { from = 1 }
+        END {
+            if (prio == "") exit
+            if (!from) print "other"; else if (prio == 900) print "pinned"; else print "unpinned"
+        }'
+}
+
+# repo_keys TEXT [ROOT]: the signed-by value of each apt source entry for TEXT (a repository URL without its
+# scheme), one per line: a key file, "-" for an entry without signed-by (any key apt trusts can sign it) or
+# "inline" for a key written in a .sources file, plus "trusted" for an entry with trusted=yes (Trusted: yes), which
+# makes apt skip the signature check whatever the key. Reads one-line .list files and deb822 .sources files, and
+# skips commented and disabled entries. ROOT (tests) replaces /.
+repo_keys() {
+    local text="$1" root="${2:-}" f
+    for f in "$root"/etc/apt/sources.list "$root"/etc/apt/sources.list.d/*.list; do
+        [[ -f "$f" ]] || continue
+        awk -v t="$text" '
+            /^[[:space:]]*deb[[:space:]]/ && index($0, t) {
+                k = "-"
+                if (match($0, /signed-by=[^ \t]+/)) { k = substr($0, RSTART + 10, RLENGTH - 10); sub(/].*/, "", k) }
+                n = split(k, keys, ","); for (i = 1; i <= n; i++) print keys[i]
+                o = ""; if (index($0, "[")) { o = substr($0, index($0, "[")); o = substr(o, 1, index(o, "]")) }
+                if (tolower(o) ~ /trusted=yes/) print "trusted"
+            }' "$f"
+    done
+    for f in "$root"/etc/apt/sources.list.d/*.sources; do
+        [[ -f "$f" ]] || continue
+        awk -v t="$text" '
+            function stanza_end() {
+                if (hit && on) { print (key == "" ? "-" : key); if (trusted) print "trusted" }
+                hit = 0; key = ""; on = 1; trusted = 0
+            }
+            BEGIN { on = 1 }
+            /^[[:space:]]*$/ { stanza_end(); next }
+            /^#/ { next }
+            tolower($0) ~ /^uris:/ { if (index($0, t)) hit = 1; next }
+            tolower($0) ~ /^signed-by:/ { key = $0; sub(/^[^:]*:[[:space:]]*/, "", key); sub(/[[:space:]].*/, "", key)
+                                          if (key == "") key = "inline"; next }
+            tolower($0) ~ /^enabled:[[:space:]]*no/ { on = 0 }
+            tolower($0) ~ /^trusted:[[:space:]]*yes/ { trusted = 1 }
+            END { stanza_end() }' "$f"
+    done
+}
+
+# key_fpr GNUPGHOME FILE: the fingerprint of the key in FILE, or nothing when FILE holds no key, more than one
+# primary key or any secret key material: the test server-prep.sh's apt_repo_key makes before it trusts a key.
+# GNUPGHOME is a throwaway folder, so /root/.gnupg is never touched.
+key_fpr() {
+    local out
+    out=$(GNUPGHOME="$1" gpg --batch --no-autostart --show-keys --with-fingerprint --with-colons "$2" 2>/dev/null)
+    awk -F: '$1=="pub" || $1=="sec" {n++} $1=="sec" || $1=="ssb" {s=1} $1=="fpr" && f=="" {f=$10}
+             END {if (n==1 && !s) print f}' <<<"$out"
 }
 
 # ----------------------------------------------------------------------------
@@ -364,6 +437,64 @@ if have apt-get; then
             result upd.third_party WARN "Third-party tool updates" "${TP_MISSING}: security fixes are not installed automatically (repository not in unattended-upgrades)$(need_root_note)" \
                 "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes"
         fi
+    fi
+
+    # The same tools (and Docker CE) come from their vendor's repository, pinned at 900 so an Ubuntu Pro (ESM) or
+    # distro build cannot replace them, and that repository is signed by a key with the fingerprint the vendor
+    # publishes (server-prep checks it; a guide's curl | gpg --dearmor does not). One line per tool:
+    # package, text of its apt source, key fingerprint, server-prep step.
+    REPO_SPECS=(
+        "docker-ce download.docker.com/linux/ 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 docker"
+        "crowdsec packagecloud.io/crowdsec/crowdsec/ 6A89E3C2303A901A889971D3376ED5326E93CD0C ips"
+        "cloudflared pkg.cloudflare.com/cloudflared CC94B39C77AE7342A68B89628A682D308D4E5E73 cloudflared"
+        "telegraf repos.influxdata.com/ 24C975CBA61A024EE1B631787C3D57159FC2F927 telegraf"
+    )
+    REPO_FROM=(); REPO_BAD=(); REPO_STEPS=()
+    REPO_HOME=""; have gpg && REPO_HOME=$(mktemp -d 2>/dev/null)
+    repo_gpg=""; [[ -n "$REPO_HOME" ]] || repo_gpg=" (keys not checked: gpg is missing or no temp folder)"
+    for spec in "${REPO_SPECS[@]}"; do
+        read -r rp rtext rfpr rstep <<<"$spec"
+        dpkg-query -W -f='${Status}' "$rp" 2>/dev/null | grep -q "ok installed" || continue
+        REPO_FROM+=("$rp")
+        rprob=()
+        case "$(apt-cache policy "$rp" 2>/dev/null | repo_status "$rtext")" in
+            pinned) ;;
+            unpinned) rprob+=("not pinned at 900") ;;
+            *) rprob+=("not from ${rtext%%/*}") ;;
+        esac
+        while read -r rkey; do
+            case "$rkey" in
+                '') ;;
+                -) rprob+=("a source without signed-by") ;;
+                inline) rprob+=("a key written in its .sources file, not checked") ;;
+                trusted) rprob+=("a source with trusted=yes, signatures not checked") ;;
+                *) if [[ ! -s "$rkey" ]]; then
+                       rprob+=("key ${rkey} missing")
+                   elif [[ -n "$REPO_HOME" && "$(key_fpr "$REPO_HOME" "$rkey")" != "$rfpr" ]]; then
+                       rprob+=("key ${rkey} is not the published one")
+                   fi ;;
+            esac
+        done < <(repo_keys "$rtext" | sort -u)
+        if [[ ${#rprob[@]} -gt 0 ]]; then
+            rmsg=""; for rx in "${rprob[@]}"; do rmsg+="${rmsg:+, }${rx}"; done
+            REPO_BAD+=("${rp}: ${rmsg}")
+            [[ " ${REPO_STEPS[*]} " == *" ${rstep} "* ]] || REPO_STEPS+=("$rstep")
+        fi
+    done
+    [[ -n "$REPO_HOME" ]] && rm -rf "$REPO_HOME"
+    if [[ ${#REPO_FROM[@]} -eq 0 ]]; then
+        result upd.repo_keys INFO "Third-party repositories" "None of Docker CE, CrowdSec, cloudflared, Telegraf is installed"
+    elif [[ ${#REPO_BAD[@]} -eq 0 && -z "$repo_gpg" ]]; then
+        result upd.repo_keys PASS "Third-party repositories" "${REPO_FROM[*]}: from the vendor's repository, pinned at 900, key with the published fingerprint"
+    elif [[ ${#REPO_BAD[@]} -eq 0 ]]; then
+        # Without gpg the keys were not checked: a PASS would claim more than the audit saw.
+        result upd.repo_keys WARN "Third-party repositories" "${REPO_FROM[*]}: from the vendor's repository, pinned at 900${repo_gpg}" \
+            "sudo apt-get install gnupg, then run the audit again"
+    else
+        rmsg=""; for rx in "${REPO_BAD[@]}"; do rmsg+="${rmsg:+; }${rx}"; done
+        rsteps=""; for rx in "${REPO_STEPS[@]}"; do rsteps+="${rsteps:+,}${rx}"; done
+        result upd.repo_keys WARN "Third-party repositories" "${rmsg}${repo_gpg}" \
+            "sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ${rsteps} --yes (checks the key, pins the repository and replaces a distro CrowdSec; a Docker CE or cloudflared installed from elsewhere is left as it is)"
     fi
 fi
 
@@ -565,21 +696,31 @@ if have docker && systemctl is-active --quiet docker 2>/dev/null; then
 fi
 
 # ufw_rule_fields LINE: splits one rule line of `ufw status [verbose]` into the globals UFW_R_TO,
-# UFW_R_FROM and UFW_R_IFACE. Fails for lines that are not ALLOW/LIMIT rules (DENY, REJECT) and for
-# route (FWD) and outgoing (OUT) rules, found by the word after the action, so a profile label such as
-# (FWD Proxy) still counts. It sets globals instead of printing, so callers need no subshell. ufw
-# prints To with "%-26s ", so a To value of 26 characters or more (80,443/tcp (Nginx Full (v6))) has
-# only one space before the action. To never holds "#", which starts a rule comment, so a comment
+# UFW_R_FROM, UFW_R_IFACE and UFW_R_DST. Fails for lines that are not ALLOW/LIMIT rules (DENY, REJECT)
+# and for route (FWD) and outgoing (OUT) rules, found by the word after the action, so a profile label
+# such as (FWD Proxy) still counts. It sets globals instead of printing, so callers need no subshell.
+# ufw prints To with "%-26s ", so a To value of 26 characters or more (80,443/tcp (Nginx Full (v6)))
+# has only one space before the action. To never holds "#", which starts a rule comment, so a comment
 # cannot move the split. Profile rules lose their label: 22/tcp (OpenSSH) and 22/tcp (OpenSSH (v6))
 # give 22/tcp, the ports ufw loaded for that profile. A bare profile name (plain `ufw status`) is
-# kept as it is.
+# kept as it is. A rule to one address (`ufw allow to 203.0.113.10 port 80 proto tcp`) prints that
+# address first in To: 203.0.113.10 80/tcp, 2001:db8::1 2222/tcp, 192.168.1.50/tcp for a whole
+# protocol, a bare 192.168.1.50 for everything, or 203.0.113.0/24 80/tcp for a network. The address
+# (with its /prefix) goes to UFW_R_DST and UFW_R_TO keeps the port spec or profile, or Anywhere/PROTO
+# or Anywhere when there is none, so the port is matched as for a rule to any address. UFW_R_DST is
+# empty for a rule to any address. An IPv6 address needs two colons and no comma, so a port range
+# (60000:61000/tcp, 1000:2000,3000:4000/tcp) is never taken for one. ufw keeps a dotted netmask only
+# when it is not a prefix (203.0.113.0/255.255.0.255): such a To value is left whole and matches nothing.
 ufw_rule_fields() {
     local line="$1" rule_re='^([^#]*[^#[:space:]])[[:space:]]+(ALLOW|LIMIT)[[:space:]]+(IN[[:space:]]+)?(.+)$'
     local iface_re='^(.+) on ([^[:space:]()]+)$' label_re='^(.+[^[:space:]]) \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)$'
+    # Groups: 1 the address (IPv4, or IPv6 with two colons or more), 2 an optional /prefix (digits),
+    # 3 a /proto (starts with a letter, so it is never a prefix) or " SPEC", 4 that SPEC.
+    local dst_re='^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9A-Fa-f]*:[0-9A-Fa-f:]*:[0-9A-Fa-f.:]*)(/[0-9]+)?(/[a-z][a-z0-9]*| (.+))?$'
     [[ "$line" =~ $rule_re ]] || return 1
     # A glob, not =~, so BASH_REMATCH keeps the groups read below.
     [[ -z "${BASH_REMATCH[3]}" && ( "${BASH_REMATCH[4]}" == FWD[[:space:]]* || "${BASH_REMATCH[4]}" == OUT[[:space:]]* ) ]] && return 1
-    UFW_R_TO="${BASH_REMATCH[1]}"; UFW_R_FROM="${BASH_REMATCH[4]}"; UFW_R_IFACE=""
+    UFW_R_TO="${BASH_REMATCH[1]}"; UFW_R_FROM="${BASH_REMATCH[4]}"; UFW_R_IFACE=""; UFW_R_DST=""
     UFW_R_FROM="${UFW_R_FROM%"${UFW_R_FROM##*[![:space:]]}"}"
     # " on <iface>" comes last, after the label and after " (v6)". Anchored at the end with no spaces
     # or parentheses, so a profile name such as "Web on Demand" stays inside its label.
@@ -589,6 +730,15 @@ ufw_rule_fields() {
     UFW_R_TO="${UFW_R_TO% (v6)}"; UFW_R_FROM="${UFW_R_FROM% (v6)}"
     if [[ "$UFW_R_TO" =~ $label_re ]]; then
         UFW_R_TO="${BASH_REMATCH[1]}"
+    fi
+    # After the label, so 203.0.113.10 22/tcp (OpenSSH) gives 203.0.113.10 and 22/tcp.
+    if [[ "$UFW_R_TO" =~ $dst_re ]]; then
+        UFW_R_DST="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+        case "${BASH_REMATCH[3]}" in
+            /*) UFW_R_TO="Anywhere${BASH_REMATCH[3]}" ;;
+            ' '*) UFW_R_TO="${BASH_REMATCH[4]}" ;;
+            *) UFW_R_TO=Anywhere ;;
+        esac
     fi
     return 0
 }
@@ -643,17 +793,148 @@ ufw_cache_apps() {
     return 0
 }
 
-# UFW port matching: is PORT/PROTO allowed from "Anywhere"? echo any|restricted|none, or nofw when
-# UFW is inactive or its rules cannot be read (no root, nftables only). Rules added through an
-# application profile count by their ports (22/tcp (OpenSSH), or the bare name OpenSSH looked up
-# in UFW_APP_PORTS). A rule for a whole protocol (`ufw allow proto tcp from any to any`) prints
-# Anywhere/tcp in To and From, and covers every port of that protocol. An interface or a source other
-# than Anywhere gives restricted.
+# addr_hex ADDR: sets the global ADDR_HEX to ADDR as lower-case hex digits: 8 for IPv4 (203.0.113.10
+# gives cb00710a) and 32 for IPv6, with each group padded to 4 digits, "::" filled with zero groups
+# and an IPv4 tail (::ffff:203.0.113.10) turned into two groups. Two spellings of one IPv6 address
+# then compare equal, the length gives the family, and hex_prefix_eq compares the first bits of a
+# network. Fails, with ADDR_HEX empty, for anything else. A global, not an echo, so callers need no
+# subshell.
+addr_hex() {
+    local a="${1,,}" digits="" head tail g i fill v4_re='^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$'
+    local -a groups=() tgroups=()
+    ADDR_HEX=""
+    if [[ "$a" =~ $v4_re ]]; then
+        for i in 1 2 3 4; do
+            (( 10#${BASH_REMATCH[i]} <= 255 )) || return 1
+        done
+        printf -v ADDR_HEX '%02x%02x%02x%02x' "$((10#${BASH_REMATCH[1]}))" "$((10#${BASH_REMATCH[2]}))" \
+            "$((10#${BASH_REMATCH[3]}))" "$((10#${BASH_REMATCH[4]}))"
+        return 0
+    fi
+    [[ "$a" == *:* && "$a" =~ ^[0-9a-f:.]+$ ]] || return 1
+    if [[ "${a##*:}" == *.* ]]; then
+        addr_hex "${a##*:}" || return 1
+        a="${a%:*}:${ADDR_HEX:0:4}:${ADDR_HEX:4:4}"; ADDR_HEX=""
+    fi
+    [[ "$a" != *.* ]] || return 1
+    # One colon at either end is only valid as part of "::".
+    [[ ( "$a" != :* || "$a" == ::* ) && ( "$a" != *: || "$a" == *:: ) ]] || return 1
+    if [[ "$a" == *::* ]]; then
+        head="${a%%::*}"; tail="${a#*::}"
+        [[ "$tail" != *::* ]] || return 1
+        IFS=: read -ra groups <<<"$head"
+        IFS=: read -ra tgroups <<<"$tail"
+        fill=$(( 8 - ${#groups[@]} - ${#tgroups[@]} ))
+        (( fill >= 1 )) || return 1
+        for (( i = 0; i < fill; i++ )); do groups+=(0); done
+        groups+=("${tgroups[@]}")
+    else
+        IFS=: read -ra groups <<<"$a"
+    fi
+    [[ ${#groups[@]} -eq 8 ]] || return 1
+    for g in "${groups[@]}"; do
+        [[ "$g" =~ ^[0-9a-f]{1,4}$ ]] || return 1
+        printf -v g '%04x' "$((16#$g))"
+        digits+="$g"
+    done
+    ADDR_HEX="$digits"
+    return 0
+}
+
+# hex_prefix_eq A B BITS: are A and B, two addr_hex values, of the same family (length), and do they
+# start with the same BITS bits? BITS must not be more than the address has.
+hex_prefix_eq() {
+    local a="$1" b="$2" n=$(( $3 / 4 )) r=$(( $3 % 4 ))
+    [[ ${#a} -eq ${#b} && "${a:0:n}" == "${b:0:n}" ]] || return 1
+    (( r == 0 )) && return 0
+    (( (16#${a:n:1} >> (4 - r)) == (16#${b:n:1} >> (4 - r)) ))
+}
+
+# The server's own addresses, as addr_hex values between spaces. Filled once per run by ufw_cache_addrs.
+UFW_OWN_ADDRS=" "
+
+# ufw_cache_addrs: reads the server's own addresses once, in the main shell, with `ip -o addr show`,
+# so the $(ufw_port_access ...) subshells of the exposure loop find them in UFW_OWN_ADDRS. Private and
+# tailnet addresses count too: behind 1:1 NAT or a port forward, the internet reaches the server on a
+# private address. Loopback and link-local (fe80::/10) addresses are left out, as no packet from
+# outside the server (loopback) or from beyond its link (link-local) reaches them: a rule to one then
+# opens nothing, like a rule to an address the server does not have, and a socket bound to a
+# link-local address is already listed as LAN only by classify_addr. Without `ip` the list stays
+# empty, and a rule to an address then only counts for a socket bound to that address. The list is
+# reset first, so a second call adds nothing twice. Field 3 is inet or inet6, field 4 the address
+# with its prefix (or alone, before "peer" on a point-to-point link).
+ufw_cache_addrs() {
+    local fam addr
+    UFW_OWN_ADDRS=" "
+    [[ $UFW_ACTIVE -eq 1 && -n "$UFW_STATUS" ]] || return 0
+    have ip || return 0
+    while read -r _ _ fam addr _; do
+        [[ "$fam" == inet || "$fam" == inet6 ]] || continue
+        addr="${addr%%/*}"
+        [[ "$addr" != 127.* && "$addr" != ::1 ]] || continue
+        addr_hex "$addr" || continue
+        # Link-local: fe80::/10, the first 10 bits, so fe80 to febf in any spelling.
+        [[ ${#ADDR_HEX} -ne 32 || "${ADDR_HEX:0:3}" != fe[89ab] ]] || continue
+        UFW_OWN_ADDRS+="$ADDR_HEX "
+    done < <(ip -o addr show 2>/dev/null)
+    return 0
+}
+
+# ufw_dst_open DST SCOPE: does a rule to DST (UFW_R_DST: one address, or a network such as
+# 203.0.113.0/24 or 2001:db8::/64) reach a socket that listens on SCOPE? SCOPE is "all" for a socket
+# on every IPv4 and IPv6 address (::, * or an address that cannot be read), "v4" for one on every
+# IPv4 address (0.0.0.0), or else the addr_hex of the one address the socket listens on. For all and
+# v4, DST must cover one of the server's own addresses (UFW_OWN_ADDRS) that the socket receives, so
+# an IPv4 rule never reaches a socket on [2001:db8::1] and an IPv6 rule never reaches one on 0.0.0.0.
+# Fails for an address or a network the server does not have, and for a DST it cannot read.
+ufw_dst_open() {
+    local bits own
+    addr_hex "${1%/*}" || return 1
+    bits=$(( ${#ADDR_HEX} * 4 ))
+    if [[ "$1" == */* ]]; then
+        [[ "${1##*/}" =~ ^[0-9]{1,3}$ ]] || return 1
+        (( 10#${1##*/} <= bits )) || return 1
+        bits=$(( 10#${1##*/} ))
+    fi
+    case "$2" in
+        all|v4) ;;
+        # A socket can only bind to an address the server has.
+        *) hex_prefix_eq "$2" "$ADDR_HEX" "$bits"; return ;;
+    esac
+    for own in $UFW_OWN_ADDRS; do
+        [[ "$2" == all || ${#own} -eq 8 ]] || continue
+        hex_prefix_eq "$own" "$ADDR_HEX" "$bits" && return 0
+    done
+    return 1
+}
+
+# ufw_port_access PORT PROTO [LISTEN]: is PORT/PROTO allowed from "Anywhere"? echo
+# any|restricted|none, or nofw when UFW is inactive or its rules cannot be read (no root, nftables
+# only). LISTEN is the address the socket listens on, as ss prints it (0.0.0.0, [::], *,
+# 203.0.113.10, [2001:db8::1], with or without a %interface); left out, it means every address.
+# Rules added through an application profile count by their ports (22/tcp (OpenSSH), or the bare
+# name OpenSSH looked up in UFW_APP_PORTS). A rule for a whole protocol (`ufw allow proto tcp from
+# any to any`) prints Anywhere/tcp in To and From, and covers every port of that protocol. A rule to
+# an address or a network (UFW_R_DST) counts like a rule to Anywhere when it reaches the socket
+# (ufw_dst_open): when it covers one of the server's own addresses that the socket listens on, or
+# any of them for a socket on every address. Otherwise it matches nothing. An interface or a source
+# other than Anywhere gives restricted.
 ufw_port_access() {
-    local port="$1" proto="$2" line e matched best="none"
+    local port="$1" proto="$2" listen="${3:-*}" scope=all line e matched best="none"
     [[ $UFW_ACTIVE -eq 1 && -n "$UFW_STATUS" ]] || { echo "nofw"; return; }
+    # As ss prints it: the interface first (0.0.0.0%eth0, [fe80::1]%eth0), then the brackets.
+    listen="${listen%%\%*}"; listen="${listen#[}"; listen="${listen%]}"
+    # :: and * can receive IPv4 too (a dual-stack socket), so they keep scope=all.
+    if [[ "$listen" == 0.0.0.0 ]]; then
+        scope=v4
+    elif [[ "$listen" != :: && "$listen" != '*' ]] && addr_hex "$listen"; then
+        scope="$ADDR_HEX"
+        # An IPv4-mapped socket (::ffff:203.0.113.10) receives IPv4 for that address.
+        [[ "$scope" == 00000000000000000000ffff* ]] && scope="${scope:24}"
+    fi
     while IFS= read -r line; do
         ufw_rule_fields "$line" || continue
+        [[ -z "$UFW_R_DST" ]] || ufw_dst_open "$UFW_R_DST" "$scope" || continue
         matched=0
         if [[ "$UFW_R_TO" == Anywhere || "$UFW_R_TO" == "Anywhere/$proto" ]] ||
             ufw_spec_match "$UFW_R_TO" "$port" "$proto"; then
@@ -683,14 +964,16 @@ classify_addr() {
 }
 
 if have ss; then
-    EXPOSED=(); FILTERED=(); LOCALONLY=(); PRIVATE=()
-    declare -A SEEN=()
+    EXPOSED=(); FILTERED=(); LOCALONLY=(); PRIVATE=(); XPORTS=()
+    declare -A SEEN=() XRANK=() XLABEL=()
     DOCKER_PORTS=" "
     if [[ $DOCKER_ACTIVE -eq 1 && $IS_ROOT -eq 1 ]]; then
         DOCKER_PORTS+=$(docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '(0\.0\.0\.0|\[::\]|::):[0-9]+->' | grep -oE ':[0-9]+->' | tr -d ':>-' | sort -un | tr '\n' ' ')
     fi
-    # Profile names are resolved here, in the main shell, because ufw_port_access runs in $(...).
+    # Profile names and the server's own addresses are read here, in the main shell, because
+    # ufw_port_access runs in $(...).
     ufw_cache_apps
+    ufw_cache_addrs
     while read -r local proc; do
         port="${local##*:}"; addr="${local%:*}"
         [[ "$port" =~ ^[0-9]+$ ]] || continue
@@ -701,21 +984,41 @@ if have ss; then
             local) [[ -n "${SEEN[l$key]:-}" ]] || LOCALONLY+=("$port"); SEEN[l$key]=1; continue ;;
             tailnet|private) [[ -n "${SEEN[p$key]:-}" ]] || PRIVATE+=("$port${name:+($name)}"); SEEN[p$key]=1; continue ;;
         esac
-        [[ -n "${SEEN[x$key]:-}" ]] && continue
-        SEEN[x$key]=1
+        # A rule to one address opens the port only on the sockets that receive that address, so
+        # each socket of a port is checked and the port keeps its most open result (3 exposed,
+        # 2 restricted, 1 firewalled), with the label of the first socket that gave it. A port already
+        # exposed needs no other check.
+        [[ ${XRANK[$port]:-0} -lt 3 ]] || continue
+        label="$name"
         if [[ "$DOCKER_PORTS" == *" $port "* ]]; then
-            if [[ $DOCKER_PROTECTED -eq 0 ]]; then EXPOSED+=("$port(docker,bypasses fw)")
-            elif grep -qE "^${port}(/tcp)?[[:space:]].*ALLOW FWD[[:space:]]+Anywhere" <<<"$UFW_STATUS"; then EXPOSED+=("$port(docker)")
-            else FILTERED+=("$port(docker)")
+            # Chosen by port, so every socket of a published port comes here, in any order of ss. Its
+            # rank depends on the port and the FWD rules, never on the socket: it is ranked once.
+            [[ -n "${XRANK[$port]:-}" ]] && continue
+            label=docker
+            if [[ $DOCKER_PROTECTED -eq 0 ]]; then rank=3; label="docker,bypasses fw"
+            elif grep -qE "^${port}(/tcp)?[[:space:]].*ALLOW FWD[[:space:]]+Anywhere" <<<"$UFW_STATUS"; then rank=3
+            else rank=1
             fi
-            continue
+        else
+            case "$(ufw_port_access "$port" tcp "$addr")" in
+                any|nofw) rank=3 ;;
+                restricted) rank=2 ;;
+                *) rank=1 ;;
+            esac
         fi
-        case "$(ufw_port_access "$port" tcp)" in
-            any|nofw) EXPOSED+=("$port${name:+($name)}") ;;
-            restricted) FILTERED+=("$port${name:+($name)},restricted") ;;
-            none) FILTERED+=("$port${name:+($name)}") ;;
-        esac
+        [[ -n "${XRANK[$port]:-}" ]] || XPORTS+=("$port")
+        if (( rank > ${XRANK[$port]:-0} )); then
+            XRANK[$port]=$rank; XLABEL[$port]="$label"
+        fi
     done < <(ss -H -ltnp 2>/dev/null | awk '{print $4, $6}')
+    for port in "${XPORTS[@]}"; do
+        label="${XLABEL[$port]}"
+        case "${XRANK[$port]}" in
+            3) EXPOSED+=("$port${label:+($label)}") ;;
+            2) FILTERED+=("$port${label:+($label)},restricted") ;;
+            *) FILTERED+=("$port${label:+($label)}") ;;
+        esac
+    done
 
     n=${#EXPOSED[@]}
     detail="internet-exposed: ${EXPOSED[*]:-none}; firewalled: ${FILTERED[*]:-none}; tailnet/LAN only: ${PRIVATE[*]:-none}; localhost only: ${LOCALONLY[*]:-none}"
@@ -1325,8 +1628,18 @@ out ""
 out "${C_BOLD}Score: ${SCORE}/100${C_0} - ${C_GREEN}${N_PASS} PASS${C_0}, ${C_YELLOW}${N_WARN} WARN${C_0}, ${C_RED}${N_FAIL} FAIL${C_0}, ${N_INFO} INFO"
 
 json_esc() {
-    local s="$1"
+    local s="$1" i hex c rep
     s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}
+    # JSON forbids raw 0x01-0x1F and a file name can hold ESC, so each one left becomes \u00XX.
+    if [[ $s == *[[:cntrl:]]* ]]; then
+        for ((i = 1; i < 32; i++)); do
+            printf -v hex '%02x' "$i"
+            printf -v c '%b' "\\x$hex"
+            [[ $s == *"$c"* ]] || continue
+            printf -v rep '\\u%04x' "$i"
+            s=${s//"$c"/"$rep"}
+        done
+    fi
     printf '%s' "$s"
 }
 

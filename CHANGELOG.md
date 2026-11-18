@@ -5,6 +5,35 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Security: `server-prep.sh --yes` answered yes to every question, even the safety ones whose default is no, and
+  closed the old SSH port without any login test ([#65](https://github.com/exceev-consulting/server-prep/issues/65)).
+  It went on with the SSH step when the admin had no SSH key (only the console could log in afterwards), restarted
+  running containers to apply Docker's log rotation, and stopped the SSH step's 10-minute rollback at once. `--yes`
+  now answers each question with its default: the SSH step is skipped when the admin has no key, and the Docker restart
+  becomes a to-do. The new `--force` answers yes to those questions, with `--yes` only (alone, it does nothing). Instead
+  of the operator's test from a second terminal, a run with `--yes` now checks the login on the server before it closes
+  the old port, and logs each check: sshd listens on the new port, `sshd -T` allows the admin a key login (`AllowUsers`,
+  `DenyUsers`, the groups, `Match`), the admin has a key, UFW (when it is on) lets the new port in, and an SSH handshake
+  on `127.0.0.1` works. If one fails, the old port and its temporary UFW rules stay, the rollback timer puts back the
+  SSH configuration from before the run after 10 minutes, and the step fails with a to-do that names the check and says
+  to finish with an interactive run of `--only ssh,endlessh`. When `--force` went on with no key for the admin, the
+  check skips only the key check, as the `s` answer of an interactive run skips the test, logs it (the admin can then
+  log in only on the console) and adds a to-do to add a key. The check cannot see a firewall outside the server (a cloud
+  security group) or the operator's key: keep the first run on a server interactive.
+- `server-preconfig.sh` no longer fails with `--yes` (or Enter) when the server's current name has capitals or a
+  domain, such as `Web-01` or `vps123.example.net`. The default hostname is now the short name in lowercase (`web-01`,
+  `vps123`), and the script says when it differs from the current name. The `127.0.1.1` line of `/etc/hosts` keeps its
+  domain (`127.0.1.1 web-01.example.com web-01`), also when only the current hostname had it. When cloud-init runs at
+  boot, the script writes `/etc/cloud/cloud.cfg.d/zz-server-preconfig.cfg` (`preserve_hostname: true`,
+  `manage_etc_hosts: false`) so the next boot does not undo the hostname or `/etc/hosts`, and `--check` reports it
+  (`pre.cloud_init_hostname`, INFO when cloud-init is disabled, as on Ubuntu installed from the ISO). A `cloud.cfg.d`
+  file read after the drop-in still wins: the run and `--check` name it.
+- `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
+  reports (`kern.suid`, `kern.world_writable`, `net.exposure`) no longer makes the `--json` report invalid or reaches
+  your terminal as an escape sequence. Any local user can create such a name. The JSON report writes these characters
+  as `\u00XX` escapes, so `jq -r` still gives back the exact name, and the screen shows each one as `?` (a tab or a
+  newline as a space). The screen does the same for the C1 controls in UTF-8, such as U+009B, which xterm and GNOME
+  Terminal read as the start of an escape sequence.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
@@ -57,6 +86,21 @@ Highlights of each release. The full list of merged pull requests is in each
   check `upd.third_party` warns when an installed one is left out. Each update restarts that tool for a moment (SSH
   over Tailscale pauses a few seconds). On a server prepared before, run:
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only unattended --yes`.
+- **Security:** Docker, cloudflared and CrowdSec are now installed only after their repository keys match the
+  fingerprints the vendors publish, as Telegraf already was. Only that one key is kept, in `/etc/apt/keyrings/` (a
+  file that bundles another key or a secret key is refused), and each repository is pinned at priority 900, so an
+  older Ubuntu Pro (ESM) or distro build cannot win. CrowdSec no longer runs its remote install script
+  (`curl https://install.crowdsec.net | sh`) as root: server-prep adds the repository itself. If that fails (download,
+  wrong key, `apt-get update`), the `ips` step now FAILS instead of quietly installing the old distro CrowdSec. A
+  distro CrowdSec is now found by where it comes from, not by its version string, so the Debian 13 and Ubuntu 26.04
+  builds (`1.4.6-10`, `1.4.6-10.1`) are replaced too. Re-runs check the keys already in place (Telegraf's too), and
+  check and pin a Docker CE or cloudflared installed from its vendor's repository; one installed another way is left
+  as it is. Another source for the same repository, such as the `docker.list` of an older Docker guide, is removed
+  (backed up first, and `rollback.sh` puts it back): apt refuses one repository listed with two keys. The new audit check `upd.repo_keys` warns when
+  an installed Docker CE, CrowdSec, cloudflared or Telegraf is not from its vendor's repository, not pinned at 900,
+  or signed by a key without the published fingerprint, when a source has `trusted=yes` (apt then checks no
+  signature), and when `gpg` is missing so the keys cannot be checked. On a server prepared before, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only docker,ips,telegraf,cloudflared --yes`.
 - `--dry-run` on a server without `jq` (when `server-preconfig.sh` was not run first) no longer shows the Docker CE
   step as FAILED with "/etc/docker/daemon.json is not valid JSON". The dry run only prints the `jq` install, so the step
   now says it would check that file and merge the log rotation if it is missing.
@@ -147,6 +191,16 @@ Highlights of each release. The full list of merged pull requests is in each
   (`ufw allow proto tcp from any to any`, shown as `Anywhere/tcp`) now counts too. On servers with such rules the count
   can rise to a WARN (4 ports or more) or a FAIL (6 or more); on a FAIL, `server-audit.sh` exits 1. Servers set up
   only by server-prep are not affected: its firewall step adds port rules, not profiles.
+- **Security fix:** the audit's "Exposed TCP ports" check listed a port as firewalled when a UFW rule opened it to one
+  of the server's own addresses (`ufw allow to 203.0.113.10 port 80 proto tcp`, shown as `203.0.113.10 80/tcp`) or to
+  a network that holds one, so it did not count a port open to the internet. Such a rule now counts like a rule to any
+  address for the sockets that listen on that address, or on all addresses of its family (an IPv4 rule never opens a
+  socket bound to an IPv6 address, and the reverse). Private and tailnet addresses count too: behind 1:1 NAT or a port
+  forward, the internet reaches the server on one. A rule to an address the server does not have, or to a link-local
+  one (`fe80::`), still opens nothing.
+  On servers with such rules the count can rise to a WARN (4 ports or more) or a FAIL (6 or more); on a FAIL,
+  `server-audit.sh` exits 1. Servers set up only by server-prep are not affected: its firewall step adds rules without
+  a destination address.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.

@@ -93,6 +93,7 @@ SERVICE_CANDIDATES="avahi-daemon cups cups-browsed bluetooth ModemManager apport
 DRY_RUN=0
 INTERACTIVE=1
 ASSUME_YES=0
+FORCE=0   # --force: with --yes, yes to the questions whose default is no (confirm)
 ONLY=""
 SKIP=""
 CONFIG_FILE=""
@@ -109,7 +110,10 @@ Usage: sudo $0 [options]
   --validate           check the --config FILE and exit (no root, runs nothing, writes nothing)
   --upgrade            replace these scripts with the latest release, after checking every file against
                        the release's SHA256SUMS (asks first; --yes to skip the question, --dry-run to only show)
-  --yes                non-interactive: use config/env values and defaults
+  --yes                non-interactive: use config/env values and each question's default (a default-no
+                       question stays no); the SSH step checks the login itself before it closes the old port
+  --force              with --yes: also yes to the default-no questions (Docker restart, no SSH key for the
+                       admin: the login check skips its key check, console login only). Without --yes: nothing
   --dry-run            show what would change, change nothing
   --only a,b,c         run only these steps
   --skip a,b,c         skip these steps
@@ -138,6 +142,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --config) [[ $# -ge 2 ]] || { echo "--config needs a value" >&2; exit 2; }; CONFIG_FILE="$2"; shift 2 ;;
         --yes|-y) ASSUME_YES=1; INTERACTIVE=0; shift ;;
+        --force) FORCE=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --validate) VALIDATE=1; shift ;;
         --upgrade) UPGRADE=1; shift ;;
@@ -162,6 +167,9 @@ check_step_names() {   # check_step_names NAMES...
 read -ra parsed_only <<< "$ONLY"
 read -ra parsed_skip <<< "$SKIP"
 check_step_names "${parsed_only[@]}" "${parsed_skip[@]}"
+if [[ $FORCE -eq 1 && $ASSUME_YES -eq 0 && $VALIDATE -eq 0 && $UPGRADE -eq 0 ]]; then
+    echo "--force does nothing without --yes: each question still asks." >&2
+fi
 
 # ----------------------------------------------------------------------------
 # Config check (--validate): runs before the file is sourced, never runs it, writes nothing
@@ -798,9 +806,22 @@ ask_secret() {   # ask_secret VAR "question"
     fi
     return 0
 }
-confirm() {   # confirm "question" -> 0 yes / 1 no
-    [[ $ASSUME_YES -eq 1 ]] && return 0
-    local a; ask_yn a "$1" "${2:-no}"; [[ $a == yes ]]
+# confirm "question" yes|no: 0 for yes, 1 for no. The default is what Enter answers and what --yes answers,
+# so --yes never turns a default-no safety question into yes (issue #65). Only --yes --force answers yes to
+# every question.
+confirm() {
+    local a def="${2:-}"
+    [[ $def == yes || $def == no ]] || die "confirm: no default (yes or no) for: $1"
+    if [[ $ASSUME_YES -eq 1 ]]; then
+        if [[ $FORCE -eq 1 ]]; then
+            info "$1 yes (--force)"
+            return 0
+        fi
+        info "$1 ${def} (--yes keeps the default)"
+        [[ $def == yes ]]
+        return
+    fi
+    ask_yn a "$1" "$def"; [[ $a == yes ]]
 }
 
 # ----------------------------------------------------------------------------
@@ -869,6 +890,103 @@ pkg_install() {   # install missing packages only
     changed
 }
 pkg_available() { apt-cache show "$1" >/dev/null 2>&1; }
+
+# key_fingerprint GNUPGHOME FILE: the fingerprint of the key in FILE (armored or binary), or nothing when FILE
+# holds no key, more than one primary key (pub or sec), or any secret key material (sec, ssb): apt would load a
+# bundled secret key as one more signing key, so such a file never passes the fingerprint check.
+# --no-autostart: listing a secret key would otherwise start a gpg-agent for the throwaway GNUPGHOME.
+key_fingerprint() {
+    local out
+    out="$(GNUPGHOME="$1" gpg --batch --no-autostart --show-keys --with-fingerprint --with-colons "$2" 2>/dev/null)" || return 0
+    awk -F: '$1=="pub" || $1=="sec" {n++} $1=="sec" || $1=="ssb" {s=1} $1=="fpr" && f=="" {f=$10}
+             END {if (n==1 && !s) print f}' <<<"$out"
+}
+
+# apt_repo_key NAME URL FPR KEYRING: put a third-party apt key in KEYRING only when it is one key with the
+# fingerprint its vendor publishes, so a swapped key on their server cannot sign our packages. A key already
+# in place is checked the same way on every run and kept when it passes. A KEYRING ending in .asc is written
+# armored (apt reads .asc files as text), any other one binary. A dry run downloads and writes nothing, and a
+# throwaway GNUPGHOME keeps /root/.gnupg out.
+apt_repo_key() {
+    local name="$1" url="$2" fpr="$3" keyring="$4" home rc=0 armor=()
+    [[ "$keyring" == *.asc ]] && armor=(--armor)
+    home="$(mktemp -d)" || { note "cannot create a temp folder for the ${name} key"; return 1; }
+    if [[ -s "$keyring" && "$(key_fingerprint "$home" "$keyring")" == "$fpr" ]]; then
+        rm -rf "$home"; return 0
+    fi
+    info "adding the ${name} repository key"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        rm -rf "$home"; changed; return 0
+    fi
+    if ! curl -fsSL "$url" -o "$home/key" >> "$LOG_FILE" 2>&1; then
+        note "cannot download the ${name} key"; rc=1
+    elif [[ "$(key_fingerprint "$home" "$home/key")" != "$fpr" ]]; then
+        note "${name} key fingerprint mismatch - not installing"; rc=1
+    # Only the checked key reaches the keyring: gpg imports the download into the throwaway home and exports that
+    # one fingerprint, so nothing else in the file (a packet or a key gpg skips) is passed on to apt. The export
+    # is checked again before it is installed, and install copies it in one go, so /etc/apt/keyrings never holds
+    # a half-written key. --no-autostart: no gpg-agent is left running for the throwaway home.
+    elif ! GNUPGHOME="$home" gpg --batch --no-autostart --import "$home/key" >> "$LOG_FILE" 2>&1 \
+         || ! GNUPGHOME="$home" gpg --batch --no-autostart "${armor[@]}" --export "$fpr" > "$home/keyring" 2>> "$LOG_FILE" \
+         || [[ "$(key_fingerprint "$home" "$home/keyring")" != "$fpr" ]] \
+         || ! install -m 0755 -d "${keyring%/*}"; then
+        note "cannot write ${keyring}"; rc=1
+    else
+        local existed=0
+        if [[ -e "$keyring" ]]; then existed=1; backup_file "$keyring"; fi
+        if install -m 0644 "$home/keyring" "$keyring"; then
+            if [[ $existed -eq 1 ]]; then CHANGED_FILES+=("$keyring"); else NEW_FILES+=("$keyring"); fi
+            log "wrote ${keyring}"; changed
+        else
+            note "cannot write ${keyring}"; rc=1
+        fi
+    fi
+    rm -rf "$home"
+    return "$rc"
+}
+
+# pkg_from PKG TEXT: true when the installed version of PKG is offered by an apt source whose `apt-cache madison`
+# line contains TEXT (the repository URL without its scheme, then its suite). The version string alone cannot
+# tell: a distro build such as 1.4.6-10.1 has no "ubuntu", "deb" or "esm" in it.
+pkg_from() {
+    local v
+    pkg_installed "$1" || return 1
+    v="$(dpkg-query -W -f='${Version}' "$1" 2>/dev/null)"
+    apt-cache madison "$1" 2>/dev/null | awk -F'|' -v v="$v" -v t="$2" '
+        { gsub(/^[ \t]+|[ \t]+$/, "", $2) } $2 == v && index($3, t) { f = 1 } END { exit !f }'
+}
+
+# drop_other_sources TEXT KEEP: back up and remove the files in sources.list.d, other than the one named KEEP,
+# whose entries all point at TEXT (a repository URL without its scheme), such as the docker.list that
+# get.docker.com or an older install guide left behind. apt refuses one repository listed twice with two keys
+# ("Conflicting values set for option Signed-By"), and then every apt command fails. A file that also lists
+# other repositories, or such a line in sources.list, is left alone and stops the step. Call it only after
+# apt_repo_key has passed: a failed key download or check must leave the operator's working source in place.
+APT_SOURCES=/etc/apt/sources.list   # tests point these two elsewhere
+APT_SOURCES_D=/etc/apt/sources.list.d
+drop_other_sources() {
+    local text="$1" keep="$2" f entries
+    if grep -sE '^[[:space:]]*deb(-src)?[[:space:]]' "$APT_SOURCES" | grep -qF "$text"; then
+        note "${APT_SOURCES} lists ${text}: remove that line, then re-run this step"; return 1
+    fi
+    for f in "$APT_SOURCES_D"/*.list "$APT_SOURCES_D"/*.sources; do
+        [[ -f "$f" && "${f##*/}" != "$keep" ]] || continue
+        # the entries: deb lines of a .list file, URIs fields of a deb822 .sources file
+        entries="$(grep -iE '^[[:space:]]*(deb(-src)?[[:space:]]|URIs:)' "$f")"
+        grep -qF "$text" <<<"$entries" || continue
+        if grep -vqF "$text" <<<"$entries"; then
+            note "${f} also lists other repositories: remove its ${text} entry, then re-run this step"; return 1
+        fi
+        backup_file "$f"
+        run rm -f "$f" || { note "cannot remove ${f}"; return 1; }
+        # listed with the changed files, so rollback.sh copies the backup back and the report lists it
+        [[ $DRY_RUN -eq 1 ]] || CHANGED_FILES+=("$f")
+        if [[ $DRY_RUN -eq 1 ]]; then note "would remove ${f}, another source for ${text}"
+        else note "removed ${f}, another source for ${text} (backed up)"; fi
+        changed
+    done
+    return 0
+}
 
 svc_disable() {
     local u
@@ -1246,7 +1364,7 @@ summary_and_confirm() {
   Laptop mode ....... $([[ $IS_LAPTOP == 1 ]] && echo "yes (lid/sleep off) | headless: ${HEADLESS}" || echo no)
   Extras ............ auditd: ${INSTALL_AUDITD} | rkhunter: ${INSTALL_RKHUNTER} | AIDE: ${INSTALL_AIDE} | endlessh: ${INSTALL_ENDLESSH} | telegraf: ${INSTALL_TELEGRAF} | telegram: ${TELEGRAM_ENABLE}
   Steps ............. ${ONLY:-all}${SKIP:+ (skip: $SKIP)}
-  Mode .............. $([[ $DRY_RUN == 1 ]] && echo "DRY-RUN (nothing will change)" || echo "APPLY")
+  Mode .............. $([[ $DRY_RUN == 1 ]] && echo "DRY-RUN (nothing will change)" || echo "APPLY")$([[ $ASSUME_YES -eq 1 ]] && { [[ $FORCE -eq 1 ]] && echo " | --yes --force: yes to every question" || echo " | --yes: each question's default"; })
 EOF
     confirm "Proceed?" yes || die "Aborted by user"
 }
@@ -1395,22 +1513,38 @@ step_users() {
     return 0
 }
 
-step_docker() {
-    if ! yes_ "$INSTALL_DOCKER"; then return $SKIP_RC; fi
-    pkg_install jq curl ca-certificates || return 1
-    if ! have docker; then
-        info "installing Docker CE from download.docker.com"
-        local distro="$OS_ID"; [[ "$distro" == ubuntu || "$distro" == debian ]] || distro=debian
-        run install -m 0755 -d /etc/apt/keyrings
-        run curl -fsSL "https://download.docker.com/linux/${distro}/gpg" -o /etc/apt/keyrings/docker.asc || { note "cannot download Docker GPG key"; return 1; }
-        run chmod a+r /etc/apt/keyrings/docker.asc
-        write_file /etc/apt/sources.list.d/docker.sources 644 <<EOF
+# docker_repo DISTRO: Docker's official apt repository on a checked key, pinned at 900
+docker_repo() {
+    pkg_install gnupg || return 1
+    # key checked against the fingerprint Docker publishes (docs.docker.com/engine/install). docker.asc is the name
+    # Docker's guide and get.docker.com use, so a source they left behind, or write again later, names the same key.
+    apt_repo_key Docker "https://download.docker.com/linux/$1/gpg" 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 \
+        /etc/apt/keyrings/docker.asc || return 1
+    # another source for the same repository with another key would break every apt command. Removed only once the
+    # key has passed: a failed download or check leaves the operator's working source in place.
+    drop_other_sources "download.docker.com/linux/$1" docker.sources || return 1
+    write_file /etc/apt/sources.list.d/docker.sources 644 <<EOF
 Types: deb
-URIs: https://download.docker.com/linux/${distro}
+URIs: https://download.docker.com/linux/$1
 Suites: ${OS_CODENAME}
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
+    # Ubuntu/ESM may ship other Docker builds: prefer the official ones
+    write_file /etc/apt/preferences.d/docker 644 <<'EOF'
+Package: docker-ce* docker-buildx-plugin docker-compose-plugin containerd.io
+Pin: origin download.docker.com
+Pin-Priority: 900
+EOF
+}
+
+step_docker() {
+    if ! yes_ "$INSTALL_DOCKER"; then return $SKIP_RC; fi
+    pkg_install jq curl ca-certificates || return 1
+    local distro="$OS_ID"; [[ "$distro" == ubuntu || "$distro" == debian ]] || distro=debian
+    if ! have docker; then
+        info "installing Docker CE from download.docker.com"
+        docker_repo "$distro" || return 1
         run apt-get -o DPkg::Lock::Timeout=600 update -q
         run apt-get install "${APT_OPTS[@]}" docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
             || { note "Docker install failed (is ${OS_CODENAME} supported by download.docker.com?)"; return 1; }
@@ -1418,6 +1552,12 @@ EOF
         HAS_DOCKER=1; changed; note "Docker CE installed"
     else
         note "Docker already installed"
+        # Docker CE from download.docker.com for this release (an earlier run, get.docker.com, Docker's guide): its
+        # key is checked and the repository pinned, as on a new install. Another Docker (docker.io, another suite)
+        # is left as it is.
+        if pkg_from docker-ce "download.docker.com/linux/${distro} ${OS_CODENAME}/stable "; then
+            docker_repo "$distro" || return 1
+        fi
         if ! docker compose version >/dev/null 2>&1; then pkg_install docker-compose-plugin || true; fi
     fi
 
@@ -1440,6 +1580,7 @@ EOF
         note "container log rotation set (10m x 3)"
         if [[ $DRY_RUN -eq 0 ]]; then
             local running; running=$(docker ps -q 2>/dev/null | wc -l)
+            # --yes keeps the default (no): only --yes --force restarts running containers
             if [[ $running -eq 0 ]] || confirm "Restart Docker now to apply log rotation? (${running} container(s) will restart)" no; then
                 run systemctl restart docker && note "docker restarted"
             else
@@ -1776,8 +1917,242 @@ ssh_test_hint() {
     echo "  Keep this terminal open: answer here once the test is done."
 }
 
-# The SSH step again, as a todo gives it: a dry run first, and never --yes, which skips the login test.
+# The SSH step again, as a todo gives it: a dry run first, and interactive (no --yes), so it asks for a
+# login test from a second terminal, which the automatic check of --yes cannot replace.
 SSH_AGAIN="sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh"
+
+# --- The automatic login check of a run with --yes (issue #65) -------------------------------------
+# With --yes nobody tests a login from a second terminal, so before phase B closes the old port the
+# step checks on the server itself that the admin could log in on the new port (ssh_login_check).
+# It sees UFW, but not a firewall outside the server (a cloud security group) or the key on the
+# operator's computer: an interactive run stays the real test. The helpers below only read stdin and their arguments.
+
+# ssh_glob STRING PATTERN: OpenSSH's match_pattern: * and ? are wildcards, every other character is literal
+ssh_glob() {
+    local p="${2//\\/\\\\}"
+    p="${p//\[/\\[}"; p="${p//\]/\\]}"
+    # shellcheck disable=SC2254   # PATTERN is a pattern on purpose
+    case $1 in $p) return 0 ;; esac
+    return 1
+}
+# ipv4_int ADDR: the IPv4 address as one number; status 1 and nothing printed when ADDR is not one
+ipv4_int() {
+    local IFS=. a b c d
+    [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+    read -r a b c d <<<"$1"
+    (( 10#$a < 256 && 10#$b < 256 && 10#$c < 256 && 10#$d < 256 )) || return 1
+    echo $(( (10#$a << 24) | (10#$b << 16) | (10#$c << 8) | 10#$d ))
+}
+# ssh_addr_match ADDR ENTRY: ENTRY (without its "!") is an IPv4 address/CIDR that holds ADDR, or a
+# wildcard that matches it, as OpenSSH's addr_match_list reads one entry
+ssh_addr_match() {
+    local a n bits mask net
+    if [[ $2 =~ ^([0-9.]+)/([0-9]{1,2})$ ]]; then
+        net="${BASH_REMATCH[1]}"; bits=$((10#${BASH_REMATCH[2]}))
+        a="$(ipv4_int "$1")" && n="$(ipv4_int "$net")" && (( bits <= 32 )) || return 1
+        mask=$(( bits == 0 ? 0 : (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+        (( (a & mask) == (n & mask) ))
+        return
+    fi
+    ssh_glob "$1" "$2"
+}
+# ssh_host_match HOST ADDR LIST: OpenSSH's match_host_and_ip: an entry of the comma LIST (host wildcard,
+# address or CIDR) matches HOST or ADDR, and no "!" entry does. Host names compare in lowercase.
+ssh_host_match() {
+    local host="${1,,}" addr="$2" e neg hit=1
+    local -a list=()
+    IFS=, read -ra list <<<"$3"
+    for e in "${list[@]}"; do
+        neg=0
+        [[ $e == '!'* ]] && { neg=1; e="${e:1}"; }
+        if ssh_addr_match "$addr" "$e" || ssh_glob "$host" "${e,,}"; then
+            [[ $neg -eq 1 ]] && return 1
+            hit=0
+        fi
+    done
+    return "$hit"
+}
+# ssh_user_match USER HOST ADDR PATTERN: OpenSSH's match_user: PATTERN is USER or USER@HOSTS, split at the last @
+ssh_user_match() {
+    if [[ $4 == *@* ]]; then
+        ssh_glob "$1" "${4%@*}" && ssh_host_match "$2" "$3" "${4##*@}"
+    else
+        ssh_glob "$1" "$4"
+    fi
+}
+# sshd_login_refused USER "GROUPS" HOST ADDR: "sshd -T -C user=USER,..." output on stdin. Prints why sshd
+# would refuse a key login of USER from HOST/ADDR, nothing when it allows one: DenyUsers, AllowUsers,
+# DenyGroups and AllowGroups in the order sshd checks them, then PubkeyAuthentication and
+# AuthenticationMethods (a Match block for USER is already applied by -C).
+sshd_login_refused() {
+    local user="$1" host="$3" addr="$4" k v g p hit pubkey=yes methods=any
+    local -a groups=() allow_u=() deny_u=() allow_g=() deny_g=() lists=()
+    read -ra groups <<<"$2"
+    while read -r k v; do
+        case $k in
+            allowusers) allow_u+=("$v") ;;
+            denyusers) deny_u+=("$v") ;;
+            allowgroups) allow_g+=("$v") ;;
+            denygroups) deny_g+=("$v") ;;
+            pubkeyauthentication) pubkey="$v" ;;
+            authenticationmethods) methods="$v" ;;
+        esac
+    done
+    for p in "${deny_u[@]}"; do
+        ssh_user_match "$user" "$host" "$addr" "$p" && { echo "DenyUsers has ${p}"; return 0; }
+    done
+    if [[ ${#allow_u[@]} -gt 0 ]]; then
+        hit=0
+        for p in "${allow_u[@]}"; do ssh_user_match "$user" "$host" "$addr" "$p" && hit=1; done
+        [[ $hit -eq 1 ]] || { echo "AllowUsers does not list ${user} for ${addr}"; return 0; }
+    fi
+    for p in "${deny_g[@]}"; do
+        for g in "${groups[@]}"; do ssh_glob "$g" "$p" && { echo "DenyGroups has ${p} (group ${g})"; return 0; }; done
+    done
+    if [[ ${#allow_g[@]} -gt 0 ]]; then
+        hit=0
+        for p in "${allow_g[@]}"; do for g in "${groups[@]}"; do ssh_glob "$g" "$p" && hit=1; done; done
+        [[ $hit -eq 1 ]] || { echo "AllowGroups lists no group of ${user}"; return 0; }
+    fi
+    [[ $pubkey == yes ]] || { echo "PubkeyAuthentication is ${pubkey}"; return 0; }
+    if [[ $methods != any ]]; then
+        # a key alone is enough only when one of the lists is just "publickey"
+        read -ra lists <<<"$methods"
+        hit=0
+        for p in "${lists[@]}"; do [[ $p == publickey ]] && hit=1; done
+        [[ $hit -eq 1 ]] || { echo "AuthenticationMethods ${methods} asks for more than a key"; return 0; }
+    fi
+    return 0
+}
+# authorized_keys_paths USER HOME UID: "sshd -T -C user=USER,..." output on stdin. The files of
+# AuthorizedKeysFile, one per line, with %h, %u, %U and %% expanded and a relative path under HOME.
+authorized_keys_paths() {
+    local k v f pct=%
+    local -a files=()
+    while read -r k v; do
+        [[ $k == authorizedkeysfile ]] && read -ra files <<<"$v"
+    done
+    for f in "${files[@]}"; do
+        [[ $f == none ]] && continue
+        # quoted replacements: a & in them stays a & (bash 5.2 patsub_replacement)
+        f="${f//"${pct}${pct}"/$'\001'}"; f="${f//"${pct}h"/"$2"}"; f="${f//"${pct}u"/"$1"}"; f="${f//"${pct}U"/"$3"}"
+        f="${f//$'\001'/"$pct"}"
+        [[ $f == /* ]] || f="$2/$f"
+        printf '%s\n' "$f"
+    done
+}
+
+# ufw_allows_port PORT: `ufw status verbose` on stdin has a rule that lets PORT/tcp in: ALLOW or LIMIT,
+# incoming (not an OUT or FWD rule), for PORT, PORT/tcp, a profile on PORT/tcp (22/tcp (OpenSSH)) or
+# every port (Anywhere), from any source, on any interface, IPv4 or IPv6. A port list or range does not
+# count: the check then fails, the safe way, and the firewall step never writes one for SSH. UFW applies
+# the first rule that matches, in the order it prints them: a DENY or REJECT from any source for the
+# port (or every port) printed before that ALLOW or LIMIT blocks it, and the check fails, even when the
+# two rules are on other interfaces or the IPv6 list still lets the port in (the safe way again). A DENY
+# or REJECT from one source (a ban) is skipped: it blocks only that source.
+ufw_allows_port() {
+    local label=' \([A-Za-z0-9][A-Za-z0-9 _.+-]*( \(v6\))?\)' first
+    local to="^(([^[:space:]#]+ )?${1}(/tcp)?(${label})?|Anywhere)( \(v6\))?( on [^[:space:]()]+)?[[:space:]]+"
+    first="$(grep -Ev '[[:space:]](ALLOW|LIMIT|DENY|REJECT)[[:space:]]+(OUT|FWD)([[:space:]]|$)' |
+        grep -E "${to}((ALLOW|LIMIT)([[:space:]]+IN)?[[:space:]]|(DENY|REJECT)([[:space:]]+IN)?[[:space:]]+Anywhere)" |
+        sed -n 1p)"
+    [[ $first =~ ${to}(ALLOW|LIMIT) ]]
+}
+
+# ssh_login_check [nokey]: run with --yes once SSH has restarted on its phase A ports, in place of the
+# operator's test. Each check is logged: sshd listens on SSH_PORT; sshd -T for the admin from 127.0.0.1
+# allows a key login (AllowUsers, DenyUsers, the groups, Match); the admin has a key in an
+# AuthorizedKeysFile; when UFW is active and filters incoming traffic, a rule lets SSH_PORT in (none
+# is needed when ufw_allow_ssh adds none: SSH only through the Cloudflare tunnel, on loopback); an SSH
+# handshake (banner and key exchange, no key needed) works on 127.0.0.1:SSH_PORT, which UFW always
+# lets in. Status 1 when one fails, with SSH_CHECK_FAILED saying which. "nokey": --yes --force went
+# past the no-key guard, so the key check is skipped (as the "s" answer skips the operator's test) and
+# SSH_CHECK_SKIPPED says so; the other checks still run. Read-only: safe while the rollback timer runs.
+SSH_CHECK_FAILED=""
+SSH_CHECK_PASSED=""
+SSH_CHECK_SKIPPED=""
+ssh_login_check() {
+    local live cfg kcfg kfrom="" akc home uid groups why f n=0 keys ufw_out failed=() passed=() skipped=()
+    live="$(ssh_listen_ports)"
+    if [[ " $live " == *" $SSH_PORT "* ]]; then
+        passed+=("sshd listens on ${SSH_PORT}")
+    else
+        live="${live% }"
+        failed+=("sshd does not listen on ${SSH_PORT} (it listens on: ${live:-nothing})")
+    fi
+    home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
+    uid="$(id -u "$ADMIN_USER" 2>/dev/null)"
+    groups="$(id -Gn "$ADMIN_USER" 2>/dev/null)"
+    cfg="$(sshd -T -C "user=${ADMIN_USER},host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=${SSH_PORT}" 2>>"$LOG_FILE")"
+    kcfg="$cfg"
+    if ! grep -q '^port ' <<<"$cfg"; then
+        failed+=("sshd -T could not read the configuration for ${ADMIN_USER}")
+        # the keys are still counted, in OpenSSH's default AuthorizedKeysFile, so that this check does
+        # not report a missing key on top of the sshd -T failure
+        kcfg='authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2'
+        kfrom=" (OpenSSH's default AuthorizedKeysFile, as sshd -T failed)"
+    else
+        why="$(sshd_login_refused "$ADMIN_USER" "$groups" localhost 127.0.0.1 <<<"$cfg")"
+        if [[ -z $why ]]; then
+            passed+=("sshd allows a key login of ${ADMIN_USER}")
+        else
+            failed+=("sshd refuses a key login of ${ADMIN_USER}: ${why}")
+        fi
+    fi
+    if [[ ${1:-} == nokey ]]; then
+        skipped+=("key check skipped (--force): ${ADMIN_USER} has no SSH key and can log in only on the console")
+    else
+        if [[ -n $home ]]; then
+            while IFS= read -r f; do
+                [[ -f $f ]] || continue
+                keys="$(ssh-keygen -l -f "$f" 2>/dev/null | grep -c .)"
+                n=$((n + keys))
+            done < <(authorized_keys_paths "$ADMIN_USER" "$home" "$uid" <<<"$kcfg")
+        fi
+        # the check reads only the AuthorizedKeysFile files: it never runs an AuthorizedKeysCommand
+        akc="$(awk '$1 == "authorizedkeyscommand" { print $2; exit }' <<<"$cfg")"
+        if [[ $n -gt 0 ]]; then
+            passed+=("${ADMIN_USER} has ${n} SSH key(s)${kfrom}")
+        elif [[ -n $akc && $akc != none ]]; then
+            failed+=("${ADMIN_USER} has no SSH key in its AuthorizedKeysFile (keys from AuthorizedKeysCommand are not checked)")
+        else
+            failed+=("${ADMIN_USER} has no SSH key in its authorized_keys${kfrom}")
+        fi
+    fi
+    # The handshake below goes to 127.0.0.1, which UFW always lets in, so it says nothing about the
+    # firewall: a --only ssh run after the port changed, with no firewall step, would close the old
+    # port behind a UFW that filters the new one.
+    ufw_out="$(ufw_status verbose 2>/dev/null)"
+    if [[ $ufw_out == *"Status: active"* && $ufw_out != *"Default: allow (incoming)"* ]]; then
+        if [[ -z "$(ufw_allow_ssh "$SSH_PORT" check echo)" ]]; then
+            passed+=("UFW needs no rule for ${SSH_PORT}: SSH comes only through the Cloudflare tunnel, on loopback")
+        elif ufw_allows_port "$SSH_PORT" <<<"$ufw_out"; then
+            passed+=("UFW lets port ${SSH_PORT} in")
+        else
+            failed+=("UFW is active and no ALLOW or LIMIT rule lets port ${SSH_PORT} in, or a DENY or REJECT rule for it comes first (the firewall step adds the ALLOW or LIMIT rule)")
+        fi
+    fi
+    if ! have ssh-keyscan; then
+        failed+=("ssh-keyscan is missing (openssh-client), no SSH handshake test")
+    elif timeout 30 ssh-keyscan -T 10 -p "$SSH_PORT" 127.0.0.1 2>/dev/null | grep -q '^[^#]'; then
+        passed+=("SSH handshake on 127.0.0.1:${SSH_PORT}")
+    else
+        # sshd -T lists every ListenAddress (IPv6 sockets are IPv6 only): without 0.0.0.0 or
+        # 127.0.0.1, sshd never answers here, so say why instead of a bare failure
+        why=""
+        if grep -q '^listenaddress ' <<<"$cfg" && ! grep -Eq '^listenaddress (0\.0\.0\.0|127\.0\.0\.1):' <<<"$cfg"; then
+            why=" (sshd's ListenAddress leaves out 127.0.0.1, so this check cannot reach it: run the SSH step without --yes)"
+        fi
+        failed+=("no SSH handshake on 127.0.0.1:${SSH_PORT}${why}")
+    fi
+    for f in "${passed[@]}"; do ok "login check: ${f}"; done
+    for f in "${skipped[@]}"; do warn "login check: ${f}"; done
+    for f in "${failed[@]}"; do warn "login check: ${f}"; done
+    SSH_CHECK_PASSED="$(IFS=';'; echo "${passed[*]}")"; SSH_CHECK_PASSED="${SSH_CHECK_PASSED//;/; }"
+    SSH_CHECK_SKIPPED="$(IFS=';'; echo "${skipped[*]}")"; SSH_CHECK_SKIPPED="${SSH_CHECK_SKIPPED//;/; }"
+    SSH_CHECK_FAILED="$(IFS=';'; echo "${failed[*]}")"; SSH_CHECK_FAILED="${SSH_CHECK_FAILED//;/; }"
+    [[ ${#failed[@]} -eq 0 ]]
+}
 
 # ssh_close_old_ports: the end of a move to SSH_PORT, once SSH has restarted. sshd must be set to
 # SSH_PORT only (sshd -T) and listen there only: a Port line in a file the step does not edit (an
@@ -1847,15 +2222,19 @@ ssh_finish_move() {
 
 step_ssh() {
     compute_root_sources
-    local home nkeys=0
+    local home nkeys=0 nokey=""
     home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
     [[ -s "$home/.ssh/authorized_keys" ]] && nkeys=$(grep -cE '^[^#[:space:]]' "$home/.ssh/authorized_keys")
     if [[ $nkeys -eq 0 && $DRY_RUN -eq 0 ]]; then
         warn "${ADMIN_USER} has NO SSH key: after this step ${ADMIN_USER} can only log in on the console."
+        # --yes keeps the default (no); only --yes --force goes on
         if ! confirm "Continue anyway (I have console/physical access)?" no; then
             note "aborted: no SSH key for ${ADMIN_USER}"; return $SKIP_RC
         fi
         note "WARNING: ${ADMIN_USER} has no SSH key"
+        # --yes --force answered yes: the automatic login check skips its key check, as the "s" answer of
+        # an interactive run skips the test, and runs the three others
+        [[ $ASSUME_YES -eq 1 && $FORCE -eq 1 ]] && nokey=nokey
     fi
     local others=() f
     for f in /etc/ssh/sshd_config.d/*; do
@@ -1915,7 +2294,9 @@ EOF
     [[ $STEP_CHANGED -eq 0 && $need_two -eq 0 ]] && final=1
     if [[ $DRY_RUN -eq 1 ]]; then
         [[ $final -eq 1 ]] && ssh_finish_move "$rb"
-        note "would set port ${SSH_PORT}, keys only, root via Match"; return 0
+        note "would set port ${SSH_PORT}, keys only, root via Match"
+        [[ $final -eq 1 || $INTERACTIVE -eq 1 ]] || note "with --yes, an automatic login check before the old port closes"
+        return 0
     fi
     if ! sshd -t 2>>"$LOG_FILE"; then
         err "sshd -t rejected the new configuration - restoring"
@@ -1941,7 +2322,9 @@ EOF
     lo=$(sshd -T -C user=root,host=localhost,addr=127.0.0.1 2>/dev/null | awk '$1=="permitrootlogin"{print $2}')
     note "root login: internet=${ext}, localhost=${lo}"
 
-    # Confirmation from a second terminal
+    # Confirmation from a second terminal. With --yes nobody answers: the automatic login check decides
+    # (issue #65). When it fails, phase B does not run: the old port(s) and their temporary UFW rules
+    # stay, and the rollback timer stays armed, so the SSH configuration from before this run comes back.
     local answer="y"
     if [[ $INTERACTIVE -eq 1 ]]; then
         echo
@@ -1952,6 +2335,15 @@ EOF
             read -r -p "  Result [y/n/s]: " answer < /dev/tty || answer=s
             case "${answer,,}" in y|n|s) break ;; esac
         done
+    elif ssh_login_check "$nokey"; then
+        note "automatic login check passed (${SSH_CHECK_PASSED})${SSH_CHECK_SKIPPED:+; ${SSH_CHECK_SKIPPED}}"
+        [[ -n $SSH_CHECK_SKIPPED ]] && todo "SSH: ${ADMIN_USER} has no SSH key (--force skipped the key check of the automatic login check), so it can log in only on the console. Add your public key: set ADMIN_PUBKEY in /etc/server-prep/server-prep.conf, run sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only users --dry-run, then the same without --dry-run, and test ssh -p ${SSH_PORT} ${ADMIN_USER}@<server> from a second terminal"
+    else
+        local kept=""
+        for p in $old_ports; do [[ $p == "$SSH_PORT" ]] || kept+="$p "; done
+        note "automatic login check failed (${SSH_CHECK_FAILED})${SSH_CHECK_SKIPPED:+; ${SSH_CHECK_SKIPPED}}${kept:+: old SSH port(s) ${kept}and their temporary UFW rules kept}; the rollback timer puts back the SSH configuration from before this run in 10 minutes"
+        todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}. Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
+        return 1
     fi
     if [[ "${answer,,}" == "n" ]]; then
         bash "$rb"; run systemctl stop "server-prep-ssh-rollback-$TS.timer"
@@ -2016,21 +2408,41 @@ Package: crowdsec*
 Pin: origin packagecloud.io
 Pin-Priority: 900
 EOF
-        if ! pkg_installed crowdsec; then
-            info "adding the CrowdSec repository"
-            if [[ $DRY_RUN -eq 0 ]]; then
-                curl -fsSL https://install.crowdsec.net | sh >> "$LOG_FILE" 2>&1 || warn "CrowdSec repo setup failed, trying distro packages"
-                apt-get -o DPkg::Lock::Timeout=600 update -q >> "$LOG_FILE" 2>&1
+        local cs_ver="" cs_left="CrowdSec not installed" cs_key=/etc/apt/keyrings/crowdsec_crowdsec-archive-keyring.gpg
+        if pkg_installed crowdsec; then
+            cs_ver="$(dpkg-query -W -f='${Version}' crowdsec 2>/dev/null)"; cs_left="crowdsec ${cs_ver} left as it is"
+        fi
+        # CrowdSec's packagecloud repository, added here instead of running its remote install script as root, and
+        # checked on every run, also when that script or an older server-prep added it: the key against its
+        # published fingerprint, and no second source for it (removed only once the key has passed). The file names
+        # are the ones that script uses.
+        pkg_install curl gnupg ca-certificates || { note "cannot install curl/gnupg - ${cs_left}"; return 1; }
+        apt_repo_key CrowdSec https://packagecloud.io/crowdsec/crowdsec/gpgkey 6A89E3C2303A901A889971D3376ED5326E93CD0C "$cs_key" \
+            || { note "${cs_left} - fix the cause, then re-run with --only ips"; return 1; }
+        drop_other_sources packagecloud.io/crowdsec/crowdsec/ crowdsec_crowdsec.list || { note "$cs_left"; return 1; }
+        write_file /etc/apt/sources.list.d/crowdsec_crowdsec.list 644 <<EOF
+deb [signed-by=${cs_key}] https://packagecloud.io/crowdsec/crowdsec/any/ any main
+EOF
+        # The installed crowdsec is kept only when packagecloud offers that version. A missing one, or a distro or ESM
+        # build (1.4.x, whatever its version string says), gets the official release.
+        if ! pkg_from crowdsec packagecloud.io/crowdsec/crowdsec/; then
+            [[ -n "$cs_ver" ]] && info "replacing crowdsec ${cs_ver} (not from packagecloud.io) with the official release"
+            run apt-get -o DPkg::Lock::Timeout=600 update -q \
+                || { note "apt-get update failed - ${cs_left} (re-run with --only ips)"; return 1; }
+            # apt-get update can succeed while a repository did not download: then apt would pick the old
+            # distro/ESM crowdsec, which is what this step must never install
+            if [[ $DRY_RUN -eq 0 ]] && ! apt-cache madison crowdsec 2>/dev/null | grep -q 'packagecloud\.io/crowdsec/crowdsec'; then
+                note "packagecloud.io offers no crowdsec package - not installing the distro one (re-run with --only ips)"; return 1
             fi
             # may report an error if 8080 is taken - fixed just below
+            local cs_before
+            cs_before="$(dpkg-query -W -f='${Status} ${Version}' crowdsec 2>/dev/null)"
             run apt-get install "${APT_OPTS[@]}" crowdsec || warn "crowdsec install reported an error, fixing the LAPI port and retrying"
-            changed
-        elif [[ -f /etc/apt/sources.list.d/crowdsec_crowdsec.list ]] \
-             && dpkg-query -W -f='${Version}' crowdsec 2>/dev/null | grep -qE 'ubuntu|deb|esm'; then
-            info "replacing the distro crowdsec ($(dpkg-query -W -f='${Version}' crowdsec)) with the official release"
-            run apt-get -o DPkg::Lock::Timeout=600 update -q
-            run apt-get install "${APT_OPTS[@]}" crowdsec || warn "crowdsec upgrade reported an error, fixing the LAPI port"
-            changed
+            # CHANGED only when apt did something: when packagecloud no longer lists the installed version and
+            # offers no newer one, apt-get install leaves crowdsec as it is, and a re-run must not say CHANGED
+            if [[ $DRY_RUN -eq 1 || "$(dpkg-query -W -f='${Status} ${Version}' crowdsec 2>/dev/null)" != "$cs_before" ]]; then
+                changed
+            fi
         fi
         # Move the local API away from 8080 (Traefik dashboards use it)
         if [[ -f /etc/crowdsec/config.yaml ]] && grep -q '127.0.0.1:8080' /etc/crowdsec/config.yaml; then
@@ -2097,7 +2509,7 @@ APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
     # Third-party repositories (origin and label of their Release files). The list is added to the
-    # distro's own origins; only installed packages are upgraded, and apt pins (crowdsec at 900) still apply.
+    # distro's own origins; only installed packages are upgraded, and the third-party repos' pins (900) still apply.
     local -a origins=()
     yes_ "$DOCKER_AUTO_UPDATE" && origins+=('"origin=Docker,label=Docker CE";')
     if yes_ "$THIRD_PARTY_AUTO_UPDATE"; then
@@ -2539,21 +2951,10 @@ EOF
 step_telegraf() {
     yes_ "$INSTALL_TELEGRAF" || return $SKIP_RC
     pkg_install curl gnupg || return 1
-    # official repository, key checked against InfluxData's published fingerprint
-    local key=/etc/apt/keyrings/influxdata-archive.gpg fpr=24C975CBA61A024EE1B631787C3D57159FC2F927
-    if [[ ! -s "$key" ]]; then
-        info "adding the InfluxData repository"
-        if [[ $DRY_RUN -eq 0 ]]; then
-            local tmp; tmp="$(mktemp)"
-            curl -fsSL https://repos.influxdata.com/influxdata-archive.key -o "$tmp" || { note "cannot download the InfluxData key"; rm -f "$tmp"; return 1; }
-            if ! gpg --show-keys --with-fingerprint --with-colons "$tmp" 2>/dev/null | grep -q "^fpr:\+${fpr}:\$"; then
-                note "InfluxData key fingerprint mismatch - not installing"; rm -f "$tmp"; return 1
-            fi
-            install -m 0755 -d /etc/apt/keyrings
-            gpg --dearmor < "$tmp" > "$key"; chmod 644 "$key"; rm -f "$tmp"
-        fi
-        changed
-    fi
+    # official repository, key checked against InfluxData's published fingerprint (on every run)
+    local key=/etc/apt/keyrings/influxdata-archive.gpg
+    apt_repo_key InfluxData https://repos.influxdata.com/influxdata-archive.key 24C975CBA61A024EE1B631787C3D57159FC2F927 \
+        "$key" || return 1
     write_file /etc/apt/sources.list.d/influxdata.list 644 <<EOF
 deb [signed-by=${key}] https://repos.influxdata.com/debian stable main
 EOF
@@ -2662,8 +3063,34 @@ EOF
     return 0
 }
 
+# cloudflared_repo: Cloudflare's official apt repository on a checked key, pinned at 900
+cloudflared_repo() {
+    pkg_install curl gnupg ca-certificates || return 1
+    # key checked against Cloudflare's fingerprint ("CloudFlare Software Packaging 2025", the key served at
+    # pkg.cloudflare.com/cloudflare-public-v2.gpg)
+    apt_repo_key Cloudflare https://pkg.cloudflare.com/cloudflare-public-v2.gpg CC94B39C77AE7342A68B89628A682D308D4E5E73 \
+        /etc/apt/keyrings/cloudflare-public-v2.gpg || return 1
+    # another source for the same repository with another key would break every apt command. Removed only once the
+    # key has passed: a failed download or check leaves the operator's working source in place.
+    drop_other_sources pkg.cloudflare.com/cloudflared cloudflared.list || return 1
+    write_file /etc/apt/sources.list.d/cloudflared.list 644 <<'EOF'
+deb [signed-by=/etc/apt/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
+EOF
+    # Ubuntu/ESM may ship an older cloudflared: prefer the official one
+    write_file /etc/apt/preferences.d/cloudflared 644 <<'EOF'
+Package: cloudflared
+Pin: origin pkg.cloudflare.com
+Pin-Priority: 900
+EOF
+}
+
 step_cloudflared() {
     [[ "$PANEL_ACCESS" == *cloudflared* ]] || return $SKIP_RC
+    # cloudflared from Cloudflare's repository (an earlier run, which kept the key in /usr/share/keyrings, or
+    # Cloudflare's guide): its key is checked and the repository pinned, as on a new install
+    if pkg_from cloudflared pkg.cloudflare.com/cloudflared; then
+        cloudflared_repo || { note "cloudflared left as it is - fix the cause, then re-run with --only cloudflared"; return 1; }
+    fi
     if systemctl is-active --quiet cloudflared 2>/dev/null; then
         note "cloudflared tunnel service already running"
     elif [[ -z "$CLOUDFLARED_TOKEN" ]]; then
@@ -2671,12 +3098,7 @@ step_cloudflared() {
         note "no tunnel token given"; return $SKIP_RC
     else
         if ! have cloudflared; then
-            run mkdir -p --mode=0755 /usr/share/keyrings
-            run curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg -o /usr/share/keyrings/cloudflare-public-v2.gpg \
-                || { note "cannot download Cloudflare key"; return 1; }
-            write_file /etc/apt/sources.list.d/cloudflared.list 644 <<'EOF'
-deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
-EOF
+            cloudflared_repo || { note "cloudflared not installed: ${PANEL_LABEL} cannot use the tunnel yet"; return 1; }
             run apt-get -o DPkg::Lock::Timeout=600 update -q
             pkg_install cloudflared || return 1
         fi
