@@ -40,9 +40,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    ./scripts/check.sh                # every check
    ./scripts/check.sh --list         # the sections
    ./scripts/check.sh --only lint    # one section
-   scripts/check-files.sh            # after git add, before git commit (it reads only tracked and staged
-                                     # files): no report, filled config, key or CLAUDE.local.md is tracked,
-                                     # and every IPv4 address is an example
+   ./scripts/check.sh --only security   # after git add, before git commit: runs scripts/check-files.sh, which
+                                        # reads only tracked and staged files: no report, filled config, key or
+                                        # CLAUDE.local.md is tracked, and every IPv4 address is an example
    gitleaks git --redact --config .gitleaks.toml   # optional, if gitleaks is installed: no secret in the history
                                                    # (no CI job runs it yet: the security workflow of #40 is to come)
    ```
@@ -57,6 +57,10 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    - `consistency`: `scripts/check-consistency.sh`: ALL_STEPS, `--list-steps`, `main()` and the step functions, the
      README step table, `server-prep.conf.example`, the saved answers, the plan summary, the secret prompts and the
      audit's `# step:` comments agree
+   - `security`: `scripts/check-files.sh`, the committed-file guard: no report, filled config, key or
+     `CLAUDE.local.md` is tracked (even one added with `git add -f`), and every IPv4 address is an example. It reads
+     the staged copy, so run it after `git add`. `tests/exit-status.sh` runs it too, through `tests/check-files.sh`,
+     which is how CI runs it, so a full run checks it twice.
 
    `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
    checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`;
@@ -68,7 +72,9 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    The `lint` section uses ShellCheck 0.11.0: `scripts/check.sh` downloads it once to
    `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its SHA-256 on every run, and stops when the checksum does not
    match. When a tool is missing, the sections that need it show SKIP on your machine: `data` and `e2e-report` need
-   jq, `exit-status` needs jq and ssh-keygen, `e2e-pages` needs jq, unzip and python3. CI has those tools.
+   jq, `exit-status` needs jq and ssh-keygen, `e2e-pages` needs jq, unzip and python3, `security` needs git. CI has
+   those tools, and there a missing one is a FAIL. `security` also needs the `.git` of a clone: a release tarball has
+   none, so it shows SKIP there, and with `CI=true` a checkout without `.git` is a FAIL.
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
    sudo ./server-prep.sh --dry-run --only <step>

@@ -7,6 +7,8 @@
 # set here are read by the eval'd writer.
 # No root needed and nothing on the host changes: the files go to a temp folder.
 set -u
+# as server-audit.sh does: the eval'd json_esc runs under the audit's locale
+export LC_ALL=C
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AUDIT="$SCRIPT_DIR/server-audit.sh"
@@ -55,10 +57,11 @@ KERNEL=6.12.48+deb13-amd64
 PUBLIC_IP=203.0.113.10
 STARTED_AT=2026-01-15T10:30:00+01:00
 
-# A message with a double quote, a backslash, a newline, a tab and a trailing \r: json_esc must keep
-# the first four and strip the \r.
-tricky=$'say "hi" \\ back\nnext line\ttab\r'
-tricky_want=$'say "hi" \\ back\nnext line\ttab'
+# A message with a double quote, a backslash, a newline, a tab, control characters (ESC, BEL, 0x01, 0x1f)
+# and a trailing \r: json_esc must keep the first four, write ESC, BEL, 0x01 and 0x1f as \u00XX (issue #79)
+# and strip the \r.
+tricky=$'say "hi" \\ back\nnext line\ttab \e[31mred\e[0m bell\a \x01 \x1f end\r'
+tricky_want=$'say "hi" \\ back\nnext line\ttab \e[31mred\e[0m bell\a \x01 \x1f end'
 R_ID=(sys.os upd.security panel.data_dir)
 R_CAT=(system updates panel)
 R_STATUS=(PASS WARN INFO)
@@ -77,7 +80,7 @@ root="$tmp/audit-root1.json"
 
 for f in "$nonroot" "$root"; do
     if ! jq -e . "$f" >/dev/null 2>&1; then
-        printf 'not ok: the writer gives invalid JSON: %s\n' "$(head -c 300 "$f" 2>/dev/null)"
+        printf 'not ok: the writer gives invalid JSON: %s\n' "$(head -c 300 "$f" 2>/dev/null | cat -v)"
         exit 1
     fi
 done
@@ -106,9 +109,20 @@ expect 'checks keep their id, category, status and fix' \
     '[.checks[] | [.id, .category, .status, .fix]] == [["sys.os","system","PASS",""],
      ["upd.security","updates","WARN","sudo apt update && sudo apt full-upgrade"],["panel.data_dir","panel","INFO",""]]' "$nonroot"
 if [[ "$(jq -r '.checks[1].message' "$nonroot")" == "$tricky_want" ]]; then
-    ok "a message with a quote, a backslash, a newline and a tab round-trips, the \\r is stripped"
+    ok "a message with a quote, a backslash, a newline, a tab and control characters round-trips, the \\r is stripped"
 else
     bad "the tricky message does not round-trip: $(jq '.checks[1].message' "$nonroot")"
+fi
+if grep -qF '\u001b' "$nonroot" && grep -qF '\u0007' "$nonroot" && grep -qF '\u0001' "$nonroot" &&
+    grep -qF '\u001f' "$nonroot"; then
+    ok "ESC, BEL, 0x01 and 0x1f are written as \\u001b, \\u0007, \\u0001 and \\u001f"
+else
+    bad "ESC, BEL, 0x01 or 0x1f is not written as a \\u00XX escape: $(cat -v "$nonroot")"
+fi
+if tr -d '\n' <"$nonroot" | grep -q '[[:cntrl:]]'; then
+    bad "the JSON file holds a raw control character: $(cat -v "$nonroot")"
+else
+    ok "the JSON file holds no raw control character"
 fi
 
 # --- 2. The schema -----------------------------------------------------------------------------------

@@ -64,6 +64,16 @@ and check them with `sha256sum -c SHA256SUMS`. Later, `./server-prep.sh --upgrad
 release: it checks every file against the release's `SHA256SUMS` (a broken download, not a compromised GitHub account:
 see [SECURITY.md](SECURITY.md#supported-versions)), shows what changes and asks first (in a git clone, use `git pull`). The audit tells you when a newer release fixes a security problem. To prepare many servers the same way, fill a copy of
 [server-prep.conf.example](server-prep.conf.example) and run `sudo ./server-prep.sh --config web-01.conf --yes`.
+`--yes` answers each question with its default, so a question whose default is no stays no: the SSH step is skipped
+when the admin has no SSH key, and running containers are not restarted for Docker's log rotation (a to-do says when to).
+Add `--force` to answer yes to those too; without `--yes`, `--force` does nothing. With `--yes` nobody tests a login from
+a second terminal, so the SSH step checks it on the server before it closes the old port: sshd listens on the new port,
+it allows the admin to log in with a key, the admin has a key, UFW (when it is on) lets the new port in, and an SSH
+handshake on `127.0.0.1` works. When `--force` went on with no key for the admin, the key check is skipped and logged
+(the admin can then log in only on the console), and the others still run. If a check fails, the old port and its
+firewall rule stay, the 10-minute rollback puts back the old SSH configuration, and the step fails with a to-do that
+names the check: finish with an interactive run of `--only ssh,endlessh`. This check cannot see a firewall outside the
+server (a cloud security group) or the key on your computer, so make the first run on a server interactive.
 Check the file first, no root needed: `./server-prep.sh --config web-01.conf --validate` reads it without running it
 and prints one line per problem, with its line number and what to do. It runs on Linux, or on any machine with bash 4
 or later (the `/bin/bash` of macOS is too old: install a current bash first). The saved answers in `/etc/server-prep/` can
@@ -122,7 +132,7 @@ Both work the same way. Only a few details change:
 | `users` | admin user + your SSH key; the panel's key for root, restricted with `from="..."` to the panel's sources |
 | `docker` | Docker CE from the official download.docker.com repo if missing (key fingerprint checked, pinned at 900; a Docker CE already installed from that repo gets the same check), container log rotation |
 | `firewall` | UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched) |
-| `ssh` | port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works |
+| `ssh` | port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server |
 | `ips` | fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted, LAPI moved off 8080 |
 | `unattended` | daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot |
 | `sysctl` | ~30 kernel/network parameters, rare protocols blacklisted (Docker/Tailscale compatible) |
