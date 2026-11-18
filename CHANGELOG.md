@@ -33,7 +33,7 @@ Highlights of each release. The full list of merged pull requests is in each
   over IPv6 (MagicDNS can give that address first) could be banned after a few failed logins. Both ranges are now
   whitelisted, and the audit's `ips.f2b_ignoreip` warns when the IPv6 one is missing. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --dry-run`, then the same command with
-  `--yes`.
+  `--yes`. The `PANEL_ACCESS` help in `server-prep.conf.example` and the setup console now names both ranges.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,

@@ -18,7 +18,7 @@ PANEL="coolify"                          # name used in messages/report; empty =
 PANEL_PUBKEY="ssh-ed25519 AAAA... panel"
 # How the panel server reaches this server (comma list): cloudflared, tailscale, public
 #   root login is allowed ONLY from the matching sources:
-#   cloudflared -> 127.0.0.1/::1 (tunnel), tailscale -> 100.64.0.0/10, public -> PANEL_IP
+#   cloudflared -> 127.0.0.1/::1 (tunnel), tailscale -> 100.64.0.0/10 and fd7a:115c:a1e0::/48, public -> PANEL_IP
 PANEL_ACCESS="cloudflared"
 PANEL_IP=""                              # panel server public IP, required with "public"
 CLOUDFLARED_TOKEN=""                     # tunnel token (Zero Trust -> Networks -> Tunnels)

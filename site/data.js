@@ -214,7 +214,7 @@ window.SERVER_PREP_DATA = {
       "example": "cloudflared",
       "default": null,
       "comment": null,
-      "help": "How the panel server reaches this server (comma list): cloudflared, tailscale, public root login is allowed ONLY from the matching sources: cloudflared -> 127.0.0.1/::1 (tunnel), tailscale -> 100.64.0.0/10, public -> PANEL_IP",
+      "help": "How the panel server reaches this server (comma list): cloudflared, tailscale, public root login is allowed ONLY from the matching sources: cloudflared -> 127.0.0.1/::1 (tunnel), tailscale -> 100.64.0.0/10 and fd7a:115c:a1e0::/48, public -> PANEL_IP",
       "saved": true,
       "secret": false
     },
