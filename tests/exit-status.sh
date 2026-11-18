@@ -570,6 +570,8 @@ bash "$SCRIPT_DIR/tests/ssh-login-check.sh" || exit 1
 bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1
 # ... and the label taxonomy check on .github/labels.yml (issue #24).
 bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
+# ... and the e2e scenario prep-rerun on fake second runs: package upgrades alone pass (issue #207).
+bash "$SCRIPT_DIR/tests/e2e-prep-rerun.sh" || exit 1
 # ... and how the e2e harness picks its cloud image: Debian's dated build folders (issue #212).
 bash "$SCRIPT_DIR/tests/e2e-images.sh" || exit 1
 # ... and the committed-file guard (issue #40): on this repository first, so CI fails on a tracked
