@@ -188,7 +188,8 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
   extra port. The plan lists them before you confirm, and `--dry-run` shows them. It adds the new rules first, so SSH
   stays reachable. It deletes only its own rules: the ones with a comment that starts with `server-prep: `
   (`sudo ufw status`), or from an older version, with one of its old comments on the exact rule it added. A rule you
-  added yourself stays, unless you gave it such a comment.
+  added yourself stays, unless you gave it such a comment. The temporary rules of the old SSH port stay until the SSH
+  step finishes moving SSH to its new port, also when the login check of `--yes` failed.
 - Found a security problem? Report it privately: see [SECURITY.md](SECURITY.md).
 
 ## Community

@@ -4,8 +4,9 @@
 # answers (issue #67), on sample "ufw show added" output: the tag, the comments and shapes of the
 # versions before it, ufw's way of writing addresses, the wanted rules of a set of answers, the stale
 # ones (the temporary SSH rules stay while a move of the SSH port is pending), then step_firewall and
-# the plan with a fake ufw that keeps its rules in memory: failed or silent deletes, and a rule of the
-# operator in the place of a wanted one. No root needed, nothing on the host is touched.
+# the plan with a fake ufw that keeps its rules in memory: failed or silent deletes, a rule of the
+# operator in the place of a wanted one, and the state a failed automatic login check of --yes leaves
+# (issue #65). No root needed, nothing on the host is touched.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -304,6 +305,7 @@ backup_file() { :; }
 crowdsec_in_docker_user() { return 0; }
 ufw_state() { printf '%s\n' "${FAKE_RULES[@]}" | sha256sum; }
 PENDING=1
+real_move_pending="$(declare -f ssh_move_pending)"   # for the state a failed login check of --yes leaves
 ssh_move_pending() { [[ $PENDING -eq 1 ]]; }
 fake_words() {   # fake_words WORDS...: FAKE_SPEC and FAKE_COMMENT from ufw's arguments
     FAKE_SPEC=""; FAKE_COMMENT=""
@@ -536,6 +538,48 @@ fw 'once SSH is on 822 only' 0
     fail "step_firewall: the re-run after the move changed the rules: $(printf '%s; ' "${CALLS[@]}")"
 EXPOSE_WEB=no; EXTRA_PORTS=''
 pass 'step_firewall: an old SSH port the answers open (443, an extra port) stays open once phase B deletes the temporary rules'
+
+# A run with --yes whose automatic login check failed (issue #65) stops in phase A: sshd set to and
+# listening on the old port 22 and on 822, the temporary UFW rules of 22 kept, and the rollback timer
+# armed (it puts the SSH configuration from before the run back after 10 minutes). A firewall re-run
+# then, with the real ssh_move_pending (sshd -T as preflight reads it, the listeners and the timer
+# faked), keeps every temporary rule of 22, even one for an address the answers no longer have, and
+# still deletes the other rules of earlier answers. Once the timer has put SSH back on 22 alone, they
+# stay too. They go only once SSH is on 822 alone with no timer: the move is finished.
+eval "$real_move_pending"
+ssh_listen_ports() { printf '%s' "$LISTEN"; }
+systemctl() { [[ $* == *server-prep-ssh-rollback-* ]] && printf '%s' "$TIMERS"; return 0; }
+temp_rules=("allow from 192.168.1.50 to any port 22 proto tcp comment 'server-prep: server-prep-temp admin'"
+    "allow from 203.0.113.4 to any port 22 proto tcp comment 'server-prep: server-prep-temp admin'")
+temp_kept() {   # temp_kept LABEL: both temporary rules of 22 and the SSH rule of 822 are still there
+    local r
+    for r in "${temp_rules[@]}" "allow from 192.168.1.50 to any port 822 proto tcp comment 'server-prep: ssh admin'"; do
+        rules | grep -qxF -- "$r" || fail "step_firewall $1: deleted '$r':"$'\n'"$(rules)"
+    done
+}
+FAKE_RULES=("allow from 192.168.1.50 to any port 822 proto tcp comment 'server-prep: ssh admin'"
+    "${temp_rules[@]}" "allow 80/tcp comment 'server-prep: http'")
+SSH_PORT=822; ADMIN_IPS=192.168.1.50; PANEL_ACCESS=''; PANEL_IP=''; EXPOSE_WEB=no; EXTRA_PORTS=''
+CURRENT_SSH_PORTS='22 822 '; LISTEN='22 822 '
+TIMERS="server-prep-ssh-rollback-20261115_120000.timer loaded active waiting"
+out="$(ufw_plan_cleanup 2>&1)"
+[[ $out == *'allow 80/tcp  # server-prep: http'* && $out != *'port 22 '* && $out != *'SSH rules among them'* ]] ||
+    fail "ufw_plan_cleanup after a failed login check of --yes: the plan lists a temporary SSH rule, or not 80/tcp:"$'\n'"$out"
+fw 'after a failed login check of --yes (phase A, timer armed)' 0
+temp_kept 'after a failed login check of --yes (phase A, timer armed)'
+! rules | grep -qF '80/tcp' || fail 'step_firewall after a failed login check of --yes: kept the 80/tcp rule of earlier answers'
+[[ $STEP_NOTES == *'deleted 1 UFW rule(s) of earlier answers: allow 80/tcp'* ]] ||
+    fail "step_firewall after a failed login check of --yes: notes '$STEP_NOTES'"
+CURRENT_SSH_PORTS='22 '; LISTEN='22 '; TIMERS=''
+fw 'once the rollback timer put SSH back on 22' 0
+temp_kept 'once the rollback timer put SSH back on 22'
+[[ " ${CALLS[*]} " != *' delete '* ]] || fail "step_firewall once the rollback timer put SSH back on 22: deleted $(printf '%s; ' "${CALLS[@]}")"
+CURRENT_SSH_PORTS='822 '; LISTEN='822 '
+fw 'once the move to 822 is finished' 0
+! rules | grep -qF 'port 22 ' || fail "step_firewall once the move is finished: kept a temporary SSH rule:"$'\n'"$(rules)"
+unset -f ssh_listen_ports systemctl temp_kept
+ssh_move_pending() { [[ $PENDING -eq 1 ]]; }
+pass 'step_firewall after a failed login check of --yes: the temporary rules of the old SSH port stay until the move is finished'
 
 # --- the plan: what the firewall step will delete ------------------------------------------------------------
 mapfile -t FAKE_RULES < <(sed -n 's/^ufw //p' <<<"$ADDED")
