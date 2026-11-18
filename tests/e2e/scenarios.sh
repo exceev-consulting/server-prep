@@ -282,9 +282,11 @@ no_ssh_banner() {   # no_ssh_banner PORT: true when the port gives no SSH greeti
 
 sc_boot() {
     begin boot
-    image_get >> "$OUT/$SC_ID.log" 2>&1
-    [[ -f "$IMAGE" ]]; check "the image matches its published checksum" $? "${IMAGE_CHECKSUM:-none}"
-    [[ -f "$IMAGE" ]] || { finish; return 1; }
+    local img=0
+    # image_get's status, not the file: after a failed download the old cached image is still there
+    image_get >> "$OUT/$SC_ID.log" 2>&1 || img=1
+    check "the image matches its published checksum" "$img" "${IMAGE_CHECKSUM:-none}"
+    ((img == 0)) || { finish; return 1; }
     make_keys && make_seed
     vm_start >> "$OUT/$SC_ID.log" 2>&1
     vm_running; check "QEMU starts the VM ($ACCEL)" $?

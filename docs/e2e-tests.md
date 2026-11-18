@@ -56,6 +56,23 @@ For UFW and ufw-docker it is a public address.
 Not tested: Tailscale, CrowdSec enrolment, Telegram, Cloudflare Tunnel and InfluxDB (they need accounts or
 secrets), adding the server to a real panel, laptops and desktops.
 
+## Cloud images
+
+[tests/e2e/images.tsv](../tests/e2e/images.tsv) gives each system's image and the checksum file published next to it.
+
+- Ubuntu: the `release/` folder of each version on [cloud-images.ubuntu.com](https://cloud-images.ubuntu.com/releases/).
+- Debian: the newest dated build folder on [cloud.debian.org](https://cloud.debian.org/images/cloud/), such as
+  `trixie/20261111-2659/`, not `latest/`. Debian rewrites `latest/` in place while it publishes a build, and for
+  hours its `SHA512SUMS` did not list the image, so `boot` failed on every run
+  ([#212](https://github.com/exceev-consulting/server-prep/issues/212)). A dated folder no longer changes once
+  published. If the newest build is not complete yet (its `SHA512SUMS` does not list the image, or the image is
+  missing or does not match), the test takes the build before it. The `boot` log names the build, and the report
+  links its image, or the list of builds when it cannot read that list. The CI image cache key
+  (`run.sh --image-key`) skips the same incomplete builds: it checks that the build's image is there with a `HEAD`
+  request, so an older build's image is not cached under the newest build's key.
+- Either way, the weekly run picks up a new image the week it comes out. `bash tests/e2e-images.sh` tests this choice
+  with a fake download server.
+
 ## Run it on your machine
 
 You need Linux with QEMU and, for speed, access to `/dev/kvm`. No root is needed.
