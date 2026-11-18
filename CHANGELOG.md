@@ -176,6 +176,16 @@ Highlights of each release. The full list of merged pull requests is in each
   (`ufw allow proto tcp from any to any`, shown as `Anywhere/tcp`) now counts too. On servers with such rules the count
   can rise to a WARN (4 ports or more) or a FAIL (6 or more); on a FAIL, `server-audit.sh` exits 1. Servers set up
   only by server-prep are not affected: its firewall step adds port rules, not profiles.
+- **Security fix:** the audit's "Exposed TCP ports" check listed a port as firewalled when a UFW rule opened it to one
+  of the server's own addresses (`ufw allow to 203.0.113.10 port 80 proto tcp`, shown as `203.0.113.10 80/tcp`) or to
+  a network that holds one, so it did not count a port open to the internet. Such a rule now counts like a rule to any
+  address for the sockets that listen on that address, or on all addresses of its family (an IPv4 rule never opens a
+  socket bound to an IPv6 address, and the reverse). Private and tailnet addresses count too: behind 1:1 NAT or a port
+  forward, the internet reaches the server on one. A rule to an address the server does not have, or to a link-local
+  one (`fe80::`), still opens nothing.
+  On servers with such rules the count can rise to a WARN (4 ports or more) or a FAIL (6 or more); on a FAIL,
+  `server-audit.sh` exits 1. Servers set up only by server-prep are not affected: its firewall step adds rules without
+  a destination address.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.
