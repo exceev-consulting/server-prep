@@ -116,7 +116,8 @@ If you use [Claude Code](https://claude.com/claude-code) or Codex, the `add-step
 The [setup console](https://server-prep.exceev.com/) is `site/index.html`, a static page published
 with GitHub Pages by `.github/workflows/pages.yml`. Its data (`site/data.json`, `site/data.js`) is generated from the
 scripts, the README tables and `server-prep.conf.example` by `scripts/gen-data.sh`. CI fails when the data is out of date,
-so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result.
+so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result. It also
+writes the number of audit checks into `README.md` and the wiki pages that give it.
 
 Colours, type, radii and spacing are the tokens in `site/tokens.css`, shared with the
 [brand guidelines](https://server-prep.exceev.com/brand/) (`site/brand/`). Use a token instead of a new
