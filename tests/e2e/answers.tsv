@@ -6,11 +6,11 @@
 ^Admin user$	admin
 ^Admin SSH public key	{ADMIN_PUBKEY}
 ^Panel \(	coolify
-SSH public key \(empty = skip\)$	{PANEL_PUBKEY}
-^Access methods$	tailscale,public
+SSH public key \(- = skip\)$	{PANEL_PUBKEY}
+^Access methods \(	tailscale,public
 server public IP$	198.51.100.2
 ^New SSH port$	822
-^Allowed SSH sources$	198.51.100.2
+^Allowed SSH sources \(	198.51.100.2
 ^Open 80/443	n
 ^Timezone$	UTC
 ^Proceed\?$	y

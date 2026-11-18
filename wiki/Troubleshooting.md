@@ -147,6 +147,8 @@ The output must show `-j ufw-user-forward`.
 | `log_martians` back to 0 after a reboot | `/etc/ufw/sysctl.conf` overrides it at boot | the `sysctl` step rewrites that file: re-run `--only sysctl` |
 | `fs.suid_dumpable=2` after a reboot | apport (Ubuntu's crash reporter) forces it | `apport` is in `DISABLE_SERVICES`: re-run `--only services` |
 | A re-run with `--config` didn't disable a newly added service | saved configs keep their old `DISABLE_SERVICES` list | edit `DISABLE_SERVICES` in `/etc/server-prep/server-prep.conf`, or disable it by hand: `sudo systemctl disable --now <service>` |
+| A `--yes` re-run disabled services you had kept | answers saved by v1.1.1 or older hold an empty `DISABLE_SERVICES` when you kept every service, and with `--yes` an empty value means all of them: the plan, the to-do and `--validate` warn about it | set `DISABLE_SERVICES=none` in `/etc/server-prep/server-prep.conf` (or list only the services to disable), then turn each one back on: `sudo systemctl enable --now <service>` |
+| A port or SSH source you removed from the answers is still open | the firewall step only adds rules: the run's to-do names the ones the answers no longer give | `sudo ufw status numbered`, then `sudo ufw delete <number>` for each one, highest number first |
 
 Check the two values after a reboot:
 
