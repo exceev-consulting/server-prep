@@ -34,7 +34,7 @@ CHECK=0
 case "${1:-}" in
     --check) CHECK=1 ;;
     "") ;;
-    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
 esac
 
