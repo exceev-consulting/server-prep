@@ -395,7 +395,7 @@ window.SERVER_PREP_DATA = {
       "default": "auto",
       "comment": "auto|yes|no - ignore lid close, disable sleep",
       "help": null,
-      "saved": false,
+      "saved": true,
       "secret": false
     },
     {
@@ -516,6 +516,16 @@ window.SERVER_PREP_DATA = {
       "comment": "3 = stricter, cannot be lowered until reboot",
       "help": null,
       "saved": true,
+      "secret": false
+    },
+    {
+      "section": "Misc",
+      "name": "AUDIT_SCRIPT",
+      "example": null,
+      "default": null,
+      "comment": "path to server-audit.sh; empty = the one next to server-prep.sh, else /usr/local/sbin/server-audit",
+      "help": null,
+      "saved": false,
       "secret": false
     },
     {
