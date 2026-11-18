@@ -2,7 +2,8 @@
 # Fails when a file that must stay local is tracked by git, or when a tracked text file holds an
 # IPv4 address that is not an example (issue #40). It reads the index, not the work tree: run it after
 # `git add`, before `git commit`. CI runs it on the repository through tests/check-files.sh (run by
-# tests/exit-status.sh). The security workflow and the scripts/check.sh section of #40 are still to come.
+# tests/exit-status.sh), and `scripts/check.sh --only security` runs it on your machine. The security
+# workflow of #40 (gitleaks, Scorecard) is still to come.
 #
 # Forbidden files: the list mirrors the sensitive groups of .gitignore: reports and audit files,
 # logs, filled configs, Claude Code's local files and secrets (.env, *.pem, *.key). Keep the two
