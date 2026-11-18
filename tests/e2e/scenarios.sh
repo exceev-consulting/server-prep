@@ -91,6 +91,44 @@ report_steps() {   # report_steps FILE: the "What was done" table of a prep repo
             | {step: ($map[.[0]] // .[0]), label: .[0], result: .[1]})'
 }
 
+steps_moved() {   # steps_moved STEPS_JSON [STEP]: "step RESULT, ..." for each step of a report_steps list
+    # that is not OK (already) or SKIPPED, leaving out STEP when it is CHANGED
+    jq -r --arg allowed "${2:-}" '[.[] | select(.result != "OK (already)" and .result != "SKIPPED")
+        | select(.step != $allowed or .result != "CHANGED") | "\(.step) \(.result)"] | join(", ")' "$1"
+}
+
+pkg_versions() {   # the installed packages, one "name version" line each
+    as_root 'dpkg-query -W -f "\${db:Status-Abbrev} \${binary:Package} \${Version}\n"' < /dev/null 2>/dev/null |
+        awk '$1 == "ii" {print $2, $3}'
+}
+
+pkg_moves() {   # pkg_moves BEFORE AFTER: what changed between two pkg_versions lists, one line each:
+    # "upgraded NAME OLD NEW" (a new version: full-upgrade only goes up), "installed NAME VERSION"
+    # or "removed NAME VERSION". Fails when a list is empty: it was not read. A release that adds a
+    # new package (a new kernel package pulled by linux-image-generic) shows as "installed", so
+    # update_upgrades_only still fails the scenario for it.
+    # Versions compare as strings: as numbers, 1.1 and 1.10 (or 2.0 and 2.00) would be equal.
+    [[ -s $1 && -s $2 ]] || return 1
+    awk 'NR == FNR {old[$1] = $2; next}
+        {seen[$1] = 1
+         if (!($1 in old)) print "installed", $1, $2
+         else if ((old[$1] "") != ($2 "")) print "upgraded", $1, old[$1], $2}
+        END {for (p in old) if (!(p in seen)) print "removed", p, old[p]}' "$1" "$2" | LC_ALL=C sort -k2,2
+}
+
+update_upgrades_only() {   # update_upgrades_only REPORT_JSON BEFORE AFTER: true when the update step's only
+    # change was upgrading packages installed before the run (BEFORE and AFTER from pkg_versions), and
+    # prints them as "name old -> new, ...". "N package(s) upgraded" is the note step_update writes then;
+    # a package it installs, a new timezone or a package the upgrade adds or removes makes it false.
+    local moves
+    jq -e '[.steps[]? | select(.name == "update")] | length == 1 and .[0].result == "changed"
+        and (.[0].details | test("^[0-9]+ package\\(s\\) upgraded$"))' "$1" > /dev/null 2>&1 || return 1
+    moves="$(pkg_moves "$2" "$3")" || return 1
+    [[ -n $moves ]] || return 1
+    grep -qv '^upgraded ' <<<"$moves" && return 1
+    awk '{printf "%s%s %s -> %s", (NR > 1 ? ", " : ""), $2, $3, $4} END {print ""}' <<<"$moves"
+}
+
 run_prep() {   # run_prep NAME ARGS...: run server-prep.sh as the operator would, keep its report
     local name="$1" rc report b via="$CHANNEL"
     shift
@@ -502,14 +540,30 @@ sc_audit_prepared() {
 
 sc_prep_rerun() {
     begin prep-rerun
-    local rc moved chain
+    local rc moved chain moves upgraded allowed="" detail
+    pkg_versions > "$WORK/pkgs-before-second"
     run_prep second --config "$VM_CFG" --yes; rc=$?
     check_eq "server-prep.sh exits 0" "$rc" 0
     if [[ -n "$PREP_REPORT" ]]; then
         report_steps "$PREP_REPORT" > "$WORK/steps-second.json"
-        moved="$(jq -r '[.[] | select(.result != "OK (already)" and .result != "SKIPPED")
-            | "\(.step) \(.result)"] | join(", ")' "$WORK/steps-second.json")"
-        [[ -z "$moved" ]]; check "every step is OK (already) or SKIPPED" $? "$moved"
+        pkg_versions > "$WORK/pkgs-after-second"
+        if moves="$(pkg_moves "$WORK/pkgs-before-second" "$WORK/pkgs-after-second")"; then
+            [[ -z $moves ]] || printf 'packages the second run changed:\n%s\n' "$moves" >> "$OUT/$SC_ID.log"
+        else
+            printf 'a package list could not be read (pkgs-before-second or pkgs-after-second is empty): update CHANGED stays strict\n' >> "$OUT/$SC_ID.log"
+        fi
+        # Issue #207: a third-party repo (Docker's docker-compose-plugin...) can publish a release between
+        # the two runs. The update step then upgrades it and rightly says CHANGED: accept that change
+        # alone and name the packages. A package installed or any other change in update still fails.
+        if [[ -n "$PREP_JSON" ]] &&
+            upgraded="$(update_upgrades_only "$PREP_JSON" "$WORK/pkgs-before-second" "$WORK/pkgs-after-second")"; then
+            allowed=update
+            note "update CHANGED only because it upgraded packages already installed (new releases since the first run): $upgraded"
+        fi
+        moved="$(steps_moved "$WORK/steps-second.json" "$allowed")"
+        detail="$moved"
+        [[ -z $moved && -n $allowed ]] && detail="update CHANGED by package upgrades only, see the note"
+        [[ -z "$moved" ]]; check "every step is OK (already) or SKIPPED" $? "$detail"
     else
         check "the report is written" 1
     fi
