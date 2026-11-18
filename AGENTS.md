@@ -47,10 +47,10 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
 Run these from the repo root. `scripts/check.sh` runs the checks of CI (`.github/workflows/lint.yml`), with ShellCheck pinned to 0.11.0. CI may use another ShellCheck version until `lint.yml` runs this script.
 
 ```bash
-./scripts/check.sh              # every CI lint check: bash -n, pinned ShellCheck -S warning, --help, site data, design tokens, tests
+./scripts/check.sh              # every CI lint check: bash -n, pinned ShellCheck -S warning, --help, site data, design tokens, tests, committed-file guard
 ./scripts/check.sh --list       # the sections
 ./scripts/check.sh --only lint  # one section
-scripts/check-files.sh          # after git add: no report, filled config, key or CLAUDE.local.md is tracked; every IPv4 is an example
+./scripts/check.sh --only security  # after git add (runs scripts/check-files.sh): no report, filled config, key or CLAUDE.local.md is tracked; every IPv4 is an example
 ./server-prep.sh --list-steps   # the step names, in run order
 ```
 
@@ -93,7 +93,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
   - Upgrade: `bash tests/upgrade.sh` checks `--upgrade` against a fake release served by a fake `curl` (no network, no root). `tests/exit-status.sh` runs it too, so CI covers it.
   - Skills: `bash tests/skills-sync.sh` checks that `.agents/skills` is the link to `.claude/skills` and that each `SKILL.md` frontmatter holds only `name` (its folder name) and `description`, each a one-line value YAML reads as a string. `tests/exit-status.sh` runs it too, so CI covers it.
   - Labels: `bash tests/labels.sh` checks `.github/labels.yml`: every value quoted, colors of 6 hex digits, no empty description, no two names that match ignoring case, and the five release-notes labels there. `tests/exit-status.sh` runs it too, so CI covers it.
-  - Committed files: `scripts/check-files.sh` after `git add`, before `git commit`, when you add files or write addresses or examples in docs. It reads only what git tracks or has staged, so it never sees a file you have not added. `bash tests/check-files.sh` runs it on the repository, then tests it on temp repos; `tests/exit-status.sh` runs that test, so CI fails on a tracked report, filled config or key, or an address that is not an example. Nothing runs gitleaks (`.gitleaks.toml`) in CI yet: the security workflow of #40 is still to be added.
+  - Committed files: `./scripts/check.sh --only security` (it runs `scripts/check-files.sh`) after `git add`, before `git commit`, when you add files or write addresses or examples in docs. It reads only what git tracks or has staged, so it never sees a file you have not added. `bash tests/check-files.sh` runs it on the repository, then tests it on temp repos; `tests/exit-status.sh` runs that test, so CI fails on a tracked report, filled config or key, or an address that is not an example. Nothing runs gitleaks (`.gitleaks.toml`) in CI yet: the security workflow of #40 is still to be added.
   - End to end: `tests/e2e/run.sh --os <id>` after a change to a step (20 to 30 minutes, `--only <scenario>` for less). PRs run every system in CI and get a report comment. A new step or behaviour gets an assertion in `tests/e2e/scenarios.sh`.
   - Changelog: user-visible changes add a line under `## [Unreleased]` in `CHANGELOG.md`, in the same PR.
   - Releases: never bump `PREP_VERSION` or tag by hand. The user runs **Actions → release → Run workflow** (`gh workflow run release -f bump=patch|minor|major`): `.github/workflows/release.yml` bumps the version, moves `[Unreleased]` under it in one commit put straight on `main` by the release GitHub App (the only actor on `main`'s bypass list; its key is in the `release` environment), tags and publishes (see CONTRIBUTING.md).
