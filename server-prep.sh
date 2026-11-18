@@ -1927,11 +1927,18 @@ sshd_override_text() {
 # warning, a note and a to-do that name the file and the settings, and status 0. Report only:
 # server-prep's file keeps its name (issue #204). It is compared with the configuration the step
 # writes, so a dry run and a first run see it too. Port lines are left out: write_sshd_config comments
-# them out in every file it reads (the audit counts them).
+# them out in every file it reads (the audit counts them). SSH_OVERRIDE_FILES gets the names of the
+# files it reports, joined with ", " (empty for none): the automatic login check of --yes reads
+# sshd -T, which applies them too, so its to-do points to them when it fails (issue #65).
+SSH_OVERRIDE_FILES=""
 ssh_report_overrides() {
-    local over panel_file=""
-    over="$(sshd_dropin_overrides "$1" <(sshd_prep_conf "$SSH_PORT") | awk -F'\t' 'tolower($2) != "port"' | sshd_override_text)"
+    local lines over panel_file=""
+    SSH_OVERRIDE_FILES=""
+    lines="$(sshd_dropin_overrides "$1" <(sshd_prep_conf "$SSH_PORT") | awk -F'\t' 'tolower($2) != "port"')"
+    over="$(sshd_override_text <<<"$lines")"
     [[ -n $over ]] || return 1
+    SSH_OVERRIDE_FILES="$(awk -F'\t' 'NF >= 3 { n = $1; sub(/.*\//, "", n); if (!(n in s)) { s[n] = 1; out = out (out == "" ? "" : ", ") n } }
+        END { print out }' <<<"$lines")"
     warn "$over"
     note "$over"
     if [[ $over == *"no Include line"* ]]; then
@@ -2353,7 +2360,10 @@ ssh_finish_move() {
 
 step_ssh() {
     compute_root_sources
-    local home nkeys=0 nokey=""
+    local home nkeys=0 nokey="" over=0
+    # sshd keeps the first value it reads: a file read before 00-server-prep.conf can win (issue #204).
+    # Reported before the no-key guard, so a step that stops there (the default of --yes) still names it.
+    ssh_report_overrides /etc/ssh/sshd_config.d && over=1
     home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
     [[ -s "$home/.ssh/authorized_keys" ]] && nkeys=$(grep -cE '^[^#[:space:]]' "$home/.ssh/authorized_keys")
     if [[ $nkeys -eq 0 && $DRY_RUN -eq 0 ]]; then
@@ -2367,12 +2377,10 @@ step_ssh() {
         # an interactive run skips the test, and runs the three others
         [[ $ASSUME_YES -eq 1 && $FORCE -eq 1 ]] && nokey=nokey
     fi
-    local others=() f over=0
+    local others=() f
     for f in /etc/ssh/sshd_config.d/*; do
         [[ -e $f && ${f##*/} != 00-server-prep.conf ]] && others+=("${f##*/}")
     done
-    # sshd keeps the first value it reads: a file read before 00-server-prep.conf can win (issue #204)
-    ssh_report_overrides /etc/ssh/sshd_config.d && over=1
     if [[ ${#others[@]} -gt 0 && $over -eq 1 ]]; then
         note "other drop-ins present (${others[*]}); their Port lines are commented out (sshd listens on every Port line)"
     elif [[ ${#others[@]} -gt 0 ]]; then
@@ -2477,7 +2485,7 @@ EOF
         local kept=""
         for p in $old_ports; do [[ $p == "$SSH_PORT" ]] || kept+="$p "; done
         note "automatic login check failed (${SSH_CHECK_FAILED})${SSH_CHECK_SKIPPED:+; ${SSH_CHECK_SKIPPED}}${kept:+: old SSH port(s) ${kept}and their temporary UFW rules kept}; the rollback timer puts back the SSH configuration from before this run in 10 minutes"
-        todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}. Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
+        todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}.${SSH_OVERRIDE_FILES:+ The check reads sshd -T, so it sees what the other SSH to-do reports about ${SSH_OVERRIDE_FILES}: that can be the cause.} Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
         return 1
     fi
     if [[ "${answer,,}" == "n" ]]; then

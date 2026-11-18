@@ -36,7 +36,9 @@ Highlights of each release. The full list of merged pull requests is in each
   range, `PANEL_IP` and `ADMIN_IPS` back to the sshd jail. It needs `jail.local`: delete both or neither, or fail2ban
   does not start. `rollback.sh` deletes it, and restarts fail2ban once it has put back fail2ban's files. The SSH step
   warns and adds a to-do when a file read first changes one of its login settings or adds users, or when
-  `sshd_config` has no `Include` of `sshd_config.d`. The audit has two new checks, both WARN in those cases:
+  `sshd_config` has no `Include` of `sshd_config.d`, even when it stops because the admin has no SSH key. In a run
+  with `--yes`, the to-do of a failed automatic login check points to that file: the check reads `sshd -T`, which
+  applies it. The audit has two new checks, both WARN in those cases:
   `ssh.dropin_override` names the file and the settings (`ssh.root_login` names it too), and `ips.f2b_ignoreip` lists
   the addresses missing from the whitelist and the file that set it, or says that `zz-server-prep.local` is left
   without `jail.local`. It and `ips.f2b_sshd_jail` read the jail files as fail2ban does: a value goes on over lines

@@ -202,6 +202,7 @@ grep -qF '00-dokploy.conf is read first and sets PermitRootLogin prohibit-passwo
     fail "the step's note does not name 00-dokploy.conf: $STEP_NOTES"
 [[ ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *00-dokploy.conf*'sudo sshd -t'* ]] ||
     fail "the step's to-do does not name 00-dokploy.conf and the sshd -t check: ${MANUAL_TODO[*]}"
+[[ $SSH_OVERRIDE_FILES == 00-dokploy.conf ]] || fail "SSH_OVERRIDE_FILES is '$SSH_OVERRIDE_FILES', want 00-dokploy.conf"
 pass "the SSH step warns, notes and adds a to-do naming 00-dokploy.conf, compared with the text it writes (sshd_prep_conf)"
 [[ ${MANUAL_TODO[0]} != *"Dokploy's server Security dialog"* ]] ||
     fail "PANEL=${PANEL}: the to-do names Dokploy's dialog on another panel: ${MANUAL_TODO[0]}"
@@ -210,10 +211,16 @@ PANEL=dokploy ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1
 [[ ${MANUAL_TODO[0]:-} == *"Dokploy's server Security dialog writes 00-dokploy.conf"* ]] ||
     fail "PANEL=dokploy: the to-do does not say which Dokploy dialog writes 00-dokploy.conf: ${MANUAL_TODO[*]}"
 pass "the to-do names Dokploy's Security dialog only when the panel is Dokploy"
+# SSH_OVERRIDE_FILES, for the to-do of a failed login check of --yes: each file once, in sshd's read order
+setup; put sshd_config.d/00-dokploy.conf "$DOKPLOY"; put sshd_config.d/00-a.conf $'MaxAuthTries 6\nAllowUsers deploy'
+ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1
+[[ $SSH_OVERRIDE_FILES == '00-a.conf, 00-dokploy.conf' ]] ||
+    fail "two files read first: SSH_OVERRIDE_FILES is '$SSH_OVERRIDE_FILES', want '00-a.conf, 00-dokploy.conf'"
+pass 'SSH_OVERRIDE_FILES names each file read first once, in the order sshd reads them'
 setup
 STEP_NOTES="" MANUAL_TODO=()
-if ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || [[ -n $STEP_NOTES || ${#MANUAL_TODO[@]} -gt 0 ]]; then
-    fail "ssh_report_overrides reports something without another file: $STEP_NOTES ${MANUAL_TODO[*]}"
+if ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || [[ -n $STEP_NOTES || ${#MANUAL_TODO[@]} -gt 0 || -n $SSH_OVERRIDE_FILES ]]; then
+    fail "ssh_report_overrides reports something without another file: $STEP_NOTES ${MANUAL_TODO[*]} files '$SSH_OVERRIDE_FILES'"
 fi
 pass 'the SSH step says nothing when no file is read first'
 setup; put sshd_config.d/00-a.conf 'Port 22'
@@ -228,6 +235,7 @@ STEP_NOTES="" MANUAL_TODO=()
 ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || fail 'ssh_report_overrides says nothing about a main file without an Include'
 [[ ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *'no Include line'*"'Include /etc/ssh/sshd_config.d/*.conf'"*'sudo sshd -t'* ]] ||
     fail "no Include: the step's to-do does not say to add the Include line: ${MANUAL_TODO[*]}"
+[[ $SSH_OVERRIDE_FILES == sshd_config ]] || fail "no Include: SSH_OVERRIDE_FILES is '$SSH_OVERRIDE_FILES', want sshd_config"
 pass 'no Include: the SSH step says sshd reads none of the drop-ins and to add the Include line'
 
 printf 'ok: all sshd drop-in override cases\n'
