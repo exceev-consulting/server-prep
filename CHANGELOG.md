@@ -13,6 +13,12 @@ Highlights of each release. The full list of merged pull requests is in each
   `manage_etc_hosts: false`) so the next boot does not undo the hostname or `/etc/hosts`, and `--check` reports it
   (`pre.cloud_init_hostname`, INFO when cloud-init is disabled, as on Ubuntu installed from the ISO). A `cloud.cfg.d`
   file read after the drop-in still wins: the run and `--check` name it.
+- `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
+  reports (`kern.suid`, `kern.world_writable`, `net.exposure`) no longer makes the `--json` report invalid or reaches
+  your terminal as an escape sequence. Any local user can create such a name. The JSON report writes these characters
+  as `\u00XX` escapes, so `jq -r` still gives back the exact name, and the screen shows each one as `?` (a tab or a
+  newline as a space). The screen does the same for the C1 controls in UTF-8, such as U+009B, which xterm and GNOME
+  Terminal read as the start of an escape sequence.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
