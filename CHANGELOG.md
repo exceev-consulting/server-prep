@@ -5,6 +5,21 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Security: `server-prep.sh --yes` answered yes to every question, even the safety ones whose default is no, and
+  closed the old SSH port without any login test ([#65](https://github.com/exceev-consulting/server-prep/issues/65)).
+  It went on with the SSH step when the admin had no SSH key (only the console could log in afterwards), restarted
+  running containers to apply Docker's log rotation, and stopped the SSH step's 10-minute rollback at once. `--yes`
+  now answers each question with its default: the SSH step is skipped when the admin has no key, and the Docker restart
+  becomes a to-do. The new `--force` answers yes to those questions, with `--yes` only (alone, it does nothing). Instead
+  of the operator's test from a second terminal, a run with `--yes` now checks the login on the server before it closes
+  the old port, and logs each check: sshd listens on the new port, `sshd -T` allows the admin a key login (`AllowUsers`,
+  `DenyUsers`, the groups, `Match`), the admin has a key, UFW (when it is on) lets the new port in, and an SSH handshake
+  on `127.0.0.1` works. If one fails, the old port and its temporary UFW rules stay, the rollback timer puts back the
+  SSH configuration from before the run after 10 minutes, and the step fails with a to-do that names the check and says
+  to finish with an interactive run of `--only ssh,endlessh`. When `--force` went on with no key for the admin, the
+  check skips only the key check, as the `s` answer of an interactive run skips the test, logs it (the admin can then
+  log in only on the console) and adds a to-do to add a key. The check cannot see a firewall outside the server (a cloud
+  security group) or the operator's key: keep the first run on a server interactive.
 - `server-preconfig.sh` no longer fails with `--yes` (or Enter) when the server's current name has capitals or a
   domain, such as `Web-01` or `vps123.example.net`. The default hostname is now the short name in lowercase (`web-01`,
   `vps123`), and the script says when it differs from the current name. The `127.0.1.1` line of `/etc/hosts` keeps its
@@ -176,6 +191,16 @@ Highlights of each release. The full list of merged pull requests is in each
   (`ufw allow proto tcp from any to any`, shown as `Anywhere/tcp`) now counts too. On servers with such rules the count
   can rise to a WARN (4 ports or more) or a FAIL (6 or more); on a FAIL, `server-audit.sh` exits 1. Servers set up
   only by server-prep are not affected: its firewall step adds port rules, not profiles.
+- **Security fix:** the audit's "Exposed TCP ports" check listed a port as firewalled when a UFW rule opened it to one
+  of the server's own addresses (`ufw allow to 203.0.113.10 port 80 proto tcp`, shown as `203.0.113.10 80/tcp`) or to
+  a network that holds one, so it did not count a port open to the internet. Such a rule now counts like a rule to any
+  address for the sockets that listen on that address, or on all addresses of its family (an IPv4 rule never opens a
+  socket bound to an IPv6 address, and the reverse). Private and tailnet addresses count too: behind 1:1 NAT or a port
+  forward, the internet reaches the server on one. A rule to an address the server does not have, or to a link-local
+  one (`fe80::`), still opens nothing.
+  On servers with such rules the count can rise to a WARN (4 ports or more) or a FAIL (6 or more); on a FAIL,
+  `server-audit.sh` exits 1. Servers set up only by server-prep are not affected: its firewall step adds rules without
+  a destination address.
 - `server-prep.sh` exits 1 when a step fails or the run stops early, and an unknown `--only` or
   `--skip` name exits 2 with the valid steps.
 - Avoid an unset-variable error when `server-prep.sh` is passed to bash through standard input or `bash -c`.

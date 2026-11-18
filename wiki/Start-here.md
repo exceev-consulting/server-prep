@@ -149,7 +149,7 @@ You should get a shell on the server, without a password prompt (your key is use
 
 If you answer nothing, the SSH change rolls back by itself after 10 minutes. With Tailscale access, the script also prints the command with the server's Tailscale IP (it starts with `100.`). Use the local-IP command only from a network listed in `ADMIN_IPS`, otherwise use the Tailscale one. With Tailscale-only access (no `ADMIN_IPS`), the script shows only the Tailscale command, because the firewall blocks the local IP.
 
-Today, `--yes` skips this test and confirms on its own ([issue #65](https://github.com/exceev-consulting/server-prep/issues/65)). That is why the first run should be without it.
+With `--yes`, nobody answers here. The script checks the login on the server itself instead: SSH listens on the new port, it lets your admin user log in with a key, that user has a key, and an SSH handshake works on the server. Only then does it close the old port. If a check fails, the old port stays open and the SSH change rolls back after 10 minutes ([issue #65](https://github.com/exceev-consulting/server-prep/issues/65)). That check cannot test the firewall or the key on your computer. That is why the first run should be without `--yes`.
 
 At the end, the audit runs again and shows the before and after. The report is in `/root/server-prep-reports/`, with a copy in your home folder.
 
