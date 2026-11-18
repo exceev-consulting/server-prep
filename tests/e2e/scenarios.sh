@@ -307,9 +307,11 @@ no_ssh_banner() {   # no_ssh_banner PORT: true when the port gives no SSH greeti
 
 sc_boot() {
     begin boot
-    image_get >> "$OUT/$SC_ID.log" 2>&1
-    [[ -f "$IMAGE" ]]; check "the image matches its published checksum" $? "${IMAGE_CHECKSUM:-none}"
-    [[ -f "$IMAGE" ]] || { finish; return 1; }
+    local img=0
+    # image_get's status, not the file: after a failed download the old cached image is still there
+    image_get >> "$OUT/$SC_ID.log" 2>&1 || img=1
+    check "the image matches its published checksum" "$img" "${IMAGE_CHECKSUM:-none}"
+    ((img == 0)) || { finish; return 1; }
     make_keys && make_seed
     vm_start >> "$OUT/$SC_ID.log" 2>&1
     vm_running; check "QEMU starts the VM ($ACCEL)" $?
@@ -424,7 +426,7 @@ sc_prep_interactive() {
 
 sc_prep_run() {
     begin prep-run
-    local rc failed
+    local rc failed v
     plant_port_line   # also here: --only ssh-access skips prep-dry-run
     run_prep first --config "$VM_CFG" --yes; rc=$?
     check_eq "server-prep.sh exits 0" "$rc" 0
@@ -435,6 +437,16 @@ sc_prep_run() {
         [[ -z "$failed" ]]; check "no step FAILED" $? "$failed"
     fi
     check_prep_json applied
+    # issue #65: with --yes, an automatic login check replaces the operator's test before the old port closes
+    if [[ -n "$PREP_JSON" ]]; then
+        v="$(jq -r '.steps[] | select(.name == "ssh") | .details' "$PREP_JSON" 2>/dev/null)"
+        [[ $v == *'automatic login check passed'* && $v == *'old SSH port(s) 22 closed'* ]]
+        check "the SSH step reports the automatic login check passed, then closes port 22" $? "${v:0:300}"
+    fi
+    v="$(as_root "ss -Hltnp | awk '/\"sshd\"/ {p=\$4; sub(/.*:/, \"\", p); print p}' | sort -u | paste -sd' ' -" < /dev/null)"
+    check_eq "sshd listens on 822 only" "$v" 822
+    v="$(as_root 'systemctl list-timers --all --no-legend "server-prep-ssh-rollback-*" && echo listed' < /dev/null 2>&1)"
+    [[ $v == listed ]]; check "no SSH rollback timer is left armed" $? "${v:0:300}"
     # issue #54: the Openship paths are only for PANEL=openship (this run uses coolify)
     as_root 'f=/etc/aide/aide.conf.d/99_server-prep; r=/etc/audit/rules.d/50-server-prep.rules
         test -f "$f" && test -f "$r" && ! grep -qiE "openship|openresty|letsencrypt" "$f" "$r"' < /dev/null

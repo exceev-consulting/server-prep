@@ -35,7 +35,7 @@ Each system (Debian 12 and 13, Ubuntu 22.04, 24.04 and 26.04) goes through these
 | `preconfig` | `server-preconfig.sh --check`, a run without Tailscale, then `--check` again, with no FAIL. The hostname is set, `/etc/hosts` maps it on its `127.0.1.1` line, and `--check` says cloud-init keeps both at boot. |
 | `prep-dry-run` | First puts an uncommented `Port 22` in `/etc/ssh/sshd_config.d/10-e2e-port.conf`, as some provider images ship one. Then `server-prep.sh --dry-run` with [tests/e2e/ci.cfg](../tests/e2e/ci.cfg) changes no file in `/etc` (that drop-in included), no package and no unit, its JSON report (mode 600) lists the steps with stable results, and both report copies in `~ops` belong to `ops` with mode 600. |
 | `prep-interactive` | The same dry run, answering every question at a terminal like a person. |
-| `prep-run` | The real run exits 0, no step FAILs, the panel's key logs in as root on port 822, and the JSON report lists the same steps as the Markdown one. |
+| `prep-run` | The real run (`--yes`) exits 0, no step FAILs, the panel's key logs in as root on port 822, and the JSON report lists the same steps as the Markdown one. The SSH step reports that its automatic login check passed before it closed port 22, sshd listens on 822 only, and no SSH rollback timer is left armed. |
 | `ssh-access` | The admin logs in with a key and can use sudo, the provider user and root with the admin key are refused, password login is off, root is refused from an address that is not the panel's, and port 22 gives no login: the Endlessh tarpit really listens there. `sshd -T` lists only port 822, and the planted `Port 22` line is commented out. |
 | `docker-firewall` | A container published with `-p` answers inside the server but not from outside. With a `ufw route allow` rule it does answer, which proves the test goes through the firewall. |
 | `audit-prepared` | The audit exits 0 with 0 FAIL, its JSON report has `schema_version` 1 and matches [docs/schemas/server-audit.schema.json](schemas/server-audit.schema.json) when the machine that runs the tests has Python's `jsonschema`, the checks a prepared server must pass are PASS, the checks of steps the test config leaves out (`sys.laptop`, `mon.telegram`, `panel.cloudflared`) are absent, and the "hard-won gotchas" of `AGENTS.md` hold. |
@@ -55,6 +55,23 @@ For UFW and ufw-docker it is a public address.
 
 Not tested: Tailscale, CrowdSec enrolment, Telegram, Cloudflare Tunnel and InfluxDB (they need accounts or
 secrets), adding the server to a real panel, laptops and desktops.
+
+## Cloud images
+
+[tests/e2e/images.tsv](../tests/e2e/images.tsv) gives each system's image and the checksum file published next to it.
+
+- Ubuntu: the `release/` folder of each version on [cloud-images.ubuntu.com](https://cloud-images.ubuntu.com/releases/).
+- Debian: the newest dated build folder on [cloud.debian.org](https://cloud.debian.org/images/cloud/), such as
+  `trixie/20261111-2659/`, not `latest/`. Debian rewrites `latest/` in place while it publishes a build, and for
+  hours its `SHA512SUMS` did not list the image, so `boot` failed on every run
+  ([#212](https://github.com/exceev-consulting/server-prep/issues/212)). A dated folder no longer changes once
+  published. If the newest build is not complete yet (its `SHA512SUMS` does not list the image, or the image is
+  missing or does not match), the test takes the build before it. The `boot` log names the build, and the report
+  links its image, or the list of builds when it cannot read that list. The CI image cache key
+  (`run.sh --image-key`) skips the same incomplete builds: it checks that the build's image is there with a `HEAD`
+  request, so an older build's image is not cached under the newest build's key.
+- Either way, the weekly run picks up a new image the week it comes out. `bash tests/e2e-images.sh` tests this choice
+  with a fake download server.
 
 ## Run it on your machine
 
