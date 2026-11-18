@@ -2,7 +2,7 @@ Short answers to the questions people ask most. For errors and fixes, see [Troub
 
 ## Will it lock me out?
 
-It is designed not to. The SSH change rolls itself back after 10 minutes unless you confirm that a new login works, and the firewall keeps your current SSH port open until then. Still, keep a console open the first time (see [VPS or dedicated](VPS-or-dedicated)). Do not use `--yes` on the first run: today it skips the login test ([#65](https://github.com/exceev-consulting/server-prep/issues/65)).
+It is designed not to. The SSH change rolls itself back after 10 minutes unless you confirm that a new login works, and the firewall keeps your current SSH port open until then. Still, keep a console open the first time (see [VPS or dedicated](VPS-or-dedicated)). Do not use `--yes` on the first run: it replaces your login test with a check on the server itself, which cannot see the firewall or the key on your computer ([#65](https://github.com/exceev-consulting/server-prep/issues/65)).
 
 ## Can I run it twice?
 
