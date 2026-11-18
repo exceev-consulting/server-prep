@@ -517,8 +517,9 @@ sc_prep_rerun() {
     check "after it, DOCKER-USER still goes through UFW" $? "$(head -c 300 <<<"$chain")"
     grep -q CROWDSEC <<<"$chain"
     check "after it, DOCKER-USER still goes through CrowdSec" $? "$(head -c 300 <<<"$chain")"
-    # A --yes re-run from the saved answers does what the first run did (issue #74). The ssh step is
-    # never part of a --yes run: --yes skips its login test and rollback timer.
+    # A --yes re-run from the saved answers does what the first run did (issue #74). The ssh step is left
+    # out: prep-run already checks it in a --yes run, where the automatic login check replaces the test
+    # from a second terminal and a failed check leaves the rollback timer armed (issue #65).
     # The two values of ci.cfg, with the defaults of server-prep.sh: an empty DISABLE_SERVICES is every candidate.
     want="$(DISABLE_SERVICES="" LAPTOP_MODE=""
         # shellcheck disable=SC1091

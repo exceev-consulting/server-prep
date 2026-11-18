@@ -173,10 +173,14 @@ printf 'ok: the to-do names the ports, sources and access methods removed from t
 EXTRA_PORTS="" ADMIN_IPS="" PANEL_ACCESS="" PANEL_IP="" EXPOSE_WEB=""
 
 # --- summary_and_confirm: no SSH source and public access only is a lockout, Proceed defaults to no -------
-lockout_default() {   # lockout_default ADMIN_IPS PANEL_ACCESS [ONLY] [ASSUME_YES]: the default of "Proceed?" (the plan in $tmp/plan)
+lockout_default() {   # lockout_default ADMIN_IPS PANEL_ACCESS [ONLY]: the default of "Proceed?" at a terminal (the plan in $tmp/plan)
     (
-        confirm() { printf '%s' "${2:-no}" > "$tmp/proceed"; }
-        INTERACTIVE=1 ASSUME_YES="${4:-0}" ADMIN_IPS="$1" PANEL_ACCESS="$2" ONLY="${3:-}" PANEL_IP=198.51.100.2 DISABLE_SERVICES=none
+        # as the real confirm, refuse a default other than yes or no (status 9: summary_and_confirm stopped)
+        confirm() {
+            [[ ${2:-} == yes || ${2:-} == no ]] || { printf 'confirm: no default (yes or no) for: %s\n' "$1"; exit 9; }
+            printf '%s' "$2" > "$tmp/proceed"
+        }
+        INTERACTIVE=1 ASSUME_YES=0 ADMIN_IPS="$1" PANEL_ACCESS="$2" ONLY="${3:-}" PANEL_IP=198.51.100.2 DISABLE_SERVICES=none
         summary_and_confirm > "$tmp/plan" 2>&1 || exit 1
         cat "$tmp/proceed"
     )
@@ -282,8 +286,11 @@ old_answers_run() {   # old_answers_run CONFIG ONLY: OLD_EMPTY_SERVICES|DISABLE_
 got="$(old_answers_run "$tmp/old-answers.conf" services)"
 [[ "$(head -n 1 <<< "$got")" == "1|$SERVICE_CANDIDATES" ]] ||
     fail "a --yes run from old answers with DISABLE_SERVICES='' gives \"$(head -n 1 <<< "$got")\", want \"1|$SERVICE_CANDIDATES\"" "$tmp/plan"
-grep -q "empty DISABLE_SERVICES, which means every service listed above.*press Ctrl-C now, set DISABLE_SERVICES=none in $tmp/old-answers.conf" "$tmp/plan" ||
-    fail "the plan from old answers does not warn about the empty DISABLE_SERVICES" "$tmp/plan"
+# --yes keeps the default of Proceed? (yes, issue #65): the run does not wait, so the warning says what it
+# does and when to write none, not to press Ctrl-C
+grep -q "empty DISABLE_SERVICES, which means every service listed above.*With --yes the run goes on and disables them: if you kept them, the to-do at the end says what to do. To keep them, set DISABLE_SERVICES=none in $tmp/old-answers.conf before a --yes run" "$tmp/plan" &&
+    grep -q 'Proceed? yes (--yes keeps the default)' "$tmp/plan" && ! grep -q 'Ctrl-C' "$tmp/plan" ||
+    fail "the plan from old answers does not warn that the --yes run goes on and disables every service" "$tmp/plan"
 [[ $(grep -c . <<< "$got") -eq 2 && "$got" == *"empty DISABLE_SERVICES"*"set DISABLE_SERVICES=none in /etc/server-prep/server-prep.conf, and turn back on"*"systemctl enable --now <name>" ]] ||
     fail "the to-do from old answers with --only services is:
 $got"
@@ -291,6 +298,9 @@ got="$(old_answers_run "$tmp/old-answers.conf" telegram)"
 [[ $(grep -c . <<< "$got") -eq 2 && "$got" == *"set DISABLE_SERVICES=none in /etc/server-prep/server-prep.conf" ]] ||
     fail "the to-do from old answers with --only telegram (the answers get the whole list) is:
 $got"
+# without the services step the run disables nothing: the warning does not say it does
+grep -q 'With --yes the run goes on: if you kept them' "$tmp/plan" && ! grep -q 'disables them' "$tmp/plan" ||
+    fail "the plan from old answers with --only telegram does not say that the run goes on without disabling the services" "$tmp/plan"
 # none, a list, or an empty value in a config written by hand: no warning, no to-do
 sed "s/^DISABLE_SERVICES=.*/DISABLE_SERVICES=none/" "$tmp/old-answers.conf" > "$tmp/new-answers.conf"
 sed 1d "$tmp/old-answers.conf" > "$tmp/hand-empty.conf"

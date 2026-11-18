@@ -1450,8 +1450,9 @@ summary_and_confirm() {
 EOF
     # Answers saved by 1.1.1 or older, read with --yes (the questions warn at a terminal): this run reads the
     # empty value as every candidate, and save_answers then lists them all, so say it here and in the to-do.
+    # Proceed? keeps its default (yes), so the run does not wait here: say what it does, not to press Ctrl-C.
     if [[ $OLD_EMPTY_SERVICES -eq 1 ]]; then
-        warn "The saved answers hold an empty DISABLE_SERVICES, which means every service listed above. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, press Ctrl-C now, set DISABLE_SERVICES=none in ${CONFIG_FILE} and run again"
+        warn "The saved answers hold an empty DISABLE_SERVICES, which means every service listed above. Answers saved by 1.1.1 or older hold it empty when you kept every service. With --yes the run goes on$(step_selected services && printf '%s' " and disables them"): if you kept them, the to-do at the end says what to do. To keep them, set DISABLE_SERVICES=none in ${CONFIG_FILE} before a --yes run (--validate warns about this)"
         todo "The saved answers held an empty DISABLE_SERVICES, which means every candidate service: ${SERVICE_CANDIDATES}. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, set DISABLE_SERVICES=none in $CONF_DIR/server-prep.conf$(step_selected services && printf '%s' ", and turn back on each service you use: sudo systemctl enable --now <name>")"
     fi
     # --validate warns about this lockout, but the questions never run it: an answer of - at "Allowed SSH
