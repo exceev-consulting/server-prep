@@ -591,8 +591,7 @@ sc_prep_rerun() {
         report_steps "$PREP_REPORT" > "$WORK/steps-saved-answers.json"
         check_eq "the saved-answers report lists the three steps" \
             "$(jq -r 'map(.step) | join(",")' "$WORK/steps-saved-answers.json")" services,laptop,telegram
-        moved="$(jq -r '[.[] | select(.result != "OK (already)" and .result != "SKIPPED")
-            | "\(.step) \(.result)"] | join(", ")' "$WORK/steps-saved-answers.json")"
+        moved="$(steps_moved "$WORK/steps-saved-answers.json")"
         [[ -z "$moved" ]]; check "from the saved answers, services, laptop and telegram are OK (already) or SKIPPED" $? "$moved"
     else
         check "the saved-answers report is written" 1

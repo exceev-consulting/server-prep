@@ -91,8 +91,9 @@ fake_saved_run() {
 }
 
 # The saved answers of the first run (issue #74): the real save_answers, with the settings of
-# tests/e2e/ci.cfg. The fake VM reads them in place of /etc/server-prep/server-prep.conf.
-mkdir -p "$tmp/saved"
+# tests/e2e/ci.cfg. The fake VM reads them in place of /etc/server-prep/server-prep.conf. The copy in
+# saved-old has no LAPTOP_MODE line, as answers saved by 1.1.1 or older.
+mkdir -p "$tmp/saved" "$tmp/saved-old"
 (
     # shellcheck disable=SC1091
     . "$ROOT/server-prep.sh" --config "$ROOT/tests/e2e/ci.cfg" --yes
@@ -100,6 +101,8 @@ mkdir -p "$tmp/saved"
     save_answers
 ) > "$tmp/saved.out" 2>&1 || fail "save_answers failed: $(cat "$tmp/saved.out")"
 [[ -s "$tmp/saved/server-prep.conf" ]] || fail "save_answers wrote no answers: $(cat "$tmp/saved.out")"
+grep -v '^LAPTOP_MODE=' "$tmp/saved/server-prep.conf" > "$tmp/saved-old/server-prep.conf"
+CANDIDATES="$(sed -n 's/^SERVICE_CANDIDATES="\(.*\)"$/\1/p' "$ROOT/server-prep.sh")"
 
 # dpkg-query output in the VM: status, name, version. rc is a removed package whose config stays.
 dpkg_list() { printf 'ii  %s\n' "$@"; printf 'rc  linux-image-6.1.0-9-amd64 6.1.27-1\n'; }
@@ -192,6 +195,9 @@ pass "pkg_moves fails when a list was not read"
 fake_run nothing "" "" UTC ok
 rerun nothing before
 expect_eq "nothing changed: the scenario passes without a note" "$STATUS|$REASON|$DETAIL" "passed||ok: "
+expect_eq "the scenario checks the saved answers and the re-run from them (issue #74)" \
+    "$(jq -r '[.assertions[] | select(.name | test("saved.answers")) | if .ok then "ok" else "not ok" end] | join(" ")' \
+        "$WORK/scenarios.jsonl")" "ok ok ok ok"
 
 fake_run compose "$INST_COMPOSE" "" UTC ok
 expect_eq "the real step_update notes the upgrade in the JSON report" \
@@ -260,6 +266,20 @@ pass "the scenario log says when a package list could not be read"
 
 printf '[{"step":"update","label":"System update & base packages","result":"FAILED"}]\n' > "$tmp/failed-steps.json"
 expect_eq "steps_moved never leaves out a FAILED step" "$(steps_moved "$tmp/failed-steps.json" update)" "update FAILED"
+
+# --- the re-run from the saved answers (issue #74) -----------------------------------------------------
+SAVED_DIR="$tmp/saved-old"
+rerun nothing before
+SAVED_DIR="$tmp/saved"
+expect_eq "saved answers without LAPTOP_MODE (1.1.1 or older) fail the scenario" "$STATUS|$REASON" \
+    "failed|the saved answers keep DISABLE_SERVICES and LAPTOP_MODE of ci.cfg: got '$CANDIDATES|', want '$CANDIDATES|auto'"
+
+fake_saved_run saved-changed changed
+SAVED_RUN="saved-changed"
+rerun nothing before
+SAVED_RUN="saved-ok"
+expect_eq "a --yes re-run from the saved answers that changes the services step fails the scenario" "$STATUS|$REASON" \
+    "failed|from the saved answers, services, laptop and telegram are OK (already) or SKIPPED: services CHANGED"
 
 # --- notes in the scenario record ---------------------------------------------------------------------
 : > "$WORK/scenarios.jsonl"
