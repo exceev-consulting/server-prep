@@ -275,13 +275,13 @@ printf 'ok: only the file save_answers wrote counts as saved answers, and a pipe
     printf '# server-prep answers - 20260101_000000 - reuse with: --config /etc/server-prep/server-prep.conf --yes\n'
     printf "ADMIN_USER=srvprep-test-admin\nPANEL_ACCESS=tailscale\nDISABLE_SERVICES=''\nTIMEZONE=UTC\n"
 } > "$tmp/old-answers.conf"
-old_answers_run() {   # old_answers_run CONFIG ONLY: OLD_EMPTY_SERVICES|DISABLE_SERVICES, then the to-do (the plan in $tmp/plan)
+old_answers_run() {   # old_answers_run CONFIG ONLY [OPTION]: OLD_EMPTY_SERVICES|DISABLE_SERVICES, then the to-do (the plan in $tmp/plan)
     env -i PATH="$PATH" bash -c '
-        . "$1" --config "$2" --yes --only "$4"
+        . "$1" --config "$2" --yes ${5:+"$5"} --only "$4"
         LOG_FILE="$3/old.log" CURRENT_SSH_PORTS=22 IS_LAPTOP=0
         printf "%s|" "$OLD_EMPTY_SERVICES"
         summary_and_confirm > "$3/plan" 2>&1 && printf "%s\n" "$DISABLE_SERVICES" && printf "%s\n" "${MANUAL_TODO[@]}"' \
-        _ "$SCRIPT" "$1" "$tmp" "$2" 2>&1
+        _ "$SCRIPT" "$1" "$tmp" "$2" "${3:-}" 2>&1
 }
 got="$(old_answers_run "$tmp/old-answers.conf" services)"
 [[ "$(head -n 1 <<< "$got")" == "1|$SERVICE_CANDIDATES" ]] ||
@@ -301,6 +301,23 @@ $got"
 # without the services step the run disables nothing: the warning does not say it does
 grep -q 'With --yes the run goes on: if you kept them' "$tmp/plan" && ! grep -q 'disables them' "$tmp/plan" ||
     fail "the plan from old answers with --only telegram does not say that the run goes on without disabling the services" "$tmp/plan"
+# With no allowed SSH source and only the panel's public IP, Proceed? defaults to no and a --yes run stops
+# there: the warning says so, not that the run goes on and disables them. --yes --force goes on, and says it.
+sed -e "s/^PANEL_ACCESS=.*/PANEL_ACCESS=public\nPANEL_IP=198.51.100.2\nADMIN_IPS=''/" "$tmp/old-answers.conf" > "$tmp/old-lockout.conf"
+st=0; got="$(old_answers_run "$tmp/old-lockout.conf" 'firewall services')" || st=$?
+[[ $st -eq 1 && "$got" == '1|' ]] &&
+    grep -q "empty DISABLE_SERVICES, which means every service listed above.*With --yes this run stops at Proceed? below, before any change (no allowed SSH source, see the warning below). To keep them, set DISABLE_SERVICES=none in $tmp/old-lockout.conf before a --yes run" "$tmp/plan" &&
+    grep -q 'locked out of new SSH logins. With --yes the run stops here' "$tmp/plan" &&
+    grep -q 'Proceed? no (--yes keeps the default)' "$tmp/plan" && grep -q 'Stopped before any change: no allowed SSH source' "$tmp/plan" &&
+    ! grep -qE 'goes on|disables them|to-do at the end' "$tmp/plan" ||
+    fail "a --yes run from old answers with no allowed SSH source exits $st with \"$got\", want 1, \"1|\" and a plan that says the run stops at Proceed?" "$tmp/plan"
+got="$(old_answers_run "$tmp/old-lockout.conf" 'firewall services' --force)" ||
+    fail "a --yes --force run from old answers with no allowed SSH source stopped" "$tmp/plan"
+[[ "$(head -n 1 <<< "$got")" == "1|$SERVICE_CANDIDATES" ]] &&
+    grep -q 'With --yes the run goes on and disables them: if you kept them, the to-do at the end says what to do' "$tmp/plan" &&
+    grep -q 'locked out of new SSH logins. With --yes --force the run goes on' "$tmp/plan" &&
+    grep -q 'Proceed? yes (--force)' "$tmp/plan" && ! grep -q 'stops' "$tmp/plan" ||
+    fail "a --yes --force run from old answers with no allowed SSH source gives \"$(head -n 1 <<< "$got")\", want \"1|$SERVICE_CANDIDATES\" and a plan that says the run goes on" "$tmp/plan"
 # none, a list, or an empty value in a config written by hand: no warning, no to-do
 sed "s/^DISABLE_SERVICES=.*/DISABLE_SERVICES=none/" "$tmp/old-answers.conf" > "$tmp/new-answers.conf"
 sed 1d "$tmp/old-answers.conf" > "$tmp/hand-empty.conf"

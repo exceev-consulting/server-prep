@@ -1448,28 +1448,37 @@ summary_and_confirm() {
   Steps ............. ${ONLY:-all}${SKIP:+ (skip: $SKIP)}
   Mode .............. $([[ $DRY_RUN == 1 ]] && echo "DRY-RUN (nothing will change)" || echo "APPLY")$([[ $ASSUME_YES -eq 1 ]] && { [[ $FORCE -eq 1 ]] && echo " | --yes --force: yes to every question" || echo " | --yes: each question's default"; })
 EOF
-    # Answers saved by 1.1.1 or older, read with --yes (the questions warn at a terminal): this run reads the
-    # empty value as every candidate, and save_answers then lists them all, so say it here and in the to-do.
-    # Proceed? keeps its default (yes), so the run does not wait here: say what it does, not to press Ctrl-C.
-    if [[ $OLD_EMPTY_SERVICES -eq 1 ]]; then
-        warn "The saved answers hold an empty DISABLE_SERVICES, which means every service listed above. Answers saved by 1.1.1 or older hold it empty when you kept every service. With --yes the run goes on$(step_selected services && printf '%s' " and disables them"): if you kept them, the to-do at the end says what to do. To keep them, set DISABLE_SERVICES=none in ${CONFIG_FILE} before a --yes run (--validate warns about this)"
-        todo "The saved answers held an empty DISABLE_SERVICES, which means every candidate service: ${SERVICE_CANDIDATES}. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, set DISABLE_SERVICES=none in $CONF_DIR/server-prep.conf$(step_selected services && printf '%s' ", and turn back on each service you use: sudo systemctl enable --now <name>")"
-    fi
     # --validate warns about this lockout, but the questions never run it: an answer of - at "Allowed SSH
-    # sources" leads here. Warn under the plan, and make Proceed default to no: --yes keeps that default,
-    # so a --yes run stops here before any change, and only --yes --force goes on (#65).
+    # sources" leads here. Make Proceed default to no: --yes keeps that default, so a --yes run stops there
+    # before any change, and only --yes --force goes on (#65). Worked out first, because the warning about
+    # old answers below says whether the run goes on; its own warning comes last, just above Proceed?.
     local go=yes stop="Aborted by user" how="Answer n and add your IP or network at 'Allowed SSH sources' (ADMIN_IPS)"
+    if step_selected firewall && [[ -z "${ADMIN_IPS//[[:space:],]/}" && "$PANEL_ACCESS" == *public* &&
+          "$PANEL_ACCESS" != *tailscale* && "$PANEL_ACCESS" != *cloudflared* ]]; then
+        go=no
+        [[ $ASSUME_YES -eq 1 ]] && stop="Stopped before any change: no allowed SSH source (ADMIN_IPS), see the warning above"
+    fi
     if [[ $ASSUME_YES -eq 1 && $FORCE -eq 1 ]]; then
         how="With --yes --force the run goes on: until ADMIN_IPS holds your IP or network, only a console lets you log in"
     elif [[ $ASSUME_YES -eq 1 ]]; then
         how="With --yes the run stops here (Proceed? keeps its default, no): add your IP or network to ADMIN_IPS, or use --yes --force only with a console at hand (--validate warns about this before a run)"
     fi
-    if step_selected firewall && [[ -z "${ADMIN_IPS//[[:space:],]/}" && "$PANEL_ACCESS" == *public* &&
-          "$PANEL_ACCESS" != *tailscale* && "$PANEL_ACCESS" != *cloudflared* ]]; then
-        warn "No allowed SSH source and no Tailscale or tunnel: the firewall will allow SSH only from ${PANEL_LABEL}'s server (${PANEL_IP}), so you will be locked out of new SSH logins. ${how}"
-        go=no
-        [[ $ASSUME_YES -eq 1 ]] && stop="Stopped before any change: no allowed SSH source (ADMIN_IPS), see the warning above"
+    # Answers saved by 1.1.1 or older, read with --yes (the questions warn at a terminal): this run reads the
+    # empty value as every candidate, and save_answers then lists them all, so say it here and in the to-do.
+    # Proceed? keeps its default, so the run does not wait here: say what it does, not to press Ctrl-C. It
+    # goes on (default yes, or --force), or stops at Proceed? on the lockout above, before it disables anything.
+    if [[ $OLD_EMPTY_SERVICES -eq 1 ]]; then
+        local next
+        if [[ $go == yes || $FORCE -eq 1 ]]; then
+            next="With --yes the run goes on$(step_selected services && printf '%s' " and disables them"): if you kept them, the to-do at the end says what to do."
+        else
+            next="With --yes this run stops at Proceed? below, before any change (no allowed SSH source, see the warning below)."
+        fi
+        warn "The saved answers hold an empty DISABLE_SERVICES, which means every service listed above. Answers saved by 1.1.1 or older hold it empty when you kept every service. ${next} To keep them, set DISABLE_SERVICES=none in ${CONFIG_FILE} before a --yes run (--validate warns about this)"
+        todo "The saved answers held an empty DISABLE_SERVICES, which means every candidate service: ${SERVICE_CANDIDATES}. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, set DISABLE_SERVICES=none in $CONF_DIR/server-prep.conf$(step_selected services && printf '%s' ", and turn back on each service you use: sudo systemctl enable --now <name>")"
     fi
+    [[ $go == no ]] &&
+        warn "No allowed SSH source and no Tailscale or tunnel: the firewall will allow SSH only from ${PANEL_LABEL}'s server (${PANEL_IP}), so you will be locked out of new SSH logins. ${how}"
     confirm "Proceed?" "$go" || die "$stop"
 }
 
