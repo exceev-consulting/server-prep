@@ -4,7 +4,8 @@
 # A sentence with another number makes --check fail and name its file and line, and a run puts the
 # number back and changes nothing else. The same number in other text, or in a file the entry is not
 # for, stays as it is. A reworded sentence or a missing file makes --check and a run fail and say so,
-# and the run then writes nothing. No root, no network, and nothing in the repository changes.
+# and the run then writes nothing. Each file of DOC_COUNTS is in the tree of the release commit, since
+# the release runs gen-data.sh. No root, no network, and nothing in the repository changes.
 set -u
 export LC_ALL=C
 
@@ -38,6 +39,17 @@ doc_files=()
 for entry in "${DOC_COUNTS[@]}"; do
     f="${entry%%|*}"
     [[ " ${doc_files[*]} " == *" $f "* ]] || doc_files+=("$f")
+done
+
+# The release workflow runs gen-data.sh, then commits only the files of its tree: a doc left out of it
+# would keep its old number on main while the release commit is marked as linted.
+release="$SCRIPT_DIR/.github/workflows/release.yml"
+for f in "${doc_files[@]}"; do
+    if grep -qF -- "{path: \"$f\"," "$release"; then
+        ok "$f is in the tree of the release commit"
+    else
+        bad "$f is not in the tree of the release commit: add it in .github/workflows/release.yml"
+    fi
 done
 
 # A copy of what gen-data.sh reads and writes: it finds its files from its own path.

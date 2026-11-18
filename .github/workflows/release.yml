@@ -94,13 +94,19 @@ jobs:
           RELEASE_TOKEN: ${{ steps.release-app.outputs.token }}
         run: |
           base=$(git rev-parse HEAD)
+          # every file the steps above write: gen-data.sh also writes the audit check count into the
+          # docs of its DOC_COUNTS list (tests/gen-data-counts.sh checks that each one is here)
           tree=$(jq -n --arg base "$(git rev-parse 'HEAD^{tree}')" \
                    --rawfile prep server-prep.sh --rawfile log CHANGELOG.md \
-                   --rawfile dj site/data.json --rawfile djs site/data.js '{base_tree: $base, tree: [
-                     {path: "server-prep.sh",  mode: "100755", type: "blob", content: $prep},
-                     {path: "CHANGELOG.md",    mode: "100644", type: "blob", content: $log},
-                     {path: "site/data.json",  mode: "100644", type: "blob", content: $dj},
-                     {path: "site/data.js",    mode: "100644", type: "blob", content: $djs}]}' \
+                   --rawfile dj site/data.json --rawfile djs site/data.js --rawfile readme README.md \
+                   --rawfile concepts wiki/Concepts.md --rawfile arch wiki/Architecture.md '{base_tree: $base, tree: [
+                     {path: "server-prep.sh",       mode: "100755", type: "blob", content: $prep},
+                     {path: "CHANGELOG.md",         mode: "100644", type: "blob", content: $log},
+                     {path: "site/data.json",       mode: "100644", type: "blob", content: $dj},
+                     {path: "site/data.js",         mode: "100644", type: "blob", content: $djs},
+                     {path: "README.md",            mode: "100644", type: "blob", content: $readme},
+                     {path: "wiki/Concepts.md",     mode: "100644", type: "blob", content: $concepts},
+                     {path: "wiki/Architecture.md", mode: "100644", type: "blob", content: $arch}]}' \
                  | gh api "repos/$REPO/git/trees" --input - --jq .sha)
           # no author/committer fields, so GitHub signs it as github-actions[bot]
           commit=$(jq -n --arg msg "release: v$VERSION" --arg tree "$tree" --arg parent "$base" \
