@@ -47,10 +47,10 @@ Your infrastructure goes in **`CLAUDE.local.md`**: panel host, Tailscale and adm
 Run these from the repo root. `scripts/check.sh` runs the checks of CI (`.github/workflows/lint.yml`), with ShellCheck pinned to 0.11.0. CI may use another ShellCheck version until `lint.yml` runs this script.
 
 ```bash
-./scripts/check.sh              # every CI lint check: bash -n, pinned ShellCheck -S warning, --help, site data, design tokens, tests
+./scripts/check.sh              # every CI lint check: bash -n, pinned ShellCheck -S warning, --help, site data, design tokens, tests, committed-file guard
 ./scripts/check.sh --list       # the sections
 ./scripts/check.sh --only lint  # one section
-scripts/check-files.sh          # after git add: no report, filled config, key or CLAUDE.local.md is tracked; every IPv4 is an example
+./scripts/check.sh --only security  # after git add (runs scripts/check-files.sh): no report, filled config, key or CLAUDE.local.md is tracked; every IPv4 is an example
 ./server-prep.sh --list-steps   # the step names, in run order
 ```
 
@@ -77,7 +77,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
   - Always use `"${APT_OPTS[@]}"`, which includes `DPkg::Lock::Timeout=600`.
   - Fresh servers run apt in the background at boot.
 - **Third-party repos:**
-  - Download the key, **verify its fingerprint**, and dearmor it to `/etc/apt/keyrings/`.
+  - Download the key, **verify its fingerprint**, and dearmor it to `/etc/apt/keyrings/`: `apt_repo_key NAME URL FPR KEYRING` does it (one key with the published fingerprint, no secret key, only that key exported) and checks a key already in place on every run (a KEYRING ending in `.asc` stays armored, see the Signed-By gotcha). Then call `drop_other_sources`, before writing the source, so no other source names another key for the same repository. Never before `apt_repo_key`: a failed key download or check must leave the operator's working source in place.
   - Add a `signed-by` source.
   - Add an apt **pin at priority 900**. Ubuntu Pro ESM (priority 510) otherwise wins with old versions.
 - **Panel-agnostic:** the panel is `PANEL` / `PANEL_PUBKEY` / `PANEL_ACCESS` / `PANEL_IP` (old `COOLIFY_*` names are mapped at load). Messages use `${PANEL_LABEL}`. Panel-specific behaviour must be guarded by `[[ ${PANEL,,} == <name> ]]`.
@@ -93,7 +93,7 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
   - Upgrade: `bash tests/upgrade.sh` checks `--upgrade` against a fake release served by a fake `curl` (no network, no root). `tests/exit-status.sh` runs it too, so CI covers it.
   - Skills: `bash tests/skills-sync.sh` checks that `.agents/skills` is the link to `.claude/skills` and that each `SKILL.md` frontmatter holds only `name` (its folder name) and `description`, each a one-line value YAML reads as a string. `tests/exit-status.sh` runs it too, so CI covers it.
   - Labels: `bash tests/labels.sh` checks `.github/labels.yml`: every value quoted, colors of 6 hex digits, no empty description, no two names that match ignoring case, and the five release-notes labels there. `tests/exit-status.sh` runs it too, so CI covers it.
-  - Committed files: `scripts/check-files.sh` after `git add`, before `git commit`, when you add files or write addresses or examples in docs. It reads only what git tracks or has staged, so it never sees a file you have not added. `bash tests/check-files.sh` runs it on the repository, then tests it on temp repos; `tests/exit-status.sh` runs that test, so CI fails on a tracked report, filled config or key, or an address that is not an example. Nothing runs gitleaks (`.gitleaks.toml`) in CI yet: the security workflow of #40 is still to be added.
+  - Committed files: `./scripts/check.sh --only security` (it runs `scripts/check-files.sh`) after `git add`, before `git commit`, when you add files or write addresses or examples in docs. It reads only what git tracks or has staged, so it never sees a file you have not added. `bash tests/check-files.sh` runs it on the repository, then tests it on temp repos; `tests/exit-status.sh` runs that test, so CI fails on a tracked report, filled config or key, or an address that is not an example. Nothing runs gitleaks (`.gitleaks.toml`) in CI yet: the security workflow of #40 is still to be added.
   - End to end: `tests/e2e/run.sh --os <id>` after a change to a step (20 to 30 minutes, `--only <scenario>` for less). PRs run every system in CI and get a report comment. A new step or behaviour gets an assertion in `tests/e2e/scenarios.sh`. `bash tests/e2e-images.sh` checks how the harness picks the cloud image (Debian's dated build folders, issue #212) with a fake `curl` (no network); `tests/exit-status.sh` runs it too.
   - Changelog: user-visible changes add a line under `## [Unreleased]` in `CHANGELOG.md`, in the same PR.
   - Releases: never bump `PREP_VERSION` or tag by hand. The user runs **Actions → release → Run workflow** (`gh workflow run release -f bump=patch|minor|major`): `.github/workflows/release.yml` bumps the version, moves `[Unreleased]` under it in one commit put straight on `main` by the release GitHub App (the only actor on `main`'s bypass list; its key is in the `release` environment), tags and publishes (see CONTRIBUTING.md).
@@ -112,7 +112,9 @@ Without root, `./server-audit.sh --no-network --json audit.json` gives an approx
 |---|---|
 | Install fails with "dpkg lock held" on a fresh server | `DPkg::Lock::Timeout=600` in `APT_OPTS` and on `apt-get update` |
 | Ubuntu 26.04 uses **sudo-rs**: `visudo` rejects `Defaults logfile` | Detect sudo-rs and skip the sudo logfile (it logs to the journal). The audit counts it as PASS |
-| CrowdSec 1.4.x installed from Ubuntu Pro ESM | Pin `crowdsec*` to packagecloud.io at 900, then upgrade if the version string contains ubuntu/deb/esm |
+| CrowdSec 1.4.x installed from Ubuntu Pro ESM or the distro | Pin `crowdsec*` to packagecloud.io at 900, then replace crowdsec when packagecloud does not offer the installed version (`pkg_from`, from `apt-cache madison`). Never decide by the version string: the Debian 13 and Ubuntu 26.04 builds (`1.4.6-10`, `1.4.6-10.1`) have no ubuntu/deb/esm in it. The packagecloud repo is added by hand (key fingerprint checked on every run, no install.crowdsec.net script); when packagecloud gives no crowdsec package, the ips step FAILS instead of installing the ESM/distro build. Audit: `upd.repo_keys` |
+| A test looks for the 900 pin on the repository line of `apt-cache policy` and never finds it | A `Package: crowdsec*` pin shows on the version line (` *** 1.8.2 900`); the repository line below keeps 500. Read the installed version's line and the sources under it (`repo_status` in server-audit.sh, `check_regressions` in the e2e tests) |
+| `E: Conflicting values set for option Signed-By`, then every apt command fails | Two sources for one repository name different key files, such as the `docker.list` an older Docker guide left next to `docker.sources`. Once their key has passed, the docker, ips and cloudflared steps remove the other sources of their repository (`drop_other_sources`, backed up) before writing their own, and the Docker key keeps the name of Docker's guide and get.docker.com (`/etc/apt/keyrings/docker.asc`, written armored), so a later get.docker.com run names the same key |
 | CrowdSec LAPI on 8080 conflicts with Traefik dashboards (Coolify, Dokploy) | `CROWDSEC_LAPI_PORT=8091` |
 | `log_martians` back to 0 after reboot | `/etc/ufw/sysctl.conf` overrides it: the sysctl step rewrites that file |
 | `fs.suid_dumpable=2` after reboot | apport forces it: `apport` is in `DISABLE_SERVICES` |
