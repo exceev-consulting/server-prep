@@ -110,6 +110,9 @@ expect_no_terminal() {   # expect_no_terminal WANT_STATUS WANT_OUTPUT ARGS...
 if have_terminal_tool 'no-terminal tests' setsid --wait; then
     expect_no_terminal 2 'No terminal: use --yes with --config' --dry-run
     expect_no_terminal 0 'loaded: INTERACTIVE=0' --dry-run --yes
+    # --force only changes what --yes answers (issue #65): alone, it says so and the questions still ask
+    expect_no_terminal 2 $'--force does nothing without --yes: each question still asks.\nNo terminal: use --yes with --config' --dry-run --force
+    expect_no_terminal 0 'loaded: INTERACTIVE=0' --dry-run --yes --force
 
     # A failed terminal open must keep the same message and status in POSIX mode.
     status=0
@@ -583,6 +586,8 @@ bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/rollback.sh" || exit 1
 # ... and the sshd Port line helpers of the SSH step (issue #72).
 bash "$SCRIPT_DIR/tests/sshd-ports.sh" || exit 1
+# ... and what --yes and --yes --force answer, and the automatic SSH login check of --yes (issue #65).
+bash "$SCRIPT_DIR/tests/ssh-login-check.sh" || exit 1
 # ... and the Openship AIDE excludes and auditd watch (issue #54).
 bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1
 # ... and the label taxonomy check on .github/labels.yml (issue #24).
