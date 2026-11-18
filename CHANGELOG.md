@@ -21,6 +21,8 @@ Highlights of each release. The full list of merged pull requests is in each
   Terminal read as the start of an escape sequence.
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
+- The README and the wiki said the audit has 59 checks, an old count. `scripts/gen-data.sh` now writes the real number
+  into them, and `scripts/gen-data.sh --check` fails, with the file and line, when one gives another number.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
   which the run turned on, no longer allowed that port, and Endlessh still held port 22 when another run had installed
   it. Before it restarts SSH, it now stops Endlessh whenever it is on and SSH goes back to 22, allows the old SSH port in
