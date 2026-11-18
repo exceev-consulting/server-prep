@@ -520,6 +520,16 @@ window.SERVER_PREP_DATA = {
     },
     {
       "section": "Misc",
+      "name": "AUDIT_SCRIPT",
+      "example": null,
+      "default": null,
+      "comment": "path to server-audit.sh; empty = the one next to server-prep.sh, else /usr/local/sbin/server-audit",
+      "help": null,
+      "saved": false,
+      "secret": false
+    },
+    {
+      "section": "Misc",
       "name": "AUDIT_URL",
       "example": null,
       "default": null,

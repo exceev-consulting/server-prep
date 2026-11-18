@@ -1487,6 +1487,8 @@ save_answers() {
     local f="$CONF_DIR/server-prep.conf"
     {
         echo "# server-prep answers - ${TS} - reuse with: --config $f --yes"
+        # AUDIT_SCRIPT (found at run time by preflight) and AUDIT_URL (a re-run would fetch and run the
+        # remote audit again) are left out on purpose: NOT_SAVED in scripts/check-consistency.sh
         local v
         for v in ADMIN_USER ADMIN_PUBKEY PANEL PANEL_PUBKEY PANEL_ACCESS PANEL_IP SSH_PORT ADMIN_IPS EXPOSE_WEB EXTRA_PORTS \
                  TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT \

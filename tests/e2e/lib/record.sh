@@ -2,12 +2,12 @@
 # Scenario bookkeeping for tests/e2e/run.sh: assertions, logs and results.json (schema 1).
 # Sourced, not run. Every scenario writes one JSON line to $WORK/scenarios.jsonl.
 
-SC_ID="" SC_TITLE="" SC_GROUP="" SC_START=0 SC_FAILED=0 SC_COUNT=0 SC_REASON="" SC_LOGS=()
+SC_ID="" SC_TITLE="" SC_GROUP="" SC_START=0 SC_FAILED=0 SC_COUNT=0 SC_REASON="" SC_NOTE="" SC_LOGS=()
 N_PASSED=0 N_FAILED=0 N_SKIPPED=0
 
 begin() {   # begin ID: title and group come from SCENARIO_TABLE (scenarios.sh)
     SC_ID="$1" SC_GROUP="${SC_GROUP_OF[$1]}" SC_TITLE="${SC_TITLE_OF[$1]}"
-    SC_START=$SECONDS SC_FAILED=0 SC_COUNT=0 SC_REASON=""
+    SC_START=$SECONDS SC_FAILED=0 SC_COUNT=0 SC_REASON="" SC_NOTE=""
     SC_LOGS=("$SC_ID.log")
     : > "$WORK/assertions.jsonl"
     : > "$OUT/$SC_ID.log"
@@ -37,6 +37,12 @@ check() {   # check "name" STATUS ["detail"]: STATUS 0 = ok
         >> "$WORK/assertions.jsonl"
 }
 
+note() {   # note "text": something to know about a scenario that passes, shown as its Note in the report
+    SC_NOTE+="${SC_NOTE:+; }$1"
+    printf 'note: %s %s: %s\n' "$OS_ID" "$SC_ID" "$1"
+    printf 'note %s\n' "$1" >> "$OUT/$SC_ID.log"
+}
+
 check_eq() {   # check_eq "name" GOT WANT
     [[ "$2" == "$3" ]]; check "$1" $? "got '$2', want '$3'"
 }
@@ -49,6 +55,8 @@ finish() {   # finish [skipped "reason"]: close the scenario and record it
     elif ((SC_FAILED > 0 || SC_COUNT == 0)); then
         status=failed
         [[ -n "$SC_REASON" ]] || SC_REASON="no assertion ran"
+    else
+        SC_REASON="$SC_NOTE"   # passed: the report shows the notes as its Note
     fi
     case $status in
         passed) N_PASSED=$((N_PASSED + 1)) ;;
