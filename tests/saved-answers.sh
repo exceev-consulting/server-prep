@@ -187,17 +187,39 @@ for c in '|public|' ' , |public|'; do
     [[ "$got" == no ]] && grep -q "you will be locked out of new SSH logins. Answer n and add" "$tmp/plan" ||
         fail "with ADMIN_IPS=\"$ips\" and public access only, Proceed defaults to \"$got\", want no and a lockout warning" "$tmp/plan"
 done
-# --yes does not ask: the warning says the run goes on
-got="$(lockout_default '' public '' 1)" || fail "summary_and_confirm stopped" "$tmp/plan"
-grep -q 'locked out of new SSH logins. With --yes the run goes on: press Ctrl-C now' "$tmp/plan" ||
-    fail "with --yes, the lockout warning does not say that the run goes on" "$tmp/plan"
+# --yes keeps the default of Proceed? (issue #65): the real confirm, so a --yes run stops there before any
+# change, and only --yes --force goes on. The warning says which.
+lockout_yes() {   # lockout_yes FORCE ADMIN_IPS PANEL_ACCESS: the status of summary_and_confirm with --yes (the plan in $tmp/plan)
+    (
+        INTERACTIVE=0 ASSUME_YES=1 FORCE="$1" ADMIN_IPS="$2" PANEL_ACCESS="$3" ONLY="" PANEL_IP=198.51.100.2 DISABLE_SERVICES=none
+        summary_and_confirm > "$tmp/plan" 2>&1
+    )
+}
+for ips in '' ' , '; do
+    st=0; lockout_yes 0 "$ips" public || st=$?
+    [[ $st -eq 1 ]] && grep -q 'locked out of new SSH logins. With --yes the run stops here (Proceed? keeps its default, no): add your IP or network to ADMIN_IPS, or use --yes --force only with a console at hand' "$tmp/plan" &&
+        grep -q 'Proceed? no (--yes keeps the default)' "$tmp/plan" && grep -q 'Stopped before any change: no allowed SSH source' "$tmp/plan" &&
+        ! grep -qE 'goes on|Ctrl-C|Aborted by user' "$tmp/plan" ||
+        fail "with --yes, ADMIN_IPS=\"$ips\" and public access only, summary_and_confirm exits $st, want 1 and a warning that the run stops here" "$tmp/plan"
+done
+st=0; lockout_yes 1 '' public || st=$?
+[[ $st -eq 0 ]] && grep -q 'locked out of new SSH logins. With --yes --force the run goes on: until ADMIN_IPS holds your IP or network, only a console lets you log in' "$tmp/plan" &&
+    grep -q 'Proceed? yes (--force)' "$tmp/plan" && ! grep -q 'stops here' "$tmp/plan" ||
+    fail "with --yes --force, no SSH source and public access only, summary_and_confirm exits $st, want 0 and a warning that the run goes on" "$tmp/plan"
+# --yes with an allowed SSH source, or Tailscale: no lockout, Proceed? keeps its default (yes)
+for c in '0|192.168.1.50|public' '0||tailscale,public'; do
+    IFS='|' read -r force ips access <<< "$c"
+    st=0; lockout_yes "$force" "$ips" "$access" || st=$?
+    [[ $st -eq 0 ]] && grep -q 'Proceed? yes (--yes keeps the default)' "$tmp/plan" && ! grep -q 'locked out' "$tmp/plan" ||
+        fail "with --yes, ADMIN_IPS=\"$ips\" and PANEL_ACCESS=$access, summary_and_confirm exits $st, want 0 and no warning" "$tmp/plan"
+done
 for c in '192.168.1.50|public|' '|tailscale,public|' '|cloudflared,public|' '|public|services'; do
     IFS='|' read -r ips access only <<< "$c"
     got="$(lockout_default "$ips" "$access" "$only")" || fail "summary_and_confirm stopped" "$tmp/plan"
     [[ "$got" == yes ]] && ! grep -q 'locked out' "$tmp/plan" ||
         fail "with ADMIN_IPS=\"$ips\", PANEL_ACCESS=$access and ONLY=\"$only\", Proceed defaults to \"$got\", want yes and no warning" "$tmp/plan"
 done
-printf 'ok: with no SSH source and public access only the plan warns and Proceed defaults to no (--yes: the run goes on), otherwise yes\n'
+printf 'ok: with no SSH source and public access only the plan warns and Proceed defaults to no (--yes stops there, --yes --force goes on), otherwise yes\n'
 
 # --- save_answers: none and LAPTOP_MODE are saved, the secrets are not -----------------------------------
 (

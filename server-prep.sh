@@ -1455,16 +1455,21 @@ EOF
         todo "The saved answers held an empty DISABLE_SERVICES, which means every candidate service: ${SERVICE_CANDIDATES}. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, set DISABLE_SERVICES=none in $CONF_DIR/server-prep.conf$(step_selected services && printf '%s' ", and turn back on each service you use: sudo systemctl enable --now <name>")"
     fi
     # --validate warns about this lockout, but the questions never run it: an answer of - at "Allowed SSH
-    # sources" leads here. Warn under the plan, and make Proceed default to no (--yes does not ask).
-    local go=yes how="Answer n and add your IP or network at 'Allowed SSH sources' (ADMIN_IPS)"
-    [[ $ASSUME_YES -eq 1 ]] &&
-        how="With --yes the run goes on: press Ctrl-C now and add your IP or network to ADMIN_IPS, unless a console is at hand (--validate warns about this before a run)"
+    # sources" leads here. Warn under the plan, and make Proceed default to no: --yes keeps that default,
+    # so a --yes run stops here before any change, and only --yes --force goes on (#65).
+    local go=yes stop="Aborted by user" how="Answer n and add your IP or network at 'Allowed SSH sources' (ADMIN_IPS)"
+    if [[ $ASSUME_YES -eq 1 && $FORCE -eq 1 ]]; then
+        how="With --yes --force the run goes on: until ADMIN_IPS holds your IP or network, only a console lets you log in"
+    elif [[ $ASSUME_YES -eq 1 ]]; then
+        how="With --yes the run stops here (Proceed? keeps its default, no): add your IP or network to ADMIN_IPS, or use --yes --force only with a console at hand (--validate warns about this before a run)"
+    fi
     if step_selected firewall && [[ -z "${ADMIN_IPS//[[:space:],]/}" && "$PANEL_ACCESS" == *public* &&
           "$PANEL_ACCESS" != *tailscale* && "$PANEL_ACCESS" != *cloudflared* ]]; then
         warn "No allowed SSH source and no Tailscale or tunnel: the firewall will allow SSH only from ${PANEL_LABEL}'s server (${PANEL_IP}), so you will be locked out of new SSH logins. ${how}"
         go=no
+        [[ $ASSUME_YES -eq 1 ]] && stop="Stopped before any change: no allowed SSH source (ADMIN_IPS), see the warning above"
     fi
-    confirm "Proceed?" "$go" || die "Aborted by user"
+    confirm "Proceed?" "$go" || die "$stop"
 }
 
 save_answers() {

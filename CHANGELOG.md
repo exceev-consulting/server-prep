@@ -38,10 +38,11 @@ Highlights of each release. The full list of merged pull requests is in each
   a question that shows `(- = ...)`, type `-` (or `none`) to empty an answer, such as the extra ports or the allowed
   SSH sources; on a re-run from the saved answers, Enter keeps it empty. The firewall step still only adds rules: the
   to-do names the ports and sources you removed, with the commands to delete their rules. With no allowed SSH source
-  and only the panel's public IP, the plan warns that you will be locked out and `Proceed?` defaults to no (with
-  `--yes`, the warning says the run goes on). Answers saved by 1.1.1 or older hold an empty `DISABLE_SERVICES` when you
-  kept every service: set `DISABLE_SERVICES=none` there before a `--yes` re-run. `--validate`, the plan and the to-do
-  of a run from those answers say so, and the questions warn before the first service.
+  and only the panel's public IP, the plan warns that you will be locked out and `Proceed?` defaults to no, so a
+  `--yes` run stops there before any change: add your IP or network to `ADMIN_IPS`, or use `--yes --force` only with a
+  console at hand. Answers saved by 1.1.1 or older hold an empty `DISABLE_SERVICES` when you kept every service: set
+  `DISABLE_SERVICES=none` there before a `--yes` re-run. `--validate`, the plan and the to-do of a run from those
+  answers say so, and the questions warn before the first service.
 - `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
   reports (`kern.suid`, `kern.world_writable`, `net.exposure`) no longer makes the `--json` report invalid or reaches
   your terminal as an escape sequence. Any local user can create such a name. The JSON report writes these characters
