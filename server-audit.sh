@@ -756,6 +756,7 @@ else
         fi
     fi
 
+    # step: ssh
     # sshd keeps the first value it reads: a file read before 00-server-prep.conf decides (issue #204)
     if [[ ! -e /etc/ssh/sshd_config.d/00-server-prep.conf ]]; then
         result ssh.dropin_override INFO "SSH settings override" "No /etc/ssh/sshd_config.d/00-server-prep.conf: server-prep's SSH step has not run here"
@@ -1451,6 +1452,7 @@ if [[ $F2B -ge 1 && -d /etc/fail2ban ]]; then
         fi
     fi
 
+    # step: ips
     # The addresses the ips step whitelists (f2b_wanted: both tailnet ranges, PANEL_IP, ADMIN_IPS) must
     # still be in the sshd jail's ignoreip: a jail.d/*.local file read after jail.local, such as Dokploy's
     # dokploy.local, can replace the list (issue #204), and a server prepared before issue #227 has the
