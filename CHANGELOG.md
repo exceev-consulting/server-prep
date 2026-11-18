@@ -5,6 +5,24 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Fix: a firewall re-run only added rules, so tightening the answers left the old ones open: an address removed from
+  `ADMIN_IPS` could still log in over SSH, SSH stayed open to everyone after a first run without sources, 80/443 stayed
+  open after `EXPOSE_WEB` went from yes to no, and removed `EXTRA_PORTS` stayed open. The firewall step now adds the
+  rules the answers ask for first, so SSH stays reachable, then deletes the rules server-prep added for earlier answers,
+  their IPv6 copies too. The plan lists them before you confirm, and `--dry-run` shows the `ufw delete` commands. Every
+  rule server-prep adds now has a comment that starts with `server-prep: `. A rule from an older version counts as
+  server-prep's only when it has one of its old comments (`ssh admin`, `http`...) on the exact shape server-prep gave
+  it: the next firewall run tags it, or deletes it when the answers no longer ask for it. Any other rule, such as one
+  you added yourself, is never touched, even with the same port, unless you gave it a `server-prep: ` comment. When
+  such a rule contradicts the answers, such as a `deny 80/tcp` with `EXPOSE_WEB=yes`, the run warns and its to-do
+  gives the `ufw` command that applies the answers. The temporary SSH rules of the old port stay while SSH is moving
+  to its new port, also after the automatic login check of `--yes` failed and kept the old port: until the SSH step
+  finishes the move. When UFW was on before a run, its `rollback.sh` now also puts back the UFW rules of that time. On
+  a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --dry-run` to see what goes.
+- `--validate` refuses `0.0.0.0/0` and `::/0` in `ADMIN_IPS` and `PANEL_IP`: they are every address, so SSH would be
+  open to everyone and fail2ban and CrowdSec would ban no one. To open SSH to everyone (rate-limited), leave
+  `ADMIN_IPS` empty.
 - Security: `server-prep.sh --yes` answered yes to every question, even the safety ones whose default is no, and
   closed the old SSH port without any login test ([#65](https://github.com/exceev-consulting/server-prep/issues/65)).
   It went on with the SSH step when the admin had no SSH key (only the console could log in afterwards), restarted

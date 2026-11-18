@@ -131,7 +131,7 @@ Both work the same way. Only a few details change:
 | `update` | apt full-upgrade, base tools (curl, git, jq, ufw, chrony, vim...), timezone |
 | `users` | admin user + your SSH key; the panel's key for root, restricted with `from="..."` to the panel's sources |
 | `docker` | Docker CE from the official download.docker.com repo if missing (key fingerprint checked, pinned at 900; a Docker CE already installed from that repo gets the same check), container log rotation |
-| `firewall` | UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched) |
+| `firewall` | UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched); a re-run deletes the rules server-prep added for earlier answers (comment `server-prep: ...`), never yours |
 | `ssh` | port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server |
 | `ips` | fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted, LAPI moved off 8080 |
 | `unattended` | daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot |
@@ -179,10 +179,17 @@ auditd, rkhunter, AIDE, account and Docker checks plus a panel-readiness section
 - To undo a run, run its `rollback.sh` from the console, not over SSH: `sudo bash /var/lib/server-prep/backups/<date>/rollback.sh`.
   It puts back the files the run changed and deletes the ones it created. Before SSH goes back to its old port, it allows
   that port in UFW from the run's SSH addresses; when that port is 22, it also stops Endlessh and deletes the Endlessh
-  rule, which allowed port 22 from anywhere. It does not remove packages, undo service changes or turn UFW off: it
-  prints what it leaves in place.
+  rule, which allowed port 22 from anywhere. When UFW was already on before the run, it also puts back the UFW rules
+  of that time. It does not remove packages, undo service changes or turn UFW off: it prints what it leaves in place.
 - Add your SSH key before the SSH step: password login is turned off.
 - `--dry-run` changes nothing, and every step can be re-run safely.
+- A firewall re-run makes UFW match the current answers. It deletes the rules server-prep added for earlier ones: an
+  address removed from `ADMIN_IPS`, SSH from anywhere once you give sources, 80/443 after `EXPOSE_WEB=no`, a removed
+  extra port. The plan lists them before you confirm, and `--dry-run` shows them. It adds the new rules first, so SSH
+  stays reachable. It deletes only its own rules: the ones with a comment that starts with `server-prep: `
+  (`sudo ufw status`), or from an older version, with one of its old comments on the exact rule it added. A rule you
+  added yourself stays, unless you gave it such a comment. The temporary rules of the old SSH port stay until the SSH
+  step finishes moving SSH to its new port, also when the login check of `--yes` failed.
 - Found a security problem? Report it privately: see [SECURITY.md](SECURITY.md).
 
 ## Community

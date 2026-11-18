@@ -332,6 +332,9 @@ ufw_docker_rules() { return "$UFW_DOCKER_RC"; }    # the real one runs ufw-docke
 iptables() { printf '%s\n' "${DOCKER_USER_RULES:-}"; }   # the live DOCKER-USER chain
 CROWDSEC_RC=0
 crowdsec_in_docker_user() { return "$CROWDSEC_RC"; }   # the real one reads systemctl and the bouncer config
+real_backup_file="$(declare -f backup_file)"
+backup_file() { :; }                               # the real one copies /etc/ufw/user*.rules
+ssh_move_pending() { return 1; }                   # the real one reads sshd's ports and systemctl
 
 expect_firewall() {   # expect_firewall LABEL HAS_DOCKER STATE_AFTER UFW_DOCKER_RC WANT(ok|fail) WANT_CHANGED [WANT_NOTE]
     local label="$1" want="$5" want_changed="$6" want_note="${7:-}" status=0 got=ok
@@ -393,6 +396,7 @@ expect_firewall 'dry run is WOULD CHANGE' 1 old 0 ok 1
 expect_ran 'dry run' no 'systemctl restart crowdsec-firewall-bouncer'
 DRY_RUN=0
 CROWDSEC_RC=0
+eval "$real_backup_file"
 
 # The SSH safety check tells the user which address to test from a second terminal
 # (issue #73). With Tailscale-only access the firewall blocks the local IP, so only the
@@ -564,6 +568,9 @@ bash "$SCRIPT_DIR/tests/report-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/rollback.sh" || exit 1
 # ... and the sshd Port line helpers of the SSH step (issue #72).
 bash "$SCRIPT_DIR/tests/sshd-ports.sh" || exit 1
+# ... and the firewall step's own UFW rules: the tag, the old comments and shapes, the rules of
+# earlier answers it deletes after adding the new ones (issue #67).
+bash "$SCRIPT_DIR/tests/ufw-rules.sh" || exit 1
 # ... and what --yes and --yes --force answer, and the automatic SSH login check of --yes (issue #65).
 bash "$SCRIPT_DIR/tests/ssh-login-check.sh" || exit 1
 # ... and the Openship AIDE excludes and auditd watch (issue #54).
