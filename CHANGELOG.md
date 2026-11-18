@@ -5,6 +5,21 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Security: `server-prep.sh --yes` answered yes to every question, even the safety ones whose default is no, and
+  closed the old SSH port without any login test ([#65](https://github.com/exceev-consulting/server-prep/issues/65)).
+  It went on with the SSH step when the admin had no SSH key (only the console could log in afterwards), restarted
+  running containers to apply Docker's log rotation, and stopped the SSH step's 10-minute rollback at once. `--yes`
+  now answers each question with its default: the SSH step is skipped when the admin has no key, and the Docker restart
+  becomes a to-do. The new `--force` answers yes to those questions, with `--yes` only (alone, it does nothing). Instead
+  of the operator's test from a second terminal, a run with `--yes` now checks the login on the server before it closes
+  the old port, and logs each check: sshd listens on the new port, `sshd -T` allows the admin a key login (`AllowUsers`,
+  `DenyUsers`, the groups, `Match`), the admin has a key, UFW (when it is on) lets the new port in, and an SSH handshake
+  on `127.0.0.1` works. If one fails, the old port and its temporary UFW rules stay, the rollback timer puts back the
+  SSH configuration from before the run after 10 minutes, and the step fails with a to-do that names the check and says
+  to finish with an interactive run of `--only ssh,endlessh`. When `--force` went on with no key for the admin, the
+  check skips only the key check, as the `s` answer of an interactive run skips the test, logs it (the admin can then
+  log in only on the console) and adds a to-do to add a key. The check cannot see a firewall outside the server (a cloud
+  security group) or the operator's key: keep the first run on a server interactive.
 - `server-preconfig.sh` no longer fails with `--yes` (or Enter) when the server's current name has capitals or a
   domain, such as `Web-01` or `vps123.example.net`. The default hostname is now the short name in lowercase (`web-01`,
   `vps123`), and the script says when it differs from the current name. The `127.0.1.1` line of `/etc/hosts` keeps its
