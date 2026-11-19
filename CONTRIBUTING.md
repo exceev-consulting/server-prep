@@ -16,9 +16,10 @@ Security problems: **don't open a public issue**. See [SECURITY.md](SECURITY.md)
 ## Set up
 
 There is nothing to build. You need bash 5 (macOS: `brew install bash`) and curl. `scripts/check.sh` downloads the
-pinned [ShellCheck](https://github.com/koalaman/shellcheck), [actionlint](https://github.com/rhysd/actionlint) and
-[lychee](https://github.com/lycheeverse/lychee) the first time. Some checks also need jq, ssh-keygen, unzip and python3.
-The docs checks also need [yamllint](https://github.com/adrienverge/yamllint) (`pipx install yamllint==1.38.0`) and
+pinned [ShellCheck](https://github.com/koalaman/shellcheck), [bats-core](https://github.com/bats-core/bats-core),
+[actionlint](https://github.com/rhysd/actionlint) and [lychee](https://github.com/lycheeverse/lychee) the first time.
+Some checks also need jq, ssh-keygen, unzip and python3. The docs checks also need
+[yamllint](https://github.com/adrienverge/yamllint) (`pipx install yamllint==1.38.0`) and
 [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) (`npm install -g markdownlint-cli2@0.24.0`, Node 22
 or later).
 
@@ -36,13 +37,14 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
 ## Before you open a pull request
 
 1. **Syntax, lint and regression checks**: run `./scripts/check.sh`. It runs the checks of
-   `.github/workflows/lint.yml`, without root and without changing the system. Its ShellCheck is pinned to 0.11.0, while
-   CI uses the ShellCheck of its runner until `lint.yml` runs this script: the two can disagree on a warning that only
-   one version reports.
+   `.github/workflows/lint.yml` and the unit tests in `tests/unit`, without root and without changing the system. Its
+   ShellCheck is pinned to 0.11.0, while CI uses the ShellCheck of its runner until `lint.yml` runs this script: the two
+   can disagree on a warning that only one version reports.
    ```bash
    ./scripts/check.sh                # every check
    ./scripts/check.sh --list         # the sections
    ./scripts/check.sh --only lint    # one section
+   ./scripts/check.sh --only tests   # unit tests of the server-prep.sh helpers (bats tests/unit, pinned bats-core)
    ./scripts/check.sh --only security   # after git add, before git commit: runs scripts/check-files.sh, which
                                         # reads only tracked and staged files: no report, filled config, key or
                                         # CLAUDE.local.md is tracked, and every IPv4 address is an example
@@ -57,6 +59,8 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    - `data`: `scripts/gen-data.sh --check`, the setup console's data matches the scripts
    - `tokens`: `scripts/check-tokens.sh`, the design token copies match `site/tokens.css`
    - `exit-status`, `swap`, `e2e-report`, `e2e-pages`: the quick tests in `tests/`, with fake commands
+   - `tests`: `bats tests/unit`, unit tests of the helpers in `server-prep.sh` (`write_file`, `set_kv`, `add_key`,
+     `compute_root_sources`...) with the pinned bats-core 1.14.0, no root; no CI job runs them yet
    - `consistency`: `scripts/check-consistency.sh`: ALL_STEPS, `--list-steps`, `main()` and the step functions, the
      README step table, `server-prep.conf.example`, the saved answers, the plan summary, the secret prompts and the
      audit's `# step:` comments agree
@@ -78,13 +82,14 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    (`.github/labels.yml`, then broken copies of it), `check-files.sh` (the committed-file guard on this
    repository, then on temp repos) and `check-consistency.sh` (the consistency check on this repository, then on
    broken copies; `./scripts/check.sh` therefore runs it twice, which takes well under a second).
-   The `lint` section uses ShellCheck 0.11.0, and `docs` uses actionlint 1.7.12 and lychee 0.24.2: `scripts/check.sh`
-   downloads each one once to `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its SHA-256 on every run, and stops
-   when the checksum does not match. When a tool is missing, the sections that need it show SKIP on your machine:
-   `data` and `e2e-report` need jq, `exit-status` needs jq and ssh-keygen, `e2e-pages` needs jq, unzip and python3,
-   `security` needs git, `docs` needs yamllint and markdownlint-cli2 (it prints how to install them). CI has those
-   tools, and there a missing one is a FAIL (no CI job runs `docs` yet). `security` also needs the `.git` of a clone: a release tarball has
-   none, so it shows SKIP there, and with `CI=true` a checkout without `.git` is a FAIL.
+   The `lint` section uses ShellCheck 0.11.0, the `tests` section bats-core 1.14.0, and `docs` actionlint 1.7.12 and
+   lychee 0.24.2: `scripts/check.sh` downloads each one once to `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its
+   SHA-256 on every run, and stops when the checksum does not match. When a tool is missing, the sections that need it
+   show SKIP on your machine: `data` and `e2e-report` need jq, `exit-status` needs jq and ssh-keygen, `e2e-pages`
+   needs jq, unzip and python3, `tests` needs ssh-keygen, `security` needs git, `docs` needs yamllint and
+   markdownlint-cli2 (it prints how to install them). CI has those tools, and there a missing one is a FAIL (no CI job
+   runs `tests` or `docs` yet). `security` also needs the `.git` of a clone: a release tarball has none, so it shows
+   SKIP there, and with `CI=true` a checkout without `.git` is a FAIL.
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
    sudo ./server-prep.sh --dry-run --only <step>
