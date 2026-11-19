@@ -71,9 +71,10 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    - `docs`: actionlint on the workflows (with ShellCheck on their `run:` blocks), yamllint on `.github/`,
      markdownlint-cli2 on the Markdown files and lychee offline on their relative links and anchors. Its settings are
      in `.yamllint.yml`, `.markdownlint-cli2.yaml` and `lychee.toml`. It never checks external links; to check them
-     yourself, run `lychee --no-progress '**/*.md'` (it reads `lychee.toml` from the repo root). No CI job runs these
-     checks yet: the docs workflow of #39 (this section on pull requests, the external links once a week) is still
-     to be added.
+     yourself, install lychee 0.24.2 on your PATH first (the copy `check.sh` downloads is unpacked in a temporary
+     folder for each run, so it is not on your PATH), then run `lychee --no-progress '**/*.md'` (it reads
+     `lychee.toml` from the repo root). No CI job runs these checks yet: the docs workflow of #39 (this section on
+     pull requests, the external links once a week) is still to be added.
 
    `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
    checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`;
