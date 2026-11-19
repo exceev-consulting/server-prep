@@ -2,11 +2,13 @@
 
 ## Status
 
-proposed | accepted | superseded by NNNN
+<!-- markdownlint-disable-next-line MD036 -->
+*proposed | accepted | superseded by NNNN*
 
 ## Date
 
-YYYY-MM-DD
+<!-- markdownlint-disable-next-line MD036 -->
+*YYYY-MM-DD*
 
 ## Context
 
