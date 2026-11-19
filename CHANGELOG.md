@@ -257,6 +257,9 @@ Highlights of each release. The full list of merged pull requests is in each
   `lo`. The script now comments out every line of the old block, up to the next `iface`, `auto`, `allow-*`, `source` or
   other stanza line, and leaves comments and blank lines as they are. A re-run also repairs a file an older version
   left half commented out.
+- `scripts/check.sh --only docs` checks the workflows and the Markdown files: actionlint and yamllint on `.github/`,
+  markdownlint-cli2 on the Markdown files, and lychee (offline) on relative links and their anchors. Their settings are
+  in `.yamllint.yml`, `.markdownlint-cli2.yaml` and `lychee.toml`. No CI job runs this section yet (part of #39).
 
 ## [1.1.1] - 2026-10-19
 
