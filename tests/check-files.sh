@@ -3,10 +3,12 @@
 # tests/exit-status.sh runs this test, so CI fails when a report, filled config, key or
 # CLAUDE.local.md is tracked, or when an IPv4 address is not an example. Then it tests the guard on
 # throwaway git repos built in a temp folder: tracked reports, filled configs, keys and
-# CLAUDE.local.md fail, the forbidden list stays in step with .gitignore, and an IPv4 address that
-# is not an example fails with its file and line. Last, it checks that `scripts/check.sh --only
+# CLAUDE.local.md fail, the forbidden list stays in step with .gitignore (and lychee.toml skips its
+# Markdown names), and an IPv4 address that is not an example fails with its file and line. Last, it checks that `scripts/check.sh --only
 # security` runs the guard: OK on a clean repo, FAIL with the guard's output on a tracked report or
 # an address that is not an example, and without .git SKIP on your machine but FAIL with CI=true.
+# The same goes for `--only docs` without yamllint and markdownlint-cli2, which also prints how to
+# install them. Neither section downloads a pinned tool when it does not run.
 # No root needed and nothing on the host changes.
 set -u
 
@@ -79,7 +81,7 @@ expect() {   # expect WANT_STATUS LABEL [TEXT [ARG...]]: runs the guard from out
 
 forbidden=(
     CLAUDE.local.md .claude/settings.local.json web-01.conf docs/web-01.conf
-    server-audit-web-01-20260101.txt server-prep-report-web-01-2026-01-01.md
+    server-audit-web-01-20260101.txt server-audit-web-01-20260101.md server-prep-report-web-01-2026-01-01.md
     server-prep-report-web-01-2026-01-01.json server-prep-report-web-01-2026-01-01.md.bak
     x-report-1.md x-report-1.txt
     audit.md audit.json audit.tsv sub/audit.json .env deploy.pem id.key run.log
@@ -130,6 +132,34 @@ for name in "${allowed[@]}"; do
     fi
 done
 printf 'ok: check-files forbidden list in step with .gitignore\n'
+
+# 5b. lychee reads the Markdown through a glob, which does not follow .gitignore: the exclude_path of
+# lychee.toml must skip every forbidden Markdown name (a report holds server details, and one written
+# with sudo is unreadable), at the root and in a folder, and must not skip the docs.
+lychee_skips() {   # lychee_skips PATH: true when an exclude_path pattern of lychee.toml matches PATH
+    printf '%s\n' "$1" | grep -qEf "$tmp/lychee-exclude"
+}
+sed -n "/^exclude_path = \[/,/^\]/s/^ *'\([^']*\)'.*/\1/p" "$SCRIPT_DIR/lychee.toml" >"$tmp/lychee-exclude"
+if [[ ! -s $tmp/lychee-exclude ]]; then
+    printf 'not ok: no exclude_path pattern read from lychee.toml\n'
+    exit 1
+fi
+for name in "${forbidden[@]}"; do
+    [[ $name == *.md ]] || continue
+    for path in "$name" "./$name" "docs/$name"; do
+        if ! lychee_skips "$path"; then
+            printf 'not ok: lychee.toml exclude_path does not skip %s, a gitignored report or private file\n' "$path"
+            exit 1
+        fi
+    done
+done
+for path in README.md ./CONTRIBUTING.md docs/e2e-tests.md docs/report.md .claude/skills/audit-review/SKILL.md; do
+    if lychee_skips "$path"; then
+        printf 'not ok: lychee.toml exclude_path skips %s, which lychee must check\n' "$path"
+        exit 1
+    fi
+done
+printf 'ok: lychee.toml exclude_path skips every forbidden Markdown name, and only those\n'
 
 # 6. Every allowed form of address, and numbers that are not addresses
 new_repo
@@ -222,25 +252,27 @@ expect 2 'rejects an argument' 'Usage: scripts/check-files.sh' --help
 # 12. scripts/check.sh --only security runs the guard. check.sh cds to its own parent, so it sits
 # beside check-files.sh in the test repo. It needs bash 5 and exits 2 on an older bash. CI is set
 # on each run: GitHub Actions exports CI=true, and check.sh turns a missing tool or .git into a FAIL then.
-expect_check() {   # expect_check WANT_STATUS LABEL CI TEXT...: runs check.sh --only security from outside the repo, with CI=<CI> ("" for your machine)
+section=security   # the section expect_check runs
+check_path="$PATH"   # the PATH it runs check.sh with
+expect_check() {   # expect_check WANT_STATUS LABEL CI TEXT...: runs check.sh --only $section from outside the repo, with CI=<CI> ("" for your machine)
     local want="$1" label="$2" ci="$3" status=0 text missing=""
     shift 3
-    (cd "$tmp" && CI="$ci" XDG_CACHE_HOME="$tmp/cache" bash "$repo/scripts/check.sh" --only security) >"$tmp/out" 2>&1 || status=$?
+    (cd "$tmp" && PATH="$check_path" CI="$ci" XDG_CACHE_HOME="$tmp/cache" "$BASH" "$repo/scripts/check.sh" --only "$section") >"$tmp/out" 2>&1 || status=$?
     for text in "$@"; do
         grep -qF -- "$text" "$tmp/out" || missing+="${missing:+, }$text"
     done
     if [[ $status -ne $want || -n $missing ]]; then
-        printf 'not ok: check.sh --only security %s (status %s, want %s%s)\n' "$label" "$status" "$want" \
+        printf 'not ok: check.sh --only %s %s (status %s, want %s%s)\n' "$section" "$label" "$status" "$want" \
             "${missing:+; missing: $missing}"
         cat "$tmp/out"
         exit 1
     fi
-    # the security section must never reach the ShellCheck download
+    # a section that does not run its checks must never reach a download (ShellCheck, actionlint, lychee)
     if [[ -e $tmp/cache ]]; then
-        printf 'not ok: check.sh --only security %s created %s (ShellCheck download)\n' "$label" "$tmp/cache"
+        printf 'not ok: check.sh --only %s %s created %s (pinned tool download)\n' "$section" "$label" "$tmp/cache"
         exit 1
     fi
-    printf 'ok: check.sh --only security %s\n' "$label"
+    printf 'ok: check.sh --only %s %s\n' "$section" "$label"
 }
 
 new_check_repo() {   # new_repo, plus scripts/check.sh
@@ -272,6 +304,23 @@ if (( BASH_VERSINFO[0] >= 5 )); then
         'Summary: 0 OK, 0 FAIL, 1 skipped'
     expect_check 1 'fails without .git with CI=true' true 'FAIL  security' '.git not found (CI needs it)' \
         'Summary: 0 OK, 1 FAIL, 0 skipped (failed: security)'
+
+    # 13. The docs section without yamllint and markdownlint-cli2. PATH holds only the commands
+    # check.sh runs before a section, so a yamllint the runner ships is not found: SKIP with how to
+    # install both on your machine, FAIL with CI=true, and no ShellCheck, actionlint or lychee download.
+    mkdir -p "$tmp/bin"
+    for cmd in dirname mktemp rm; do
+        ln -s "$(command -v "$cmd")" "$tmp/bin/$cmd"
+    done
+    section=docs
+    check_path="$tmp/bin"
+    new_check_repo
+    expect_check 0 'skips without yamllint and markdownlint-cli2 on your machine' '' 'SKIP  docs' \
+        'needs yamllint markdownlint-cli2 (install them; no CI job runs it yet)' 'yamllint: pipx install yamllint==' \
+        'markdownlint-cli2: npm install -g markdownlint-cli2@' 'Summary: 0 OK, 0 FAIL, 1 skipped'
+    expect_check 1 'fails without yamllint and markdownlint-cli2 with CI=true' true 'FAIL  docs' \
+        'needs yamllint markdownlint-cli2' 'yamllint: pipx install yamllint==' \
+        'markdownlint-cli2: npm install -g markdownlint-cli2@' 'Summary: 0 OK, 1 FAIL, 0 skipped (failed: docs)'
 else
-    printf 'skip: check.sh --only security (bash %s, check.sh needs 5)\n' "$BASH_VERSION"
+    printf 'skip: check.sh --only security and --only docs (bash %s, check.sh needs 5)\n' "$BASH_VERSION"
 fi

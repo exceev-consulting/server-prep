@@ -17,14 +17,17 @@ description: Analyse server-audit.sh output pasted by the user (or a report file
 4. **Before suggesting a fix,** check `AGENTS.md` → *Hard-won gotchas*. Several "regressions" after a reboot are already known (log_martians, suid_dumpable, sudo-rs).
 
 ## Expected WARNs on this fleet
+
 - **Desktop service count** (GNOME, about 40 services) on the laptop server.
 - **Regular, non-security updates pending:** suggest `sudo apt upgrade`. Unattended-upgrades only handles security updates.
 - **Reboot required after a kernel update:** suggest `sudo reboot` in a quiet moment (GitHub runners idle).
 - **Telegraf INFO "installed, not configured"** until the `monitoring` skill (`/monitoring` in Claude Code, `$monitoring` in Codex) is done.
 
 ## Investigating memory or OOM events
+
 ```bash
 journalctl -k --since -2d | grep -i -E "oom|killed process"
 systemd-cgtop -m --depth=2
 ```
+
 On the laptop, GitHub runner jobs were the cause. Check that `actions-runners.slice` still exists with `systemctl show -p MemoryMax actions-runners.slice`.

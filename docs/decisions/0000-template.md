@@ -2,11 +2,11 @@
 
 ## Status
 
-*proposed | accepted | superseded by NNNN*
+proposed | accepted | superseded by NNNN
 
 ## Date
 
-*YYYY-MM-DD*
+YYYY-MM-DD
 
 ## Context
 

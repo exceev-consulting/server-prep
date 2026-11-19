@@ -1,0 +1,32 @@
+# markdownlint-cli2 settings for the Markdown files, read from the repo root by
+# `markdownlint-cli2 '**/*.md'` and by `./scripts/check.sh --only docs`. The version is pinned in
+# scripts/check.sh (MARKDOWNLINT_CLI2_VERSION), not here. A rule is turned off only when the docs
+# break it on purpose; fix any other finding in the file.
+
+# Skip what .gitignore skips (CLAUDE.local.md, reports, tests/e2e/out/), so a local run lints what a
+# fresh clone holds.
+gitignore: true
+
+ignores:
+  - "wiki/**"             # links by page name and pages without a heading: linted later (#27)
+  - ".agents/**"          # a symlink to .claude/skills: each SKILL.md is linted once
+  - "node_modules/**"
+  - "CODE_OF_CONDUCT.md"  # Contributor Covenant text, kept as published
+
+config:
+  # Line length: guides and tables keep one sentence or row per line.
+  MD013: false
+  # Inline HTML: only the README header (logo, title, badges) and its step table use it.
+  MD033:
+    allowed_elements: [a, b, br, code, details, h1, img, p, picture, source, summary]
+  # First line a heading: README starts with its HTML header, the CLAUDE.md files are one
+  # `@AGENTS.md` import line, the PR template starts with ##, and SKILL.md starts with frontmatter.
+  MD041: false
+  # Fences in list items stay tight under their step: a blank line there makes the list loose and
+  # changes how it renders. Top-level fences still need blank lines around them.
+  MD031:
+    list_items: false
+  # Spaces inside code spans: AGENTS.md shows strings whose spaces matter, such as `: ` and ` (v6)`.
+  MD038: false
+  # Table column style: the tables use short `|---|` delimiter rows under padded cells.
+  MD060: false
