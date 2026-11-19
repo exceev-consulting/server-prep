@@ -4,9 +4,10 @@
 # CLAUDE.local.md is tracked, or when an IPv4 address is not an example. Then it tests the guard on
 # throwaway git repos built in a temp folder: tracked reports, filled configs, keys and
 # CLAUDE.local.md fail, the forbidden list stays in step with .gitignore (and lychee.toml skips its
-# Markdown names), and an IPv4 address that is not an example fails with its file and line. Last, it checks that `scripts/check.sh --only
-# security` runs the guard: OK on a clean repo, FAIL with the guard's output on a tracked report or
-# an address that is not an example, and without .git SKIP on your machine but FAIL with CI=true.
+# Markdown names), and an IPv4 address that is not an example fails with its file and line. Last,
+# it checks that `scripts/check.sh --only security` runs the guard: OK on a clean repo, FAIL with
+# the guard's output on a tracked report or an address that is not an example, and without .git
+# SKIP on your machine but FAIL with CI=true.
 # The same goes for `--only docs` without yamllint and markdownlint-cli2, which also prints how to
 # install them. Neither section downloads a pinned tool when it does not run.
 # No root needed and nothing on the host changes.
