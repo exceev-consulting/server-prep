@@ -534,6 +534,8 @@ bash "$SCRIPT_DIR/tests/audit-docker-user.sh" || exit 1
 bash "$SCRIPT_DIR/tests/audit-logind-lid.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-json.sh" || exit 1
 bash "$SCRIPT_DIR/tests/preconfig-hostname.sh" || exit 1
+# ... and how server-preconfig.sh comments out the old ifupdown block of the interface (issue #224).
+bash "$SCRIPT_DIR/tests/preconfig-network.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
@@ -570,8 +572,13 @@ bash "$SCRIPT_DIR/tests/ssh-login-check.sh" || exit 1
 bash "$SCRIPT_DIR/tests/openship-aide-auditd.sh" || exit 1
 # ... and the label taxonomy check on .github/labels.yml (issue #24).
 bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
+# ... and the e2e scenario prep-rerun on fake second runs: package upgrades alone pass (issue #207).
+bash "$SCRIPT_DIR/tests/e2e-prep-rerun.sh" || exit 1
 # ... and how the e2e harness picks its cloud image: Debian's dated build folders (issue #212).
 bash "$SCRIPT_DIR/tests/e2e-images.sh" || exit 1
 # ... and the committed-file guard (issue #40): on this repository first, so CI fails on a tracked
 # report, filled config or key, or an IPv4 address that is not an example; then on temp repos.
 bash "$SCRIPT_DIR/tests/check-files.sh" || exit 1
+# ... and the consistency check (issue #35): steps, README step table, config example, saved answers,
+# questions and audit checks agree on this repository, then broken copies fail.
+bash "$SCRIPT_DIR/tests/check-consistency.sh" || exit 1

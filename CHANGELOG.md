@@ -34,6 +34,14 @@ Highlights of each release. The full list of merged pull requests is in each
   as `\u00XX` escapes, so `jq -r` still gives back the exact name, and the screen shows each one as `?` (a tab or a
   newline as a space). The screen does the same for the C1 controls in UTF-8, such as U+009B, which xterm and GNOME
   Terminal read as the start of an escape sequence.
+- The saved answers (`/etc/server-prep/server-prep.conf`) now keep `LAPTOP_MODE`, so a re-run with `--config` keeps
+  laptop server mode on a machine without a battery (an older saved file gets the line at its next run). The file
+  overrides the environment, so the audit's `sys.laptop` fix hint now says to set `LAPTOP_MODE=yes` in it instead of
+  using `sudo env LAPTOP_MODE=yes`. `server-prep.conf.example` now lists `AUDIT_SCRIPT` (empty = found automatically).
+  The new `scripts/check-consistency.sh` fails when any of these drift apart: the step list, the `run_step` calls, the
+  step functions, the README step table, the config example, the saved answers, the plan summary, the secret prompts
+  and the audit checks (each step's check is marked with a `# step:` comment). `scripts/check.sh` and
+  `tests/exit-status.sh` run it (#35).
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
@@ -243,6 +251,12 @@ Highlights of each release. The full list of merged pull requests is in each
 - Codex now finds the four skills (`new-server`, `audit-review`, `monitoring`, `add-step`): `.agents/skills` is a link
   to `.claude/skills`, so Claude Code and Codex read the same files. In Codex, type `$new-server` or pick a skill from
   `/skills`. On Windows, clone with symlinks turned on (see `AGENTS.md`).
+- Fix: `server-preconfig.sh --static-ip` left part of the old interface block active in `/etc/network/interfaces`
+  when the block had a comment, a blank line or an unindented line in the middle, as in the block the Debian installer
+  writes for a fixed IP. The lines after it, such as `dns-nameservers`, then became options of the loopback interface
+  `lo`. The script now comments out every line of the old block, up to the next `iface`, `auto`, `allow-*`, `source` or
+  other stanza line, and leaves comments and blank lines as they are. A re-run also repairs a file an older version
+  left half commented out.
 
 ## [1.1.1] - 2026-10-19
 

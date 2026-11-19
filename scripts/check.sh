@@ -28,7 +28,7 @@
 #   e2e-pages     tests/e2e-pages.sh: the e2e pages builder with a stub gh (needs jq, unzip, python3)
 #   tests         bats tests/unit: unit tests of the server-prep.sh helpers, with the pinned bats-core
 #                 (needs ssh-keygen); no CI job runs it yet
-#   consistency   scripts/check-consistency.sh (#35), only when that file exists
+#   consistency   scripts/check-consistency.sh: steps, README step table, config example, saved answers, questions and audit checks agree
 #   security      scripts/check-files.sh: no report, filled config, key or CLAUDE.local.md is tracked,
 #                 every IPv4 address is an example (needs git and .git; reads the staged copy: run it after
 #                 git add)
@@ -53,7 +53,7 @@
 # Exit status: 0 every section passed or was skipped, 1 a section failed, 2 a usage error, bash
 # older than 5, or no verified ShellCheck or bats-core.
 #
-# Add a section (consistency #35, docs #39): one line in SECTIONS and one
+# Add a section (docs #39): one line in SECTIONS and one
 # section_<name> function (a dash in the name becomes an underscore).
 if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ]; then echo "bash 5 needed (macOS: brew install bash)" >&2; exit 2; fi
 set -euo pipefail
@@ -103,7 +103,7 @@ SECTIONS=(
     "e2e-report|-|jq|the e2e report builder on fake results (tests/e2e-report.sh)"
     "e2e-pages|-|jq unzip python3|the e2e pages builder with a stub gh (tests/e2e-pages.sh)"
     "tests|-|ssh-keygen|unit tests of the server-prep.sh helpers, with the pinned bats-core $BATS_VERSION (bats tests/unit)"
-    "consistency|scripts/check-consistency.sh|-|steps, README, config example and audit agree (#35)"
+    "consistency|-|-|steps, README, config example, saved answers, questions and audit agree (scripts/check-consistency.sh)"
     "security|ci:.git|git|no forbidden file is tracked, every IPv4 address is an example (scripts/check-files.sh)"
 )
 NAMES=()
