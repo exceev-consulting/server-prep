@@ -30,6 +30,7 @@ All of it comes from one file, [extras/telegraf/telegraf.conf.example](../extras
 servers `web-01` and `web-02`. Replace them with yours.
 
 **Two ways for Telegraf to reach InfluxDB:**
+
 - **Through Cloudflare** (this guide): InfluxDB is published with the Cloudflare Tunnel
   ([cloudflare-tunnel.md](cloudflare-tunnel.md)) and protected by Cloudflare Access. It works from anywhere.
 - **Through Tailscale**: InfluxDB's port 8086 is published on the host and allowed only from the tailnet in
@@ -140,6 +141,7 @@ Official docs: [InfluxDB, create a bucket](https://docs.influxdata.com/influxdb/
 server-prep installs it (step `telegraf`, from the official InfluxData repository) and leaves it **stopped**
 until it has an output. If you skipped it, switch the saved answer to `yes` first: with the old `no`, the
 step is skipped.
+
 ```bash
 sudo sed -i 's/^INSTALL_TELEGRAF=.*/INSTALL_TELEGRAF=yes/' /etc/server-prep/server-prep.conf
 sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegraf --yes
@@ -148,9 +150,11 @@ sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only telegraf
 ## 5. Configure Telegraf (on each server)
 
 **a. Secrets**, kept out of the config files:
+
 ```bash
 sudo nano /etc/default/telegraf
 ```
+
 ```bash
 # One VAR=value per line. Comments only on their own line: systemd reads this file
 # and keeps anything after the value, so a note at the end of a line breaks it.
@@ -159,11 +163,13 @@ INFLUX_TOKEN=<the write token of this server>
 CF_ACCESS_CLIENT_ID=<client id>
 CF_ACCESS_CLIENT_SECRET=<client secret>
 ```
+
 ```bash
 sudo chown root:telegraf /etc/default/telegraf && sudo chmod 640 /etc/default/telegraf
 ```
 
 **b. The config:** one file with the output, the system inputs and Docker. It replaces the package's file.
+
 ```bash
 sudo cp /etc/telegraf/telegraf.conf /etc/telegraf/telegraf.conf.orig        # keep the original
 sudo cp extras/telegraf/telegraf.conf.example /etc/telegraf/telegraf.conf   # from a git clone
@@ -171,6 +177,7 @@ sudo cp extras/telegraf/telegraf.conf.example /etc/telegraf/telegraf.conf   # fr
 # sudo cp telegraf.conf.example /etc/telegraf/telegraf.conf
 sudo nano /etc/telegraf/telegraf.conf
 ```
+
 Change only:
 
 | Setting | Value |
@@ -183,6 +190,7 @@ Change only:
 Leave `token` and `http_headers` as they are: the `${...}` values come from `/etc/default/telegraf`.
 
 If an older setup left an output in `telegraf.d`, remove it, otherwise every metric is sent twice:
+
 ```bash
 ls /etc/telegraf/telegraf.d/
 sudo rm -f /etc/telegraf/telegraf.d/influxdb.conf
@@ -190,11 +198,13 @@ sudo rm -f /etc/telegraf/telegraf.d/influxdb.conf
 
 **c. Let Telegraf read Docker:** the Docker input talks to `/var/run/docker.sock`, which only root and the
 `docker` group can open.
+
 ```bash
 sudo usermod -aG docker telegraf
 id telegraf                     # the groups must include "docker"
 sudo -u telegraf curl -s --unix-socket /var/run/docker.sock http://localhost/_ping; echo     # OK
 ```
+
 The service only picks up the new group after a restart (step 6). Don't skip this step: if Telegraf can't
 reach Docker, it doesn't start at all and sends no metrics, not even the system ones. On a server without
 Docker, delete the `[[inputs.docker]]` block from the config instead.
@@ -229,6 +239,7 @@ sudo systemctl enable --now telegraf
 sudo systemctl restart telegraf          # picks up the docker group
 sleep 20 && sudo journalctl -u telegraf -n 10 --no-pager    # no "E!" lines
 ```
+
 `telegraf --test` only prints metrics and never sends them. Use `--once` to check the output.
 
 **Check that the data really arrived.** "Wrote batch" only means the server answered OK. If Access refuses
@@ -247,6 +258,7 @@ measurement, and click **Submit**: you should see points from the last few minut
 
 **Same server: connect the two resources first.** In Coolify, each service has its own private Docker
 network, so Grafana can't see the InfluxDB container by default, even in the same project.
+
 1. In the **InfluxDB** service: **General → Connect To Predefined Network**, turn it on, **Save**, **Restart**.
 2. Do the same in the **Grafana** service (a Grafana *Application* is already on that network).
 3. Get InfluxDB's container name, the hostname to use:
@@ -275,6 +287,7 @@ Click **Save & test**: `datasource is working` (or the number of buckets found).
 Official doc: [Grafana, configure the InfluxDB data source](https://grafana.com/docs/grafana/latest/datasources/influxdb/configure/).
 
 **Dashboard variables** (one dashboard for all servers):
+
 1. `bucket`: query `buckets()`.
 2. `host`:
    ```flux
@@ -283,12 +296,14 @@ Official doc: [Grafana, configure the InfluxDB data source](https://grafana.com/
    ```
 
 **Queries that work on every server:**
+
 - always filter `r.host == "${host}"`;
 - disk: `r.path == "/"` (device names differ between servers);
 - network: `r.interface !~ /^(lo|docker|veth|br-|tailscale)/`;
 - CPU: `r.cpu == "cpu-total"`, and show `100 - usage_idle`.
 
 **Container panels:**
+
 ```flux
 // Memory used by each container (%)
 from(bucket: "${bucket}")
@@ -298,6 +313,7 @@ from(bucket: "${bucket}")
   |> group(columns: ["container_name"])
   |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
 ```
+
 ```flux
 // CPU used by each container (%)
 from(bucket: "${bucket}")
@@ -307,6 +323,7 @@ from(bucket: "${bucket}")
   |> group(columns: ["container_name"])
   |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
 ```
+
 ```flux
 // Containers that are not healthy (table)
 from(bucket: "${bucket}")

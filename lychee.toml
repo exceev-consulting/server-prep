@@ -1,0 +1,48 @@
+# lychee settings for the Markdown links, read from the repo root.
+#
+# Offline: `./scripts/check.sh --only docs` runs
+#   lychee --config lychee.toml --offline --include-fragments --no-progress '**/*.md'
+# It checks only relative links and their #anchors, so a dead external link never fails it.
+# Online: the external links, without --include-fragments, so the anchors of other sites are not
+# checked. Install lychee 0.24.2 on your PATH first: the copy check.sh downloads is unpacked in a
+# temporary folder for each run, so it is not on your PATH. Then run:
+#   lychee --config lychee.toml --no-progress '**/*.md'
+# No CI job runs lychee yet: the docs workflow of #39 (the offline check on pull requests, the online
+# one once a week) is still to be added.
+# Never set include_verbatim: placeholders such as https://<influxdb-host> sit in code blocks, which
+# lychee skips by default.
+
+# Check the Markdown under .github/ and .claude/ too.
+hidden = true
+
+# Files never read (regular expressions on the path). A glob input does not follow .gitignore, so the
+# gitignored files are listed here too. tests/check-files.sh checks that every Markdown name the
+# committed-file guard forbids is listed.
+exclude_path = [
+  '^(\./)?wiki/',             # links by page name, without .md: checked later (#27)
+  '^(\./)?\.agents/',         # a symlink to .claude/skills: each SKILL.md is checked once
+  '^(\./)?\.git/',
+  '(^|/)node_modules/',
+  '^(\./)?tests/e2e/out/',    # e2e test output (gitignored)
+  '(^|/)CLAUDE\.local\.md$',  # private infrastructure (gitignored): never read, never sent anywhere
+  # Reports and audit files (gitignored): they hold hostnames, IPs and server details, and a report
+  # written with sudo in the clone is unreadable to you. Same patterns as .gitignore.
+  '(^|/)[^/]*-report-[^/]*\.md$',
+  '(^|/)server-prep-report-[^/]*$',
+  '(^|/)server-audit-[^/]*$',
+  '(^|/)audit\.md$',
+]
+
+# The example hosts of the docs, never a real host.
+exclude = [
+  '^https?://([^/?#]+\.)?example\.com([:/?#]|$)',
+  '^https?://localhost([:/?#]|$)',
+  '^https?://127\.0\.0\.1([:/?#]|$)',
+  '^https?://100\.',          # Tailscale addresses (100.64.0.0/10) in examples
+]
+
+# The online run: retry slow or rate-limited hosts before a link counts as dead.
+max_retries = 3
+retry_wait_time = 5
+timeout = 30
+accept = ["200..=204", "206", "429"]

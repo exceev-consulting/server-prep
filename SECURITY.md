@@ -9,6 +9,7 @@ Use **[Report a vulnerability](https://github.com/exceev-consulting/server-prep/
 (Security tab of the repo). Don't open a public issue or discussion.
 
 Include:
+
 - what is wrong and its impact (for example: a port left open, root login allowed from anywhere, a lockout);
 - the script, the version (`./server-prep.sh --help` shows it) and the OS;
 - steps to reproduce, on a test server.

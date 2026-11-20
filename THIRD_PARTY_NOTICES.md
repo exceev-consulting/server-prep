@@ -4,7 +4,7 @@
 
 `server-audit.sh` is derived from [vps-audit](https://github.com/nuver-labs/vps-audit) v0.2.0, used under the MIT License:
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Israel Abebe Kokiso
@@ -39,6 +39,14 @@ SOFTWARE.
 ## bats-core (not bundled)
 
 `scripts/check.sh` downloads [bats-core](https://github.com/bats-core/bats-core) into your cache (`${XDG_CACHE_HOME:-~/.cache}/server-prep/`) to run the unit tests in `tests/unit` when version 1.14.0 is not installed. The source archive of the release tag is pinned and its SHA-256 is checked. bats-core is licensed under **MIT**, and none of its code is included in this repository.
+
+## actionlint (not bundled)
+
+`scripts/check.sh` downloads [actionlint](https://github.com/rhysd/actionlint) into your cache (`${XDG_CACHE_HOME:-~/.cache}/server-prep/`) when version 1.7.12 is not installed. The release is pinned and its SHA-256 is checked. actionlint is licensed under the **MIT License**, and none of its code is included in this repository.
+
+## lychee (not bundled)
+
+`scripts/check.sh` downloads [lychee](https://github.com/lycheeverse/lychee) into your cache (`${XDG_CACHE_HOME:-~/.cache}/server-prep/`) when version 0.24.2 is not installed. The release is pinned and its SHA-256 is checked. lychee is licensed under **Apache-2.0 or MIT**, and none of its code is included in this repository.
 
 ## Ideas
 

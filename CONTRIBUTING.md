@@ -16,8 +16,12 @@ Security problems: **don't open a public issue**. See [SECURITY.md](SECURITY.md)
 ## Set up
 
 There is nothing to build. You need bash 5 (macOS: `brew install bash`) and curl. `scripts/check.sh` downloads the
-pinned [ShellCheck](https://github.com/koalaman/shellcheck) and [bats-core](https://github.com/bats-core/bats-core) the
-first time. Some checks also need jq, ssh-keygen, unzip and python3.
+pinned [ShellCheck](https://github.com/koalaman/shellcheck), [bats-core](https://github.com/bats-core/bats-core),
+[actionlint](https://github.com/rhysd/actionlint) and [lychee](https://github.com/lycheeverse/lychee) the first time.
+Some checks also need jq, ssh-keygen, unzip and python3. The docs checks also need
+[yamllint](https://github.com/adrienverge/yamllint) (`pipx install yamllint==1.38.0`) and
+[markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2) (`npm install -g markdownlint-cli2@0.24.0`, Node 22
+or later).
 
 ```bash
 git clone https://github.com/exceev-consulting/server-prep.git && cd server-prep
@@ -64,6 +68,13 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
      `CLAUDE.local.md` is tracked (even one added with `git add -f`), and every IPv4 address is an example. It reads
      the staged copy, so run it after `git add`. `tests/exit-status.sh` runs it too, through `tests/check-files.sh`,
      which is how CI runs it, so a full run checks it twice.
+   - `docs`: actionlint on the workflows (with ShellCheck on their `run:` blocks), yamllint on `.github/`,
+     markdownlint-cli2 on the Markdown files and lychee offline on their relative links and anchors. Its settings are
+     in `.yamllint.yml`, `.markdownlint-cli2.yaml` and `lychee.toml`. It never checks external links; to check them
+     yourself, install lychee 0.24.2 on your PATH first (the copy `check.sh` downloads is unpacked in a temporary
+     folder for each run, so it is not on your PATH), then run `lychee --no-progress '**/*.md'` (it reads
+     `lychee.toml` from the repo root). No CI job runs these checks yet: the docs workflow of #39 (this section on
+     pull requests, the external links once a week) is still to be added.
 
    `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
    checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`;
@@ -72,13 +83,14 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    (`.github/labels.yml`, then broken copies of it), `check-files.sh` (the committed-file guard on this
    repository, then on temp repos) and `check-consistency.sh` (the consistency check on this repository, then on
    broken copies; `./scripts/check.sh` therefore runs it twice, which takes well under a second).
-   The `lint` section uses ShellCheck 0.11.0 and the `tests` section bats-core 1.14.0: `scripts/check.sh` downloads
-   each once to `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its SHA-256 on every run, and stops when the
-   checksum does not match. When a tool is missing, the sections that need it show SKIP on your machine: `data` and
-   `e2e-report` need jq, `exit-status` needs jq and ssh-keygen, `e2e-pages` needs jq, unzip and python3, `tests` needs
-   ssh-keygen, `security` needs git. CI has those tools, and there a missing one is a FAIL. `security` also needs the
-   `.git` of a clone: a release tarball has none, so it shows SKIP there, and with `CI=true` a checkout without `.git`
-   is a FAIL.
+   The `lint` section uses ShellCheck 0.11.0, the `tests` section bats-core 1.14.0, and `docs` actionlint 1.7.12 and
+   lychee 0.24.2: `scripts/check.sh` downloads each one once to `${XDG_CACHE_HOME:-~/.cache}/server-prep/`, checks its
+   SHA-256 on every run, and stops when the checksum does not match. When a tool is missing, the sections that need it
+   show SKIP on your machine: `data` and `e2e-report` need jq, `exit-status` needs jq and ssh-keygen, `e2e-pages`
+   needs jq, unzip and python3, `tests` needs ssh-keygen, `security` needs git, `docs` needs yamllint and
+   markdownlint-cli2 (it prints how to install them). CI has those tools, and there a missing one is a FAIL (no CI job
+   runs `tests` or `docs` yet). `security` also needs the `.git` of a clone: a release tarball has none, so it shows
+   SKIP there, and with `CI=true` a checkout without `.git` is a FAIL.
 2. **Dry run** on a test server, then a real run if your change modifies the system:
    ```bash
    sudo ./server-prep.sh --dry-run --only <step>
@@ -193,6 +205,7 @@ One button: **Actions → release → Run workflow**, then choose `patch` (fixes
 or `major` (breaking changes). From a terminal: `gh workflow run release -f bump=patch`.
 
 The workflow:
+
 1. bumps `PREP_VERSION` in `server-prep.sh` and moves the `[Unreleased]` notes under the new version
    in `CHANGELOG.md`, lints them, and puts that `release: vX.Y.Z` commit straight on `main`;
 2. tags that commit and publishes the GitHub release: the changelog notes, the merged pull requests,

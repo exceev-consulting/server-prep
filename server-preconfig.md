@@ -13,6 +13,7 @@ Run `server-preconfig.sh` **once, right after installing Debian/Ubuntu, before `
 | **Checks** that everything will come back after a reboot | You find problems before the reboot, not after |
 
 **VPS or dedicated server:**
+
 - **On a VPS**, the provider manages the network (netplan / cloud-init). The script doesn't touch it: press Enter (`keep`) at the network question. You mostly get SSH + sudo, the hostname and Tailscale.
 - **On a dedicated or on-premise server**, saving the network and disabling sleep are what make it come back after a reboot or a power cut.
 
@@ -54,9 +55,11 @@ sudo ./server-preconfig.sh            # no sudo yet? su - -c "$HOME/server-prep/
 | Tailscale | `yes`. Open the printed URL on your workstation and approve the machine |
 
 Without questions:
+
 ```bash
 sudo ./server-preconfig.sh --hostname web-01 --static-ip current --github-keys octocat --yes
 ```
+
 Other options: `--dry-run` previews the changes, `--check` only runs the checks, `--check --json` gives the checks as JSON
 for an agent or a script (section 3), and `--help` lists everything.
 
@@ -75,6 +78,7 @@ When a `WARN` or `FAIL` has a known fix, a `fix:` line under it says what to do.
 | `WARN cloud-init can reset the hostname and /etc/hosts at the next boot` | re-run with `--hostname web-01`: it writes the cloud-init drop-in. When the `fix:` line names a file that cloud-init reads after the drop-in, edit or remove that setting in it |
 
 **Two things the script can't do:**
+
 1. **BIOS:** set *Restore on AC Power Loss* to **Power On**, or the server stays off after a power cut.
 2. **Router:** a fixed IP must be **outside the DHCP range**, or reserved for this server.
 
@@ -186,6 +190,7 @@ sudo reboot
 # ~2 minutes later, from your workstation:
 ssh <user>@<tailscale-ip> 'hostname; ip -br a show eno1; ping -c2 debian.org'
 ```
+
 If that works, the server comes back on its own. Continue with `server-prep.sh` (README.md, or `/new-server` in Claude Code).
 
 ## Troubleshooting (seen on real servers)
