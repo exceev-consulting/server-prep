@@ -33,7 +33,7 @@ Highlights of each release. The full list of merged pull requests is in each
   did. When you keep every service, the answers say `DISABLE_SERVICES=none` instead of an empty value, which a `--yes`
   run read as "disable them all"; the saved list holds the services you chose to disable. When none of them is
   installed, nothing is asked and the answers keep the whole list, so a re-run disables one installed later: the
-  questions say so. `LAPTOP_MODE` is saved too, so the audit's laptop hint now says to set it in that file. The
+  questions say so. The
   `telegram` step keeps the bot token already in `/etc/server-prep/telegram.env`, quoted or not, without showing it. At
   a question that shows `(- = ...)`, type `-` (or `none`) to empty an answer, such as the extra ports or the allowed
   SSH sources; on a re-run from the saved answers, Enter keeps it empty. The firewall step still only adds rules: the
