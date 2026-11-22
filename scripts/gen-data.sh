@@ -210,6 +210,7 @@ guides_tsv() {
 # --- the audit check count in the docs (DOC_COUNTS) -----------------------------
 # doc_count FILE BEFORE AFTER N FOUND: prints FILE with the number in every BEFORE<digits>AFTER set to N,
 # and writes "line<TAB>number found" to FOUND for each match. Plain text, so BEFORE and AFTER need no escaping.
+# awk ends every line it prints with a newline: a file in DOC_COUNTS must end with one, or each run adds it.
 doc_count() {
     BEFORE="$2" AFTER="$3" N="$4" FOUND="$5" awk '
         BEGIN { b = ENVIRON["BEFORE"]; a = ENVIRON["AFTER"]; n = ENVIRON["N"]; found = ENVIRON["FOUND"]; printf "" > found }
