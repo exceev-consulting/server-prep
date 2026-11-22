@@ -80,7 +80,7 @@ or later (the `/bin/bash` of macOS is too old: install a current bash first).
 
 Every run saves its answers, without the secrets, in `/etc/server-prep/server-prep.conf`, and a re-run from them does
 what the first run did: `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>` asks the
-questions with your answers as the defaults (add `--yes` to skip them, except for the `ssh` step). At a question that
+questions with your answers as the defaults (add `--yes` to skip them). At a question that
 shows `(- = ...)`, type `-` to empty an answer. `DISABLE_SERVICES=none` keeps every service, an empty value disables them
 all. The saved answers can only be read by root: check them with `sudo`, which still changes nothing.
 
