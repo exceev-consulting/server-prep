@@ -20,8 +20,9 @@ CONF="$ROOT/server-prep.conf.example"
 OUT_DIR="$ROOT/site"
 
 # Sentences that give the number of audit checks, one per line: file|text before the number|text after it.
-# Both texts are matched as plain text, so a run changes only the number between them. Each entry must
-# match a line of its file: when a sentence is reworded, update its entry here (--check fails until then).
+# The texts must not contain `|`, which separates the fields. Both are matched as plain text, so a run
+# changes only the number between them. Each entry must match a line of its file: when a sentence is
+# reworded, update its entry here (--check fails until then).
 # A new file here also goes into the tree of the release commit in .github/workflows/release.yml.
 DOC_COUNTS=(
     'README.md|A read-only audit with | checks, a score'
