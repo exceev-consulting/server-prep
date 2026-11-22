@@ -36,6 +36,10 @@ SOFTWARE.
 
 `scripts/check.sh` downloads [ShellCheck](https://github.com/koalaman/shellcheck) into your cache (`${XDG_CACHE_HOME:-~/.cache}/server-prep/`) when version 0.11.0 is not installed. The release is pinned and its SHA-256 is checked. ShellCheck is licensed under **GPL-3.0**, and none of its code is included in this repository.
 
+## bats-core (not bundled)
+
+`scripts/check.sh` downloads [bats-core](https://github.com/bats-core/bats-core) into your cache (`${XDG_CACHE_HOME:-~/.cache}/server-prep/`) to run the unit tests in `tests/unit` when version 1.14.0 is not installed. The source archive of the release tag is pinned and its SHA-256 is checked. bats-core is licensed under **MIT**, and none of its code is included in this repository.
+
 ## Ideas
 
 [vps-secure](https://github.com/rockballslab/vps-secure) inspired some of the security choices. No code is copied from it.
