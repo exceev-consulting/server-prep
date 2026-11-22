@@ -317,6 +317,7 @@ mkdir "$tmp/docs"
 : > "$tmp/stale"
 for entry in "${DOC_COUNTS[@]}"; do
     IFS='|' read -r f before after <<<"$entry"
+    [[ -n $before && -n $after ]] || die "DOC_COUNTS entry '$entry': the texts before and after the number must not be empty"
     copy="$tmp/docs/${f//\//_}"
     if [[ ! -e $copy ]]; then
         [[ -f $ROOT/$f ]] || die "$f is missing: it holds the audit check count (DOC_COUNTS)"
