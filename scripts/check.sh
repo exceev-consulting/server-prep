@@ -2,8 +2,10 @@
 # check.sh - run the lint checks of CI on your machine: syntax, ShellCheck, --help, site data,
 # design tokens, the quick tests and the committed-file guard. It runs the checks of
 # .github/workflows/lint.yml, with ShellCheck pinned to 0.11.0 (CI may use another ShellCheck
-# version until lint.yml runs this script). It never calls sudo, needs no root and changes nothing
-# on the system.
+# version until lint.yml runs this script). Besides those, it runs the unit tests of tests/unit
+# with a pinned bats-core. No CI job runs them yet: the maintainer adds a "Unit tests" step that
+# runs `./scripts/check.sh --only tests` to the lint job of .github/workflows/lint.yml (#37). It
+# never calls sudo, needs no root and changes nothing on the system.
 #
 # Usage:
 #   scripts/check.sh                    run every section
@@ -24,6 +26,8 @@
 #   swap          tests/swap.sh: swap file creation with fake commands
 #   e2e-report    tests/e2e-report.sh: the e2e report builder on fake results (needs jq)
 #   e2e-pages     tests/e2e-pages.sh: the e2e pages builder with a stub gh (needs jq, unzip, python3)
+#   tests         bats tests/unit: unit tests of the server-prep.sh helpers, with the pinned bats-core
+#                 (needs ssh-keygen); no CI job runs it yet
 #   consistency   scripts/check-consistency.sh: steps, README step table, config example, saved answers, questions and audit checks agree
 #   security      scripts/check-files.sh: no report, filled config, key or CLAUDE.local.md is tracked,
 #                 every IPv4 address is an example (needs git and .git; reads the staged copy: run it after
@@ -34,6 +38,11 @@
 # ${XDG_CACHE_HOME:-~/.cache}/server-prep/. Its SHA-256 is checked on every run, then ShellCheck is
 # unpacked into a temporary folder and run from there. A checksum mismatch stops the script.
 #
+# bats-core: the tests section uses bats-core 1.14.0. A bats on PATH is used only when it is that
+# version. Otherwise the source archive of the release tag is downloaded once to the same cache
+# folder. Its SHA-256 is checked on every run, then bats-core is unpacked into a temporary folder
+# and run from there. A checksum mismatch stops the script.
+#
 # Needs bash 5, curl, tar and sha256sum (or shasum on macOS). Some sections also need jq, ssh-keygen,
 # unzip, python3 and git (see the list above). When one is missing, the sections that need it show
 # SKIP on your machine; CI has them all, and there a missing one is a FAIL. The same goes for .git:
@@ -42,9 +51,9 @@
 # CI; the other sections may need the GNU tools.
 #
 # Exit status: 0 every section passed or was skipped, 1 a section failed, 2 a usage error, bash
-# older than 5, or no verified ShellCheck.
+# older than 5, or no verified ShellCheck or bats-core.
 #
-# Add a section (tests #37, docs #39): one line in SECTIONS and one
+# Add a section (docs #39): one line in SECTIONS and one
 # section_<name> function (a dash in the name becomes an underscore).
 if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ]; then echo "bash 5 needed (macOS: brew install bash)" >&2; exit 2; fi
 set -euo pipefail
@@ -61,6 +70,12 @@ declare -A SHELLCHECK_SHA256=(
     [darwin.x86_64]="c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51"
     [darwin.aarch64]="339b930feb1ea764467013cc1f72d09cd6b869ebf1013296ba9055ab2ffbd26f"
 )
+# bats-core (https://github.com/bats-core/bats-core, MIT) is downloaded on first use, never bundled.
+# Its releases have no assets, so the pin is the SHA-256 of GitHub's source archive of the tag
+# (archive/refs/tags/vX.Y.Z.tar.gz), cross-checked with Homebrew's bats-core formula. Update the
+# version and the hash together.
+BATS_VERSION="1.14.0"
+BATS_SHA256="bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9177"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/server-prep"
 
 # The files of the Syntax and ShellCheck steps of .github/workflows/lint.yml, in the same order.
@@ -87,6 +102,7 @@ SECTIONS=(
     "swap|-|-|swap file creation with fake commands (tests/swap.sh)"
     "e2e-report|-|jq|the e2e report builder on fake results (tests/e2e-report.sh)"
     "e2e-pages|-|jq unzip python3|the e2e pages builder with a stub gh (tests/e2e-pages.sh)"
+    "tests|-|ssh-keygen|unit tests of the server-prep.sh helpers, with the pinned bats-core $BATS_VERSION (bats tests/unit)"
     "consistency|-|-|steps, README, config example, saved answers, questions and audit agree (scripts/check-consistency.sh)"
     "security|ci:.git|git|no forbidden file is tracked, every IPv4 address is an example (scripts/check-files.sh)"
 )
@@ -200,6 +216,61 @@ find_shellcheck() {
     SHELLCHECK="$WORK/shellcheck-v$v/shellcheck"
 }
 
+# --- bats-core ---------------------------------------------------------------
+
+# Sets BATS to bats-core $BATS_VERSION: the copy on PATH when it is that version, otherwise the
+# pinned source archive from the cache (downloaded first when missing), whose SHA-256 is checked in
+# this run before it is unpacked into $WORK. Stops with exit 2 when there is none: it never falls
+# back to another bats.
+find_bats() {
+    local v="$BATS_VERSION" want="$BATS_SHA256" path_version archive url tmp got
+    if command -v bats >/dev/null 2>&1; then
+        path_version="$(bats --version 2>/dev/null)" || path_version=""
+        if [[ $path_version == "Bats $v" ]]; then
+            BATS="$(command -v bats)"
+            return 0
+        fi
+        path_version="${path_version#Bats }"
+        echo "bats on PATH is version ${path_version:-unknown}, not $v: using the pinned bats-core $v"
+    fi
+
+    command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 \
+        || die "sha256sum or shasum needed to check bats-core: install coreutils, or install bats-core $v on PATH"
+    command -v tar >/dev/null 2>&1 || die "tar needed to unpack bats-core: install tar, or install bats-core $v on PATH"
+
+    archive="$CACHE_DIR/bats-core-v$v.tar.gz"
+    url="https://github.com/bats-core/bats-core/archive/refs/tags/v$v.tar.gz"
+    if [[ ! -f $archive ]]; then
+        command -v curl >/dev/null 2>&1 || die "curl needed to download bats-core $v: install curl, or install bats-core $v on PATH"
+        mkdir -p "$CACHE_DIR"
+        echo "Downloading bats-core $v to $CACHE_DIR"
+        # a temporary file in the same folder, renamed once checked (see find_shellcheck)
+        tmp="$(mktemp "$CACHE_DIR/.bats-download.XXXXXX")"
+        DOWNLOAD_TMP="$tmp"
+        if ! curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 33554432 --retry 3 \
+                --connect-timeout 20 -o "$tmp" "$url"; then
+            rm -f "$tmp"
+            die "could not download bats-core $v ($url): check the network, or install bats-core $v on PATH; other sections still run with --only <section>"
+        fi
+        got="$(sha256_of "$tmp")"
+        if [[ $got != "$want" ]]; then
+            rm -f "$tmp"
+            die "checksum mismatch for $url: expected $want, got $got"
+        fi
+        mv -f "$tmp" "$archive"
+        DOWNLOAD_TMP=""
+    fi
+
+    # Check the bytes that will run, on every run: a copy of the cached archive, unpacked here.
+    cp "$archive" "$WORK/bats-core.tar.gz"
+    got="$(sha256_of "$WORK/bats-core.tar.gz")"
+    [[ $got == "$want" ]] \
+        || die "cached $archive fails its SHA-256 check (expected $want, got $got): delete it and run again to download it again"
+    tar -xzf "$WORK/bats-core.tar.gz" -C "$WORK" "bats-core-$v/bin" "bats-core-$v/lib" "bats-core-$v/libexec" \
+        || die "could not unpack bats-core-$v from $archive"
+    BATS="$WORK/bats-core-$v/bin/bats"
+}
+
 # --- Sections ----------------------------------------------------------------
 # Each section runs from the repo root with its output in a log, and sets DETAIL for its OK/FAIL line.
 # They run in an `if`, where set -e is off, so each one returns its failure itself.
@@ -258,6 +329,11 @@ section_e2e_pages() {
     bash tests/e2e-pages.sh
 }
 
+section_tests() {
+    DETAIL="bats-core $BATS_VERSION, tests/unit"
+    "$BATS" tests/unit
+}
+
 section_consistency() {
     DETAIL="scripts/check-consistency.sh"
     bash scripts/check-consistency.sh
@@ -305,6 +381,12 @@ trap 'rm -rf "$WORK"; [[ -z $DOWNLOAD_TMP ]] || rm -f "$DOWNLOAD_TMP"' EXIT
 SHELLCHECK=""
 if [[ -z $ONLY || $ONLY == lint ]]; then
     find_shellcheck
+fi
+BATS=""
+# Only when the tests section can run: without ssh-keygen the loop below shows it as SKIP (FAIL in
+# CI) before calling it, so bats-core is not downloaded for nothing.
+if [[ -z $ONLY || $ONLY == tests ]] && command -v ssh-keygen >/dev/null 2>&1; then
+    find_bats
 fi
 
 line() {   # line STATUS NAME [DETAIL]
