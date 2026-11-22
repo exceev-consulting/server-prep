@@ -296,11 +296,25 @@ grep -q "empty DISABLE_SERVICES, which means every service listed above.*With --
 $got"
 got="$(old_answers_run "$tmp/old-answers.conf" telegram)"
 [[ $(grep -c . <<< "$got") -eq 2 && "$got" == *"set DISABLE_SERVICES=none in /etc/server-prep/server-prep.conf" ]] ||
-    fail "the to-do from old answers with --only telegram (the answers get the whole list) is:
+    fail "the to-do from old answers with --only telegram (the answers keep the empty value) is:
 $got"
 # without the services step the run disables nothing: the warning does not say it does
 grep -q 'With --yes the run goes on: if you kept them' "$tmp/plan" && ! grep -q 'disables them' "$tmp/plan" ||
     fail "the plan from old answers with --only telegram does not say that the run goes on without disabling the services" "$tmp/plan"
+# save_answers keeps the empty value when the services step did not run, so the next run with it warns again;
+# after a run of the services step, the answers list what it disabled (every candidate).
+for only in telegram services; do
+    rm -rf "$tmp/old-saved"; mkdir -p "$tmp/old-saved"
+    env -i PATH="$PATH" bash -c '
+        . "$1" --config "$2" --yes --only "$4"
+        LOG_FILE="$3/old.log" CURRENT_SSH_PORTS=22 IS_LAPTOP=0 DRY_RUN=0 CONF_DIR="$3/old-saved"
+        summary_and_confirm > "$3/plan" 2>&1 && save_answers' _ "$SCRIPT" "$tmp/old-answers.conf" "$tmp" "$only" > /dev/null 2>&1 ||
+        fail "a --yes run from old answers with --only $only did not save its answers" "$tmp/plan"
+    want="DISABLE_SERVICES=''"
+    [[ $only == services ]] && want="DISABLE_SERVICES=$(printf '%q' "$SERVICE_CANDIDATES")"
+    grep -qxF "$want" "$tmp/old-saved/server-prep.conf" ||
+        fail "after a --yes run from old answers with --only $only, the saved answers hold $(grep '^DISABLE_SERVICES=' "$tmp/old-saved/server-prep.conf"), want $want"
+done
 # With no allowed SSH source and only the panel's public IP, Proceed? defaults to no and a --yes run stops
 # there: the warning says so, not that the run goes on and disables them. --yes --force goes on, and says it.
 sed -e "s/^PANEL_ACCESS=.*/PANEL_ACCESS=public\nPANEL_IP=198.51.100.2\nADMIN_IPS=''/" "$tmp/old-answers.conf" > "$tmp/old-lockout.conf"

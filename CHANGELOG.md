@@ -42,7 +42,8 @@ Highlights of each release. The full list of merged pull requests is in each
   `--yes` run stops there before any change: add your IP or network to `ADMIN_IPS`, or use `--yes --force` only with a
   console at hand. Answers saved by 1.1.1 or older hold an empty `DISABLE_SERVICES` when you kept every service: set
   `DISABLE_SERVICES=none` there before a `--yes` re-run. `--validate`, the plan and the to-do of a run from those
-  answers say so, and the questions warn before the first service.
+  answers say so, and the questions warn before the first service. A `--yes` run without the `services` step keeps
+  that empty value in the answers, so the next run with it still warns.
 - `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
   reports (`kern.suid`, `kern.world_writable`, `net.exposure`) no longer makes the `--json` report invalid or reaches
   your terminal as an escape sequence. Any local user can create such a name. The JSON report writes these characters

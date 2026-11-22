@@ -1464,7 +1464,8 @@ EOF
         how="With --yes the run stops here (Proceed? keeps its default, no): add your IP or network to ADMIN_IPS, or use --yes --force only with a console at hand (--validate warns about this before a run)"
     fi
     # Answers saved by 1.1.1 or older, read with --yes (the questions warn at a terminal): this run reads the
-    # empty value as every candidate, and save_answers then lists them all, so say it here and in the to-do.
+    # empty value as every candidate, so say it here and in the to-do. save_answers then lists them all when
+    # the services step runs, and keeps the empty value otherwise, so the next run warns again.
     # Proceed? keeps its default, so the run does not wait here: say what it does, not to press Ctrl-C. It
     # goes on (default yes, or --force), or stops at Proceed? on the lockout above, before it disables anything.
     if [[ $OLD_EMPTY_SERVICES -eq 1 ]]; then
@@ -1484,7 +1485,10 @@ EOF
 
 save_answers() {
     [[ $DRY_RUN -eq 1 ]] && return 0
-    local f="$CONF_DIR/server-prep.conf"
+    local f="$CONF_DIR/server-prep.conf" services="$DISABLE_SERVICES"
+    # Answers saved by 1.1.1 or older with an empty DISABLE_SERVICES, on a --yes run without the services
+    # step: keep it empty, so the next run with that step still warns (this run read it as every candidate).
+    [[ $OLD_EMPTY_SERVICES -eq 1 ]] && ! step_selected services && services=""
     {
         echo "# server-prep answers - ${TS} - reuse with: --config $f --yes"
         # AUDIT_SCRIPT (found at run time by preflight) and AUDIT_URL (a re-run would fetch and run the
@@ -1494,7 +1498,7 @@ save_answers() {
                  TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT \
                  AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF \
                  TELEGRAM_ENABLE TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS SWAP_SIZE PTRACE_SCOPE; do
-            printf '%s=%q\n' "$v" "${!v}"
+            if [[ $v == DISABLE_SERVICES ]]; then printf '%s=%q\n' "$v" "$services"; else printf '%s=%q\n' "$v" "${!v}"; fi
         done
         echo "# secrets (CLOUDFLARED_TOKEN, TELEGRAM_BOT_TOKEN, CROWDSEC_ENROLL_KEY) are not saved here"
     } > "$f"
