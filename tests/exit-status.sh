@@ -283,18 +283,38 @@ fi
 printf 'ok: step_telegram refuses a malformed bot token\n'
 
 # The answers file never holds the bot token: a re-run with --yes and no token keeps
-# the one already installed in telegram.env.
+# the one already installed in telegram.env, quoted or not (issue #74), and never shows it
+# on the screen, in the run log or in the report's notes.
 CONF_DIR="$tmp/conf"
 mkdir -p "$CONF_DIR"
-printf 'TELEGRAM_BOT_TOKEN=123456:installed-token\nTELEGRAM_CHAT_ID=42\n' > "$CONF_DIR/telegram.env"
-rm -f "$tmp"/written-*
-TELEGRAM_BOT_TOKEN=''
-if ! step_telegram >/dev/null 2>&1 ||
-   ! grep -qxF 'TELEGRAM_BOT_TOKEN=123456:installed-token' "$tmp/written-telegram.env" 2>/dev/null; then
-    printf 'not ok: step_telegram does not keep the installed bot token on a re-run without one\n'
+for line in 'TELEGRAM_BOT_TOKEN=123456:installed-token' 'TELEGRAM_BOT_TOKEN="123456:installed-token"' \
+            "TELEGRAM_BOT_TOKEN='123456:installed-token'"; do
+    printf '%s\nTELEGRAM_CHAT_ID=42\n' "$line" > "$CONF_DIR/telegram.env"
+    rm -f "$tmp"/written-*
+    : > "$LOG_FILE"
+    TELEGRAM_BOT_TOKEN='' STEP_NOTES=''
+    if ! step_telegram > "$tmp/telegram-out" 2>&1 ||
+       ! grep -qxF 'TELEGRAM_BOT_TOKEN=123456:installed-token' "$tmp/written-telegram.env" 2>/dev/null; then
+        printf 'not ok: step_telegram does not keep the installed bot token (%s) on a re-run without one\n' "$line"
+        exit 1
+    fi
+    if grep -qF installed-token "$tmp/telegram-out" "$LOG_FILE" || [[ "$STEP_NOTES" == *installed-token* ]]; then
+        printf 'not ok: step_telegram shows the installed bot token on a re-run\n'
+        exit 1
+    fi
+    [[ "$STEP_NOTES" == "bot token kept from $CONF_DIR/telegram.env; "* ]] || {
+        printf 'not ok: step_telegram does not say it kept the installed bot token: %s\n' "$STEP_NOTES"
+        exit 1
+    }
+done
+# No token given and none installed: the step fails and says how to give one.
+rm -f "$CONF_DIR/telegram.env" "$tmp"/written-*
+TELEGRAM_BOT_TOKEN='' STEP_NOTES=''
+if step_telegram >/dev/null 2>&1 || compgen -G "$tmp/written-*" >/dev/null || [[ "$STEP_NOTES" != 'bot token missing'* ]]; then
+    printf 'not ok: step_telegram without a bot token gives: %s\n' "$STEP_NOTES"
     exit 1
 fi
-printf 'ok: step_telegram keeps the installed bot token on a re-run without one\n'
+printf 'ok: step_telegram keeps the installed bot token on a re-run without one, and never shows it\n'
 
 # step_firewall: a re-run that changes nothing is "OK (already)" and reloads nothing, a
 # ufw-docker failure fails the step, and a missing CrowdSec rule in DOCKER-USER restarts the
@@ -539,6 +559,8 @@ bash "$SCRIPT_DIR/tests/preconfig-network.sh" || exit 1
 
 # ... and the --validate test on a good config and broken ones (issue #17).
 bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
+# ... and the saved answers: a re-run from them repeats the first run, - empties an answer (issue #74).
+bash "$SCRIPT_DIR/tests/saved-answers.sh" || exit 1
 # ... and the audit's UFW port matcher test (issue #78).
 bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
 # ... and the audit on a server set to French: ufw and free read in English (issue #197).
@@ -580,6 +602,8 @@ bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
 bash "$SCRIPT_DIR/tests/e2e-prep-rerun.sh" || exit 1
 # ... and how the e2e harness picks its cloud image: Debian's dated build folders (issue #212).
 bash "$SCRIPT_DIR/tests/e2e-images.sh" || exit 1
+# ... and the number of audit checks that scripts/gen-data.sh writes into README.md and the wiki (issue #225).
+bash "$SCRIPT_DIR/tests/gen-data-counts.sh" || exit 1
 # ... and the committed-file guard (issue #40): on this repository first, so CI fails on a tracked
 # report, filled config or key, or an IPv4 address that is not an example; then on temp repos.
 bash "$SCRIPT_DIR/tests/check-files.sh" || exit 1

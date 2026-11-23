@@ -78,7 +78,7 @@ window.SERVER_PREP_DATA = {
       "name": "services",
       "title": "Unneeded services",
       "gate": null,
-      "details": "disable avahi, cups, bluetooth, ModemManager; mask Ctrl-Alt-Del; optional headless boot"
+      "details": "disable the desktop services you choose (avahi, cups, bluetooth, ModemManager, apport); mask Ctrl-Alt-Del; optional headless boot"
     },
     {
       "name": "laptop",
@@ -373,7 +373,7 @@ window.SERVER_PREP_DATA = {
       "name": "DISABLE_SERVICES",
       "example": "avahi-daemon cups cups-browsed bluetooth ModemManager apport",
       "default": null,
-      "comment": null,
+      "comment": "none = disable nothing; empty = all of these",
       "help": null,
       "saved": true,
       "secret": false

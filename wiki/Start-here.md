@@ -173,7 +173,7 @@ If a FAIL is left, re-run only that step with the saved answers:
 sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>
 ```
 
-The saved answers become the defaults, so you can press Enter at each question. For any step except `ssh`, you can add `--yes` to skip the questions. The step names are listed by `sudo ./server-prep.sh --list-steps`. See [Troubleshooting](Troubleshooting) for known problems.
+The saved answers become the defaults, so you can press Enter at each question. At a question that shows `(- = ...)`, type `-` to empty an answer, for example the extra ports: on the next re-run, Enter keeps it empty. Removing a port or an SSH source does not delete the firewall rule an earlier run added: the run's to-do names it, with the command to delete it. You can add `--yes` to skip the questions: the `ssh` step then checks the login on the server itself before it closes the old port. The step names are listed by `sudo ./server-prep.sh --list-steps`. See [Troubleshooting](Troubleshooting) for known problems.
 
 ## 10. Connect the panel
 

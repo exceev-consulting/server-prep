@@ -68,7 +68,8 @@ root. See [docs/e2e-tests.md](docs/e2e-tests.md).
    `tests/exit-status.sh` also runs the other quick tests in `tests/`: the audit tests (`audit-*.sh`; `audit-json.sh`
    checks the audit's JSON keys and schema, and every check id in its category's table in `docs/json-output.md`;
    `audit-locale.sh` runs the audit's ufw and free checks on a server set to French, with fake ufw and free),
-   `preconfig-json.sh`, `validate-config.sh`, `upgrade.sh`, `skills-sync.sh`, `report-json.sh`, `labels.sh`
+   `preconfig-json.sh`, `validate-config.sh`, `saved-answers.sh` (a re-run from the saved answers repeats the first run),
+   `upgrade.sh`, `skills-sync.sh`, `report-json.sh`, `labels.sh`
    (`.github/labels.yml`, then broken copies of it), `check-files.sh` (the committed-file guard on this
    repository, then on temp repos) and `check-consistency.sh` (the consistency check on this repository, then on
    broken copies; `./scripts/check.sh` therefore runs it twice, which takes well under a second).
@@ -123,7 +124,8 @@ If you use [Claude Code](https://claude.com/claude-code) or Codex, the `add-step
 The [setup console](https://server-prep.exceev.com/) is `site/index.html`, a static page published
 with GitHub Pages by `.github/workflows/pages.yml`. Its data (`site/data.json`, `site/data.js`) is generated from the
 scripts, the README tables and `server-prep.conf.example` by `scripts/gen-data.sh`. CI fails when the data is out of date,
-so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result.
+so after changing a step, a setting or an audit check, run `scripts/gen-data.sh` (needs `jq`) and commit the result. It also
+writes the number of audit checks into `README.md` and the wiki pages that give it.
 
 Colours, type, radii and spacing are the tokens in `site/tokens.css`, shared with the
 [brand guidelines](https://server-prep.exceev.com/brand/) (`site/brand/`). Use a token instead of a new

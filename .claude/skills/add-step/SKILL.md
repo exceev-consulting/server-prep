@@ -33,7 +33,7 @@ Use the Telegraf step as the reference implementation: `grep -n -i telegraf serv
     - list the id in `docs/json-output.md`, in its category's table (`tests/audit-json.sh` fails otherwise);
     - a `# step: x` comment on the line above the check (its `if` block or its `result` call), so `scripts/check-consistency.sh` maps the step to it; a step with no check on purpose goes in `NO_AUDIT_CHECK` in that script, with a reason.
 11. **`AGENTS.md`**: if you hit a non-obvious problem, add it to *Hard-won gotchas*.
-12. **Site data**: run `scripts/gen-data.sh` and commit `site/data.json` and `site/data.js`. CI runs `scripts/gen-data.sh --check`, so a new step, setting or audit check fails the build until the data is regenerated.
+12. **Site data**: run `scripts/gen-data.sh` and commit `site/data.json` and `site/data.js`, and the `README.md` and `wiki/` pages it changes when you add or remove an audit check (they give the number of checks). CI runs `scripts/gen-data.sh --check`, so a new step, setting or audit check fails the build until the data is regenerated.
 
 ## Rules
 - **Third-party apt repo:**
