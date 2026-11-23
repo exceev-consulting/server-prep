@@ -598,6 +598,8 @@ bash "$SCRIPT_DIR/tests/labels.sh" || exit 1
 bash "$SCRIPT_DIR/tests/e2e-prep-rerun.sh" || exit 1
 # ... and how the e2e harness picks its cloud image: Debian's dated build folders (issue #212).
 bash "$SCRIPT_DIR/tests/e2e-images.sh" || exit 1
+# ... and the number of audit checks that scripts/gen-data.sh writes into README.md and the wiki (issue #225).
+bash "$SCRIPT_DIR/tests/gen-data-counts.sh" || exit 1
 # ... and the committed-file guard (issue #40): on this repository first, so CI fails on a tracked
 # report, filled config or key, or an IPv4 address that is not an example; then on temp repos.
 bash "$SCRIPT_DIR/tests/check-files.sh" || exit 1

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # gen-data.sh - extract steps, settings, panels, access routes and audit checks from the scripts
-# into site/data.json and site/data.js, the data behind the setup console (site/index.html).
+# into site/data.json and site/data.js, the data behind the setup console (site/index.html), and
+# write the number of audit checks into the sentences of README.md and the wiki that give it.
 # Run it after changing a script, the README step/VPS/guides tables or server-prep.conf.example.
 #
-#   scripts/gen-data.sh            write site/data.json and site/data.js
+#   scripts/gen-data.sh            write site/data.json, site/data.js and the audit check count
 #   scripts/gen-data.sh --check    exit 1 when the committed files are out of date (CI)
 #
 # Needs bash, awk and jq. Output is deterministic (no timestamps), so CI can diff it.
@@ -17,6 +18,18 @@ PRECONFIG="$ROOT/server-preconfig.sh"
 README="$ROOT/README.md"
 CONF="$ROOT/server-prep.conf.example"
 OUT_DIR="$ROOT/site"
+
+# Sentences that give the number of audit checks, one per line: file|text before the number|text after it.
+# The texts must not contain `|`, which separates the fields. Both are matched as plain text, so a run
+# changes only the number between them. Each entry must match a line of its file: when a sentence is
+# reworded, update its entry here (--check fails until then).
+# A new file here also goes into the tree of the release commit in .github/workflows/release.yml.
+DOC_COUNTS=(
+    'README.md|A read-only audit with | checks, a score'
+    'wiki/Concepts.md|`server-audit.sh` has | checks (some run only where they apply)'
+    'wiki/Architecture.md|There are | checks in '
+    'wiki/Architecture.md|settings, | audit checks)'
+)
 
 CHECK=0
 case "${1:-}" in
@@ -195,6 +208,27 @@ guides_tsv() {
     ' "$README"
 }
 
+# --- the audit check count in the docs (DOC_COUNTS) -----------------------------
+# doc_count FILE BEFORE AFTER N FOUND: prints FILE with the number in every BEFORE<digits>AFTER set to N,
+# and writes "line<TAB>number found" to FOUND for each match. Plain text, so BEFORE and AFTER need no escaping.
+# awk ends every line it prints with a newline: a file in DOC_COUNTS must end with one, or each run adds it.
+doc_count() {
+    BEFORE="$2" AFTER="$3" N="$4" FOUND="$5" awk '
+        BEGIN { b = ENVIRON["BEFORE"]; a = ENVIRON["AFTER"]; n = ENVIRON["N"]; found = ENVIRON["FOUND"]; printf "" > found }
+        {
+            s = $0; out = ""
+            while ((i = index(s, b)) > 0) {
+                out = out substr(s, 1, i - 1 + length(b)); s = substr(s, i + length(b))
+                if (match(s, /^[0-9]+/) && substr(s, RLENGTH + 1, length(a)) == a) {
+                    printf "%d\t%s\n", FNR, substr(s, 1, RLENGTH) > found
+                    out = out n; s = substr(s, RLENGTH + 1)
+                }
+            }
+            print out s
+        }
+    ' "$1"
+}
+
 tsv_json() {   # tsv_json "field1 field2 ..." < tsv -> JSON array of objects (empty fields -> null)
     jq -R --arg keys "$1" '
         ($keys | split(" ")) as $k | split("\t") as $v
@@ -277,6 +311,33 @@ printf '%s\n' "$json" > "$tmp/data.json"
     printf 'window.SERVER_PREP_DATA = %s;\n' "$json"
 } > "$tmp/data.js"
 
+# The docs with the count: each file is copied to $tmp/docs once, and every entry for it edits that copy.
+# $tmp/stale gets "file:line<TAB>number" for each sentence that holds another number than $checks.
+checks="$(count '.audit.checks')"
+doc_files=() lost=0
+mkdir "$tmp/docs"
+: > "$tmp/stale"
+for entry in "${DOC_COUNTS[@]}"; do
+    IFS='|' read -r f before after <<<"$entry"
+    [[ -n $before && -n $after ]] || die "DOC_COUNTS entry '$entry': the texts before and after the number must not be empty"
+    copy="$tmp/docs/${f//\//_}"
+    if [[ ! -e $copy ]]; then
+        [[ -f $ROOT/$f ]] || die "$f is missing: it holds the audit check count (DOC_COUNTS)"
+        cp "$ROOT/$f" "$copy"
+        doc_files+=("$f")
+    fi
+    doc_count "$copy" "$before" "$after" "$checks" "$tmp/found" > "$copy.new"
+    mv "$copy.new" "$copy"
+    if [[ ! -s $tmp/found ]]; then
+        echo "gen-data: $f: no line holds \"${before}<number>${after}\": put the sentence back, or update its DOC_COUNTS entry in scripts/gen-data.sh" >&2
+        lost=1
+    fi
+    while IFS=$'\t' read -r line n; do
+        [[ $n == "$checks" ]] || printf '%s:%s\t%s\n' "$f" "$line" "$n" >> "$tmp/stale"
+    done < "$tmp/found"
+done
+[[ $lost -eq 0 ]] || exit 1
+
 if [[ $CHECK -eq 1 ]]; then
     rc=0
     for f in data.json data.js; do
@@ -286,9 +347,19 @@ if [[ $CHECK -eq 1 ]]; then
             rc=1
         fi
     done
+    while IFS=$'\t' read -r at n; do
+        echo "$at: says $n audit checks, server-audit.sh has $checks: run scripts/gen-data.sh and commit the result" >&2
+        rc=1
+    done < "$tmp/stale"
     exit $rc
 fi
 
 mkdir -p "$OUT_DIR"
 cp "$tmp/data.json" "$tmp/data.js" "$OUT_DIR/"
-echo "wrote site/data.json and site/data.js ($(count '.steps | length') steps, $(count '.settings | length') settings, $(count '.audit.checks') audit checks)"
+echo "wrote site/data.json and site/data.js ($(count '.steps | length') steps, $(count '.settings | length') settings, $checks audit checks)"
+for f in "${doc_files[@]}"; do   # cat, not cp or mv: the file keeps its mode
+    cmp -s "$tmp/docs/${f//\//_}" "$ROOT/$f" || cat "$tmp/docs/${f//\//_}" > "$ROOT/$f"
+done
+while IFS=$'\t' read -r at n; do
+    echo "updated $at: $n -> $checks audit checks"
+done < "$tmp/stale"
