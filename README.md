@@ -76,8 +76,13 @@ names the check: finish with an interactive run of `--only ssh,endlessh`. This c
 server (a cloud security group) or the key on your computer, so make the first run on a server interactive.
 Check the file first, no root needed: `./server-prep.sh --config web-01.conf --validate` reads it without running it
 and prints one line per problem, with its line number and what to do. It runs on Linux, or on any machine with bash 4
-or later (the `/bin/bash` of macOS is too old: install a current bash first). The saved answers in `/etc/server-prep/` can
-only be read by root: check them with `sudo`, which still changes nothing.
+or later (the `/bin/bash` of macOS is too old: install a current bash first).
+
+Every run saves its answers, without the secrets, in `/etc/server-prep/server-prep.conf`, and a re-run from them does
+what the first run did: `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>` asks the
+questions with your answers as the defaults (add `--yes` to skip them). At a question that
+shows `(- = ...)`, type `-` to empty an answer. `DISABLE_SERVICES=none` keeps every service, an empty value disables them
+all. The saved answers can only be read by root: check them with `sudo`, which still changes nothing.
 
 Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-steps` prints the names).
 An unknown step name is refused. Exit 0 means every selected step completed or was skipped. Exit 1 means
@@ -137,7 +142,7 @@ Both work the same way. Only a few details change:
 | `unattended` | daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot |
 | `sysctl` | ~30 kernel/network parameters, rare protocols blacklisted (Docker/Tailscale compatible) |
 | `auth` | sudo log file (`/var/log/sudo.log`), pwquality minlen 12 + complexity, password dictionary built (`cracklib-runtime`) so `passwd` works |
-| `services` | disable avahi, cups, bluetooth, ModemManager; mask Ctrl-Alt-Del; optional headless boot |
+| `services` | disable the desktop services you choose (avahi, cups, bluetooth, ModemManager, apport); mask Ctrl-Alt-Del; optional headless boot |
 | `laptop` | laptop used as a server: ignore lid close, mask sleep/suspend |
 | `logging` | persistent journald (1 GB cap), swap file if none |
 | `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands; with `PANEL=openship`, Openship's SSH key folders where they exist |
