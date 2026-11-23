@@ -5,7 +5,10 @@
 # installed (a repository published a release between the two runs): the scenario then passes and
 # names the packages in its note. Any other change still fails it. The reports come from the real
 # step_update, run_step and report writers of server-prep.sh, with apt-get, timedatectl and the VM
-# faked. No root, no network and no VM: nothing on the host changes. Needs jq.
+# faked. The scenario then re-runs services, laptop and telegram with --yes from the saved answers
+# (issue #74): the fake VM reads the answers the real save_answers writes from tests/e2e/ci.cfg, and
+# that re-run's reports come from the real run_step and writers too. No root, no network and no VM:
+# nothing on the host changes. Needs jq.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,9 +43,7 @@ fake_run() {
         FAKE_UPGRADES="$2" FAKE_MISSING="$3" FAKE_TZ="$4" FAKE_OTHER="$5"
         # shellcheck disable=SC1091
         . "$ROOT/server-prep.sh" --yes
-        LOG_FILE="$tmp/$1.log" REPORT_FILE="$tmp/$1.md" BACKUP_DIR="$tmp/backups" DRY_RUN=0
-        OS_PRETTY='Debian GNU/Linux 12 (bookworm)' LOCAL_IP=192.168.1.50 CURRENT_SSH_PORTS='822 ' TIMEZONE=UTC
-        unset SUDO_USER
+        fake_host "$1"
         apt-get() {   # -s dist-upgrade lists the upgrades; update, full-upgrade and install do nothing
             [[ " $* " == *" -s dist-upgrade "* ]] && printf '%s' "$FAKE_UPGRADES"
             return 0
@@ -60,6 +61,48 @@ fake_run() {
     ) > "$tmp/$1.out" 2>&1 || fail "the fake run $1 failed: $(cat "$tmp/$1.out")"
     [[ -s "$tmp/$1.md" && -s "$tmp/$1.json" ]] || fail "the fake run $1 wrote no reports: $(cat "$tmp/$1.out")"
 }
+
+# fake_host NAME: after server-prep.sh is sourced, what its report writers read, for the fake run NAME
+fake_host() {
+    LOG_FILE="$tmp/$1.log" REPORT_FILE="$tmp/$1.md" BACKUP_DIR="$tmp/backups" DRY_RUN=0
+    OS_PRETTY='Debian GNU/Linux 12 (bookworm)' LOCAL_IP=192.168.1.50 CURRENT_SSH_PORTS='822 ' TIMEZONE=UTC
+    unset SUDO_USER
+}
+
+# fake_saved_run NAME SERVICES: the reports of the --yes re-run of services, laptop and telegram from
+# the saved answers (issue #74), $tmp/NAME.md and $tmp/NAME.json, from the real run_step and writers.
+#   SERVICES  what the services step does: ok or changed (laptop and telegram are SKIPPED, as in the
+#             VM: no battery, and ci.cfg has TELEGRAM_ENABLE=no)
+fake_saved_run() {
+    (
+        FAKE_SERVICES="$2"
+        # shellcheck disable=SC1091
+        . "$ROOT/server-prep.sh" --yes --only services,laptop,telegram
+        fake_host "$1"
+        step_services() { [[ $FAKE_SERVICES == changed ]] && changed; return 0; }
+        step_laptop() { return "$SKIP_RC"; }
+        step_telegram() { return "$SKIP_RC"; }
+        run_step services "Unneeded services" step_services
+        run_step laptop "Laptop server mode" step_laptop
+        run_step telegram "Telegram alerts" step_telegram
+        write_report && write_report_json
+    ) > "$tmp/$1.out" 2>&1 || fail "the fake run $1 failed: $(cat "$tmp/$1.out")"
+    [[ -s "$tmp/$1.md" && -s "$tmp/$1.json" ]] || fail "the fake run $1 wrote no reports: $(cat "$tmp/$1.out")"
+}
+
+# The saved answers of the first run (issue #74): the real save_answers, with the settings of
+# tests/e2e/ci.cfg. The fake VM reads them in place of /etc/server-prep/server-prep.conf. The copy in
+# saved-old has no LAPTOP_MODE line, as answers saved by 1.1.1 or older.
+mkdir -p "$tmp/saved" "$tmp/saved-old"
+(
+    # shellcheck disable=SC1091
+    . "$ROOT/server-prep.sh" --config "$ROOT/tests/e2e/ci.cfg" --yes
+    CONF_DIR="$tmp/saved" DRY_RUN=0
+    save_answers
+) > "$tmp/saved.out" 2>&1 || fail "save_answers failed: $(cat "$tmp/saved.out")"
+[[ -s "$tmp/saved/server-prep.conf" ]] || fail "save_answers wrote no answers: $(cat "$tmp/saved.out")"
+grep -v '^LAPTOP_MODE=' "$tmp/saved/server-prep.conf" > "$tmp/saved-old/server-prep.conf"
+CANDIDATES="$(sed -n 's/^SERVICE_CANDIDATES="\(.*\)"$/\1/p' "$ROOT/server-prep.sh")"
 
 # dpkg-query output in the VM: status, name, version. rc is a removed package whose config stays.
 dpkg_list() { printf 'ii  %s\n' "$@"; printf 'rc  linux-image-6.1.0-9-amd64 6.1.27-1\n'; }
@@ -89,22 +132,38 @@ mkdir -p "$WORK" "$OUT"
 . "$E2E_DIR/scenarios.sh"
 
 # The VM, faked: dpkg-query answers from $tmp/dpkg-$DPKG (before, then the case's list once the run
-# is done), DOCKER-USER still goes through UFW and CrowdSec, and run_prep hands over the case's reports.
+# is done), DOCKER-USER still goes through UFW and CrowdSec, the command that reads the saved answers
+# runs here on $SAVED_DIR/server-prep.conf in a clean environment, as root's would, and run_prep hands
+# over the case's reports: fake_run CASE for the second run, fake_saved_run SAVED_RUN for the re-run
+# from the saved answers.
 as_root() {
+    local saved=/etc/server-prep/
     case $1 in
         *dpkg-query*) cat "$tmp/dpkg-$DPKG" 2>/dev/null ;;
         *DOCKER-USER*) printf '%s\n' '-N DOCKER-USER' '-A DOCKER-USER -j CROWDSEC_CHAIN' '-A DOCKER-USER -j ufw-user-forward' ;;
+        *"$saved"server-prep.conf*) env -i PATH="$PATH" bash -c "${1//"$saved"/$SAVED_DIR/}" ;;
     esac
 }
 run_prep() {
-    [[ $1 == second ]] || return 0
-    PREP_REPORT="$tmp/$CASE.md" PREP_JSON="$tmp/$CASE.json" DPKG="$AFTER"
-    [[ $NO_JSON == no-json ]] && PREP_JSON=""
+    case $1 in
+        second)
+            PREP_REPORT="$tmp/$CASE.md" PREP_JSON="$tmp/$CASE.json" DPKG="$AFTER"
+            [[ $NO_JSON == no-json ]] && PREP_JSON=""
+            ;;
+        saved-answers) PREP_REPORT="$tmp/$SAVED_RUN.md" PREP_JSON="$tmp/$SAVED_RUN.json" ;;
+    esac
     return 0
 }
 
+# Every case below reads the answers of save_answers and gets a re-run from them that changes
+# nothing, unless it sets SAVED_DIR or SAVED_RUN.
+SAVED_DIR="$tmp/saved" SAVED_RUN=saved-ok
+fake_saved_run saved-ok ok
+
 # rerun CASE AFTER [no-json]: sc_prep_rerun on the reports of fake_run CASE, with the packages of
-# $tmp/dpkg-AFTER once the run is done. Sets STATUS, REASON and DETAIL (of the step check).
+# $tmp/dpkg-AFTER once the run is done. The saved answers are $SAVED_DIR/server-prep.conf and the
+# re-run from them gives the reports of fake_saved_run $SAVED_RUN. Sets STATUS, REASON and DETAIL
+# (of the step check).
 rerun() {
     CASE="$1" AFTER="$2" NO_JSON="${3:-}" DPKG=before
     : > "$WORK/scenarios.jsonl"
@@ -136,6 +195,9 @@ pass "pkg_moves fails when a list was not read"
 fake_run nothing "" "" UTC ok
 rerun nothing before
 expect_eq "nothing changed: the scenario passes without a note" "$STATUS|$REASON|$DETAIL" "passed||ok: "
+expect_eq "the scenario checks the saved answers and the re-run from them (issue #74)" \
+    "$(jq -r '[.assertions[] | select(.name | test("saved.answers")) | if .ok then "ok" else "not ok" end] | join(" ")' \
+        "$WORK/scenarios.jsonl")" "ok ok ok ok"
 
 fake_run compose "$INST_COMPOSE" "" UTC ok
 expect_eq "the real step_update notes the upgrade in the JSON report" \
@@ -204,6 +266,20 @@ pass "the scenario log says when a package list could not be read"
 
 printf '[{"step":"update","label":"System update & base packages","result":"FAILED"}]\n' > "$tmp/failed-steps.json"
 expect_eq "steps_moved never leaves out a FAILED step" "$(steps_moved "$tmp/failed-steps.json" update)" "update FAILED"
+
+# --- the re-run from the saved answers (issue #74) -----------------------------------------------------
+SAVED_DIR="$tmp/saved-old"
+rerun nothing before
+SAVED_DIR="$tmp/saved"
+expect_eq "saved answers without LAPTOP_MODE (1.1.1 or older) fail the scenario" "$STATUS|$REASON" \
+    "failed|the saved answers keep DISABLE_SERVICES and LAPTOP_MODE of ci.cfg: got '$CANDIDATES|', want '$CANDIDATES|auto'"
+
+fake_saved_run saved-changed changed
+SAVED_RUN="saved-changed"
+rerun nothing before
+SAVED_RUN="saved-ok"
+expect_eq "a --yes re-run from the saved answers that changes the services step fails the scenario" "$STATUS|$REASON" \
+    "failed|from the saved answers, services, laptop and telegram are OK (already) or SKIPPED: services CHANGED"
 
 # --- notes in the scenario record ---------------------------------------------------------------------
 : > "$WORK/scenarios.jsonl"
