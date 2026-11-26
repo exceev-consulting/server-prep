@@ -136,6 +136,14 @@ setup; put sshd_config.d/00-a.conf 'Match Address 192.0.2.0/24
     PermitRootLogin yes
     PasswordAuthentication yes'
 expect 'lines after a Match are conditional, not global' ''
+put sshd_config.d/00-dokploy.conf "$DOKPLOY"
+expect "a Match ends with its file: the next drop-in starts global, so Dokploy's lines count" \
+    "00-dokploy.conf is read first and sets PermitRootLogin prohibit-password$KEEP"
+setup; put sshd_config.d/00-a.conf 'Match User deploy
+    PasswordAuthentication yes
+Match all
+PermitRootLogin yes'
+expect "sshd reads the lines after 'Match all' as global" "00-a.conf is read first and sets PermitRootLogin yes$KEEP"
 
 setup; put sshd_config.d/00-a.conf 'Port 822
 Port 2222
@@ -271,6 +279,26 @@ $GLOB"; put extra.conf 'Match User deploy
     PermitRootLogin yes'
 expect 'a Match in an included file ends with it: the main file goes on with global lines' \
     "sshd_config sets MaxAuthTries 6 before its Include line$KEEP"
+
+# An Include inside a Match block: sshd reads its files for that Match only (sshd -T -C user=git)
+setup; put sshd_config "Match User git
+    Include /etc/ssh/git.conf
+    PermitRootLogin yes
+Match all
+$GLOB"; put git.conf 'PasswordAuthentication yes'
+expect 'an Include in a Match block is conditional, like the lines around it' ''
+put sshd_config "Match User git
+    Include /etc/ssh/sshd_config.d/00-a.conf
+Match all
+$GLOB"; put sshd_config.d/00-a.conf 'MaxAuthTries 6'
+expect 'a file read in a Match block, then by the glob: the second read is global and counts' \
+    "00-a.conf is read first and sets MaxAuthTries 6$KEEP"
+setup; put sshd_config "Match all
+Include extra.conf
+PermitRootLogin yes
+$GLOB"; put extra.conf 'PasswordAuthentication yes'
+expect "an Include and a line after 'Match all' are global" \
+    "extra.conf is read first and sets PasswordAuthentication yes; sshd_config sets PermitRootLogin yes before its Include line$KEEP"
 
 setup; put sshd_config.d/00-a.conf 'Include /etc/ssh/sshd_config.d/00-a.conf
 MaxAuthTries 6'

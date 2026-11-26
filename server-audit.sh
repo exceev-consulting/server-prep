@@ -559,11 +559,14 @@ sshd_grep() {
 # an earlier Include names, even one whose name sorts after it (issue #238). Port and AllowUsers add
 # up instead, so each of their values that OWN lacks counts. Only the keywords server-prep sets that
 # decide who logs in and where (ChallengeResponseAuthentication is KbdInteractiveAuthentication's old
-# name), and only global lines: what follows a Match is conditional, up to the end of its file (an
-# included file starts global). A file read twice counts once. An Include inside an included file is
-# not followed (no stock layout has one). A main file with no Include that reaches
-# 00-server-prep.conf makes sshd read none of its settings: the only line is then
-# "MAIN<TAB>Include<TAB>". Without a readable main file, the stock "Include DIR/*.conf" is assumed.
+# name), and only global lines: what follows a Match other than "Match all" is conditional, up to the
+# next Match or the end of its file. An included file starts as its Include line stands, so the files
+# of an Include in a conditional block are not read; one that reaches 00-server-prep.conf there still
+# ends the walk, as before (sshd refuses the Port line of 00-server-prep.conf in a Match block). A
+# file read twice counts once. An Include inside an included file is not followed (no stock layout
+# has one). A main file with no Include that reaches 00-server-prep.conf makes sshd read none of its
+# settings: the only line is then "MAIN<TAB>Include<TAB>". Without a readable main file, the stock
+# "Include DIR/*.conf" is assumed.
 # OWN is the text server-prep writes (DIR/00-server-prep.conf by default). That file may not exist
 # yet: a pattern that would match it reaches it all the same. Without OWN nothing is printed. Reads
 # files only.
@@ -617,7 +620,7 @@ sshd_dropin_overrides() {
             val = substr(line, length(kw) + 1); sub(/^[[:space:]]*=?[[:space:]]*/, "", val)
             sub(/[[:space:]]+#.*$/, "", val); sub(/[[:space:]]+$/, "", val)
             if (k == "challengeresponseauthentication") k = "kbdinteractiveauthentication"
-            if (k == "match") inmatch = 1
+            if (k == "match") inmatch = (tolower(val) != "all")   # sshd reads "Match all" as global at start
             if (inmatch || !(k in managed)) return
             v = val; gsub(/[[:space:]]+/, " ", v)
             if (k != "allowusers") v = tolower(v)
@@ -632,11 +635,12 @@ sshd_dropin_overrides() {
                 for (i = 1; i <= c; i++) if (!(t[i] in ownuser)) { out[++nout] = file "\t" kw "\t" val; break }
             } else if (!(k in seen)) { seen[k] = 1; if ((k in own) && own[k] != v) out[++nout] = file "\t" kw "\t" val }
         }
-        # readinc(LINE): the files the Include at LINE of the main file reads, each from the top, global
-        function readinc(l,    i, f, line) {
+        # readinc(LINE, COND): the files the Include at LINE of the main file reads, each from the top.
+        # COND: that line is in a conditional Match block, so are its files: none is read (or marked read)
+        function readinc(l, cond,    i, f, line) {
             for (i = 1; i <= nfiles[l]; i++) {
                 if ((f = files[l, i]) == "") { reached = 1; return }
-                if (f in done) continue
+                if (cond || (f in done)) continue
                 done[f] = 1; inmatch = 0
                 while ((getline line < f) > 0) scan(f, line)
                 close(f)
@@ -648,12 +652,12 @@ sshd_dropin_overrides() {
             for (i = 3; i < ARGC; i += 2) files[ARGV[i], ++nfiles[ARGV[i]]] = ARGV[i + 1]
             while ((getline line < ARGV[1]) > 0) scan("", line)
             main = ARGV[2]; inmatch = 0
-            if (main == "") readinc(0)
+            if (main == "") readinc(0, 0)
             else {
                 done[main] = 1
                 while (!reached && (getline line < main) > 0) {
                     ln++
-                    if (ln in nfiles) { mm = inmatch; readinc(ln); inmatch = mm }
+                    if (ln in nfiles) { mm = inmatch; readinc(ln, inmatch); inmatch = mm }
                     else scan(main, line)
                 }
             }
