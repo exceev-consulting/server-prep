@@ -12,17 +12,18 @@ Highlights of each release. The full list of merged pull requests is in each
   The plan lists them before you confirm, and `--dry-run` shows the `ufw delete` commands. Every rule server-prep adds
   now has a comment that starts with `server-prep: `. A rule from an older version counts as server-prep's only when it
   has one of its old comments (`ssh admin`, `http`...) on the exact shape server-prep gave it: the next firewall run
-  tags it, or deletes it when the answers no longer ask for it. Any other rule, such as one you added yourself, is
-  never touched, even with the same port, unless you gave it a `server-prep: ` comment. When such a rule contradicts
-  the answers, such as a `deny 80/tcp` with `EXPOSE_WEB=yes`, the run warns and its to-do gives the
-  `ufw` command that applies the answers. While such a rule denies or rejects a rule the answers ask for, a run that
-  finds rules of earlier answers keeps them and fails, so a `deny` of yours for a new SSH source (same address and
-  port) never leaves the server without an SSH rule; a rule of yours that allows or limits keeps the port open, so the
-  run goes on. A wider rule of yours, such as `deny from 192.168.1.0/24 to any port 822`, is not checked: ufw applies
-  the first rule that matches and adds new rules at the end, so read `sudo ufw status numbered` before you change
-  `ADMIN_IPS`. The temporary SSH rules of the old port stay while SSH is moving to its new port, also after the
-  automatic login check of `--yes` failed and kept the old port: until the SSH step finishes the move. When UFW was on
-  before a run, its `rollback.sh` now also puts back the UFW rules of that time. On a server prepared earlier, run
+  tags it, or deletes it when the answers no longer ask for it. Any other rule, such as one you added yourself, is never
+  touched, even with the same port, unless you gave it a `server-prep: ` comment. When such a rule contradicts the
+  answers, such as a `deny 80/tcp` with `EXPOSE_WEB=yes`, the run warns and its to-do gives the `ufw` command that
+  applies the answers. While such a rule is in the place of a rule the answers ask for, a run that finds rules of
+  earlier answers keeps them and fails, so a `deny` of yours for a new SSH source (same address and port) never leaves
+  the server without an SSH rule. An `allow` of yours where the answers ask for `limit` counts too: `ufw show added`
+  prints a rule for IPv6 only (`from ::/0`) like one for both. A wider rule of yours, such as
+  `deny from 192.168.1.0/24 to any port 822`, is not checked: ufw applies the first rule that matches and adds new rules
+  at the end, so read `sudo ufw status numbered` before you change `ADMIN_IPS`. The temporary SSH rules of the old port
+  stay while SSH is moving to its new port, also after the automatic login check of `--yes` failed and kept the old
+  port: until the SSH step finishes the move. When UFW was on before a run, its `rollback.sh` now also puts back the UFW
+  rules of that time. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --dry-run` to see what goes.
 - `--validate` refuses `0.0.0.0/0` and `::/0` in `ADMIN_IPS` and `PANEL_IP`: they are every address, so SSH would be
   open to everyone and fail2ban and CrowdSec would ban no one. To open SSH to everyone (rate-limited), leave

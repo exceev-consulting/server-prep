@@ -524,39 +524,51 @@ fw 'once the operator deny rule is gone' 0
     fail "step_firewall once the operator deny rule is gone: the rules are:"$'\n'"$(rules)"
 pass "step_firewall: while a rule that is not server-prep's blocks a wanted one, the rules of earlier answers stay and the step fails"
 
-# Only a deny or reject in the place of a wanted rule holds the cleanup back. A rule that allows or limits
-# keeps the opening the answers ask for (same key: same source, port and interface): the rules of earlier
-# answers go, and ufw_keep_held still warns that the action is not the answers'.
+# Any rule of the operator's with another action in the place of a wanted rule holds the cleanup back,
+# an allow or a limit too: "ufw show added" prints a rule for one IP version ("allow from ::/0 to any
+# port 822 proto tcp", or from 0.0.0.0/0) like a rule for both ("allow 822/tcp"), so its key does not
+# prove that the opening the answers ask for is there for IPv4 and IPv6. The rules of earlier answers
+# stay and the step fails, with ufw_keep_held's warning and to-do; a rule with the same action does not.
 SSH_PORT=822; CURRENT_SSH_PORTS='822 '; ADMIN_IPS=192.168.1.50; PANEL_ACCESS=''; PANEL_IP=''; EXPOSE_WEB=no; EXTRA_PORTS=''; PENDING=0
 for a in deny reject allow limit; do
     out="$(ufw_wanted_rules; ufw_unapplied <<<"ufw $a from 192.168.1.50 to any port 822 proto tcp")"
     case $a in
-        deny|reject) want='allow from 192.168.1.50 to any port 822 proto tcp' ;;
-        *) want='' ;;
+        allow) want='' ;;
+        *) want='allow from 192.168.1.50 to any port 822 proto tcp' ;;
     esac
     [[ $out == "$want" ]] || fail "ufw_unapplied with the operator's $a rule on the wanted key: '$out', want '$want'"
 done
-# The operator's allow 822/tcp where the answers ask for limit (no SSH sources), and 80/443 of earlier
-# answers (EXPOSE_WEB went from yes to no)
+# The operator's allow 822/tcp (maybe IPv6 only) where the answers ask for limit (no SSH sources), and
+# 80/443 of earlier answers (EXPOSE_WEB went from yes to no): nothing is deleted
 FAKE_RULES=('allow 822/tcp' "allow 80/tcp comment 'server-prep: http'" "route allow 80/tcp comment 'server-prep: docker http'")
 ADMIN_IPS=''
+before="$(rules)"
 out="$(ufw_plan_cleanup 2>&1)"
-[[ $out == *'Firewall cleanup .. deletes'*'allow 80/tcp  # server-prep: http'* ]] ||
+[[ $out == *"Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule that is not server-prep's blocks limit 822/tcp"* &&
+    $out != *'allow 80/tcp  #'* ]] ||
     fail "ufw_plan_cleanup with the operator's allow 822/tcp: the plan is:"$'\n'"$out"
-fw "with the operator's allow 822/tcp where limit is wanted" 0
-[[ $(rules) == 'allow 822/tcp' ]] || fail "step_firewall with the operator's allow 822/tcp: the rules are:"$'\n'"$(rules)"
+fw "with the operator's allow 822/tcp where limit is wanted" 1
+[[ $(rules) == "$before" ]] || fail "step_firewall with the operator's allow 822/tcp: the rules are:"$'\n'"$(rules)"
 grep -qF "the answers ask for 'limit 822/tcp', but a UFW rule without the server-prep tag is in its place and stays: allow 822/tcp" "$tmp/out" ||
     fail "step_firewall: no warning for the operator's allow 822/tcp where limit is wanted:"$'\n'"$(cat "$tmp/out")"
-[[ ${MANUAL_TODO[*]} == *"sudo ufw limit 822/tcp comment 'server-prep: ssh'"* && $STEP_NOTES == *'deleted 2 UFW rule(s) of earlier answers'* ]] ||
+[[ ${MANUAL_TODO[*]} == *"sudo ufw limit 822/tcp comment 'server-prep: ssh'"* &&
+    $STEP_NOTES == *'UFW rules of earlier answers kept: not applied: limit 822/tcp'* ]] ||
     fail "step_firewall with the operator's allow 822/tcp: notes '$STEP_NOTES', todo '${MANUAL_TODO[*]}'"
-# The operator's limit from the admin where the answers ask to allow it, and an admin source removed
+# The operator's limit from the admin where the answers ask to allow it, and an admin source removed:
+# the removed source keeps its rule until the answer applies
 FAKE_RULES=("allow from 203.0.113.4 to any port 822 proto tcp comment 'server-prep: ssh admin'" 'limit from 192.168.1.50 to any port 822 proto tcp')
 ADMIN_IPS=192.168.1.50
-fw "with the operator's limit from the admin where allow is wanted" 0
-[[ $(rules) == 'limit from 192.168.1.50 to any port 822 proto tcp' ]] ||
+before="$(rules)"
+fw "with the operator's limit from the admin where allow is wanted" 1
+[[ $(rules) == "$before" ]] ||
     fail "step_firewall with the operator's limit from the admin: the rules are:"$'\n'"$(rules)"
+# The same action in the place of a wanted rule is the wanted opening: the cleanup goes on
+FAKE_RULES=("allow from 203.0.113.4 to any port 822 proto tcp comment 'server-prep: ssh admin'" 'allow from 192.168.1.50 to any port 822 proto tcp')
+fw "with the operator's allow from the admin where allow is wanted" 0
+[[ $(rules) == 'allow from 192.168.1.50 to any port 822 proto tcp' ]] ||
+    fail "step_firewall with the operator's allow from the admin: the rules are:"$'\n'"$(rules)"
 ADMIN_IPS=''
-pass "step_firewall: a rule that allows or limits in the place of a wanted one does not hold the cleanup back"
+pass "step_firewall: a rule of another action in the place of a wanted one (an allow where limit is wanted too) holds the cleanup back"
 
 # The operator's rule with the log option holds the key of a wanted rule as well: ufw writes the option
 # after the interface, and its add would replace the operator's rule (ufw's match ignores the log type)

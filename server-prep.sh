@@ -2111,9 +2111,9 @@ ufw_prune_rules() {
         todo "Fix ADMIN_IPS / PANEL_IP in /etc/server-prep/server-prep.conf (${UFW_WANT_BAD}), then re-run the firewall step: it deletes the UFW rules server-prep added for earlier answers"
         return 1
     fi
-    # A wanted rule that a rule the step does not manage denies or rejects (ufw_unapplied) is not applied:
-    # it counts as missing, so nothing is deleted (an old SSH rule may be the only SSH opening left). In a
-    # dry run too: the rules that hold wanted ones are there before any add.
+    # A wanted rule held by a rule the step does not manage with another action is not applied: it counts
+    # as missing, so nothing is deleted (an old SSH rule may be the only SSH opening left). In a dry run
+    # too: the rules that hold wanted ones are there before any add.
     unapplied="$(ufw_unapplied <<<"$added")"
     if [[ -n $unapplied ]]; then
         warn "the UFW rules of earlier answers are kept: a rule that is not server-prep's blocks ${unapplied} (see above)"
@@ -2218,19 +2218,15 @@ ufw_keep_held() {
 }
 
 # ufw_unapplied: "ufw show added" on stdin, the wanted rules in UFW_WANT. Prints, ", " between them, the
-# wanted rules that a rule the firewall step does not manage holds with deny or reject: those openings
-# are not there. Then the rules of earlier answers must stay, like when a wanted rule is missing: with
-# the operator's "deny from ADDR to any port 822" where ADMIN_IPS asks to allow ADDR, the old
-# server-prep SSH rule may be the only SSH opening left. A rule that allows or limits in the place of a
-# wanted one keeps its opening (same key: same source, port and interface), so the cleanup goes on;
-# ufw_keep_held still warns when its action is not the answers' (allow where they ask for limit).
+# wanted rules that a rule the firewall step does not manage holds with another action (ufw_keep_held
+# returns 1): those answers are not applied. Then the rules of earlier answers must stay, like when a
+# wanted rule is missing: with the operator's "deny from ADDR to any port 822" where ADMIN_IPS asks to
+# allow ADDR, the old server-prep SSH rule may be the only SSH opening left.
 ufw_unapplied() {
     local spec c hspec hc out=""
     while IFS=$'\t' read -r spec c hspec hc; do
         [[ -n $spec ]] || continue
-        case $(ufw_rule_action "$hspec") in
-            deny|reject) out+="${out:+, }${spec}" ;;
-        esac
+        [[ $(ufw_rule_action "$hspec") == "$(ufw_rule_action "$spec")" ]] || out+="${out:+, }${spec}"
     done <<<"$(ufw_held_rules)"
     [[ -z $out ]] || printf '%s\n' "$out"
 }
