@@ -1935,10 +1935,10 @@ docker_log_rotation() {
         *)
             if [[ " $DOCKER_NO_ROTATION_DRIVERS " == *" $driver "* && $opts == yes ]]; then
                 DLR_STATUS=FAIL
-                DLR_MSG="max-size or max-file set in ${f} for the ${driver} log driver, which refuses them: Docker will not start"
+                DLR_MSG="max-size or max-file set in ${f} for the ${driver} log driver, which refuses them: Docker will not start (the fix restarts Docker and its running containers)"
                 # jq could not read the file (missing, or not valid JSON): the command would stop at jq
                 if [[ $byjq -eq 1 ]]; then DLR_FIX="$DOCKER_LOG_OPTS_FIX"
-                else DLR_FIX="remove max-size and max-file from log-opts in ${f} by hand, then: sudo systemctl restart docker"; fi
+                else DLR_FIX="remove max-size and max-file from log-opts in ${f} by hand, then restart Docker and its running containers: sudo systemctl restart docker"; fi
             elif [[ $driver == journald ]]; then
                 DLR_STATUS=PASS; DLR_MSG="journald driver: the journal limits its own size (SystemMaxUse)"
             else

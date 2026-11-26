@@ -619,7 +619,7 @@ if command -v jq >/dev/null 2>&1; then
         'Docker will not start' "remove max-size and max-file from log-opts in /etc/docker/daemon.json (the journald log driver"
     expect_docker_driver 'syslog with max-file already set: warning, to-do and status 1, no write' \
         '{"log-driver": "syslog", "log-opts": {"max-file": "3"}}' 1 untouched \
-        'Docker will not start' "will not start): $DOCKER_LOG_OPTS_FIX"
+        'Docker will not start' "restarts Docker and its running containers: $DOCKER_LOG_OPTS_FIX"
     expect_docker_driver 'json-file with a log-opts string: no empty daemon.json' '{"log-opts": "x"}' 1 untouched \
         'log-opts is not a JSON object - left untouched'
     expect_docker_driver 'local with a log-opts list: no empty daemon.json' '{"log-driver": "local", "log-opts": []}' 1 untouched \

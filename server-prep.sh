@@ -1723,7 +1723,7 @@ step_docker() {
                 jq -e '.["log-opts"] | type == "object" and (has("max-size") or has("max-file"))' >/dev/null 2>&1 <<<"$cur"; then
                 warn "/etc/docker/daemon.json sets max-size or max-file for the ${driver} log driver, which refuses them: Docker will not start with this file"
                 note "log driver ${driver} with max-size or max-file in /etc/docker/daemon.json: Docker will not start (file left as it is)"
-                todo "Docker: remove max-size and max-file from log-opts in /etc/docker/daemon.json (the ${driver} log driver refuses them, so Docker will not start): ${DOCKER_LOG_OPTS_FIX}"
+                todo "Docker: remove max-size and max-file from log-opts in /etc/docker/daemon.json (the ${driver} log driver refuses them, so Docker will not start). This restarts Docker and its running containers: ${DOCKER_LOG_OPTS_FIX}"
                 # Docker will not start with this file: the run says FAILED, as the audit does
                 return 1
             elif [[ $driver == none ]]; then
