@@ -1884,6 +1884,69 @@ else
     result res.load FAIL "CPU load" "load ${LOAD1} on ${CORES} cores"
 fi
 
+# The built-in Docker log drivers that refuse max-size and max-file: dockerd does not start when its
+# default driver is one of them and log-opts sets either (issue #239). json-file and local take them,
+# none takes any option, and a plugin driver gets them as they are. The same list is in server-prep.sh
+# (tests/audit-docker-logs.sh checks that they match).
+DOCKER_NO_ROTATION_DRIVERS="journald syslog gelf fluentd awslogs splunk gcplogs logentries"
+# The command that removes max-size and max-file from log-opts, then restarts Docker: jq runs as root
+# and the file is written only when jq read it (a pipe from jq to "sudo tee" would empty daemon.json when
+# jq fails, and still restart Docker). The same line is in server-prep.sh (tests/audit-docker-logs.sh).
+DOCKER_LOG_OPTS_FIX="daemon_json=\"\$(sudo jq 'del(.[\"log-opts\"][\"max-size\", \"max-file\"])' /etc/docker/daemon.json)\" && sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak && printf '%s\n' \"\$daemon_json\" | sudo tee /etc/docker/daemon.json > /dev/null && sudo systemctl restart docker"
+
+# docker_log_rotation FILE: the dock.log_rotation result for the Docker daemon config FILE
+# (/etc/docker/daemon.json; missing, empty or unreadable means Docker's defaults). Sets DLR_STATUS
+# (PASS, WARN, FAIL or INFO), DLR_MSG and DLR_FIX (empty when there is nothing to fix). It reads the
+# default log driver ("log-driver", json-file when unset) and the max-size and max-file of "log-opts"
+# with jq, or with sed and grep on the text when jq is missing or cannot read the file. Only json-file
+# and local take max-size and max-file, local rotates by default (20m x 5) and journald limits its own
+# size, so the driver decides and max-size alone never passes. Test: tests/audit-docker-logs.sh.
+docker_log_rotation() {
+    local f="$1" text="" flat driver="" size="" opts=no fields byjq=0
+    DLR_STATUS=""; DLR_MSG=""; DLR_FIX=""
+    [[ -r $f ]] && text="$(cat -- "$f" 2>/dev/null)"
+    if [[ -n ${text//[[:space:]]/} ]] && have jq &&
+        fields="$(jq -r '(.["log-driver"] // "json-file" | tostring),
+                         (.["log-opts"] | if type == "object" then .["max-size"] // "" | tostring else "" end),
+                         (.["log-opts"] | if type == "object" and (has("max-size") or has("max-file")) then "yes" else "no" end)' \
+                  <<<"$text" 2>/dev/null)"; then
+        { read -r driver; read -r size; read -r opts; } <<<"$fields"
+        byjq=1
+    else
+        flat="$(tr '\r\n\t' '   ' <<<"$text")"
+        driver="$(sed -nE 's/.*"log-driver"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' <<<"$flat")"
+        size="$(sed -nE 's/.*"max-size"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' <<<"$flat")"
+        grep -qE '"max-(size|file)"[[:space:]]*:' <<<"$flat" && opts=yes
+    fi
+    [[ -n $driver ]] || driver="json-file"
+    case $driver in
+        json-file)
+            if [[ -n $size ]]; then
+                DLR_STATUS=PASS; DLR_MSG="json-file driver, max-size ${size} in ${f}"
+            else
+                DLR_STATUS=WARN; DLR_MSG="Container logs grow without limit (json-file driver, no max-size in ${f})"
+                DLR_FIX='"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"} in /etc/docker/daemon.json'
+            fi ;;
+        local)
+            DLR_STATUS=PASS
+            if [[ -n $size ]]; then DLR_MSG="local driver, max-size ${size} in ${f}"; else DLR_MSG="local driver: rotates by default (20m x 5)"; fi ;;
+        none)
+            DLR_STATUS=INFO; DLR_MSG="log driver none: containers keep no logs" ;;
+        *)
+            if [[ " $DOCKER_NO_ROTATION_DRIVERS " == *" $driver "* && $opts == yes ]]; then
+                DLR_STATUS=FAIL
+                DLR_MSG="max-size or max-file set in ${f} for the ${driver} log driver, which refuses them: Docker will not start (the fix restarts Docker and its running containers)"
+                # jq could not read the file (missing, or not valid JSON): the command would stop at jq
+                if [[ $byjq -eq 1 ]]; then DLR_FIX="$DOCKER_LOG_OPTS_FIX"
+                else DLR_FIX="remove max-size and max-file from log-opts in ${f} by hand, then restart Docker and its running containers: sudo systemctl restart docker"; fi
+            elif [[ $driver == journald ]]; then
+                DLR_STATUS=PASS; DLR_MSG="journald driver: the journal limits its own size (SystemMaxUse)"
+            else
+                DLR_STATUS=INFO; DLR_MSG="logs go to ${driver}: rotation is up to that system"
+            fi ;;
+    esac
+}
+
 # ----------------------------------------------------------------------------
 # Docker
 # ----------------------------------------------------------------------------
@@ -1896,12 +1959,15 @@ if have docker; then
     else
         result dock.running WARN "Docker engine" "Installed but not running"
     fi
-    if [[ -f /etc/docker/daemon.json ]] && grep -q 'max-size' /etc/docker/daemon.json; then
-        result dock.log_rotation PASS "Container log rotation" "max-size set in /etc/docker/daemon.json"
-    else
-        result dock.log_rotation WARN "Container log rotation" "Container logs grow without limit" \
-            '"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"} in /etc/docker/daemon.json'
-    fi
+    docker_log_rotation /etc/docker/daemon.json
+    # a daemon.json only root can read (600) looks like no file: say so
+    [[ -e /etc/docker/daemon.json && ! -r /etc/docker/daemon.json ]] && DLR_MSG+="$(need_root_note)"
+    case $DLR_STATUS in
+        PASS) result dock.log_rotation PASS "Container log rotation" "$DLR_MSG" ;;
+        WARN) result dock.log_rotation WARN "Container log rotation" "$DLR_MSG" "$DLR_FIX" ;;
+        FAIL) result dock.log_rotation FAIL "Container log rotation" "$DLR_MSG" "$DLR_FIX" ;;
+        *)    result dock.log_rotation INFO "Container log rotation" "$DLR_MSG" ;;
+    esac
     if [[ $DOCKER_ACTIVE -eq 1 && $IS_ROOT -eq 1 ]]; then
         PRIV=()
         while read -r cid; do

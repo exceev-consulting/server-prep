@@ -24,7 +24,7 @@ Each entry says what the word means and, when it matters, what server-prep does 
 
 **CrowdSec**. An intrusion prevention tool. It reads the logs, detects attacks, and also uses a shared list of bad IPs reported by other users. server-prep installs it from the official repository (`ips` step).
 
-**Docker CE**. The Docker engine from Docker's own repository (download.docker.com). The `docker` step installs it if missing and turns on log rotation (10 MB × 3 files per container).
+**Docker CE**. The Docker engine from Docker's own repository (download.docker.com). The `docker` step installs it if missing and turns on log rotation (10 MB × 3 files per container) when containers log to files (the `json-file` or `local` log driver).
 
 **DOCKER-USER**. A chain (list of firewall rules) that Docker leaves for your own rules. Docker checks it before its own rules. ufw-docker and the CrowdSec bouncer put their rules there.
 

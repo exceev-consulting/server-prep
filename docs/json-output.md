@@ -292,7 +292,7 @@ The whole section appears only when the `docker` command exists.
 | Id | What it checks | Statuses | When it appears |
 |---|---|---|---|
 | `dock.running` | the Docker engine is running | PASS, WARN | `docker` exists |
-| `dock.log_rotation` | container logs are rotated (`max-size` in `/etc/docker/daemon.json`) | PASS, WARN | `docker` exists |
+| `dock.log_rotation` | container logs are rotated, by the log driver in `/etc/docker/daemon.json`: `json-file` (the default) with `max-size`, `local` (it rotates by default) or `journald` (the journal limits its size) PASS; `json-file` without `max-size` WARNs; `max-size` or `max-file` for a built-in driver that refuses them (`journald`, `syslog`, `gelf`...) FAILs, as Docker does not start with them; another driver (`syslog`, `none`, a plugin) is INFO: its rotation is up to that system | PASS, WARN, FAIL, INFO | `docker` exists |
 | `dock.privileged` | no container runs with `--privileged` | PASS, WARN | Docker is running, root only |
 | `dock.group` | the members of the `docker` group (they are root-equivalent) | INFO | the `docker` group has members |
 
