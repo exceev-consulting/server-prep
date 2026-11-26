@@ -1,0 +1,26 @@
+# yamllint settings for the YAML files under .github/ (workflows, dependabot.yml, issue and discussion
+# forms, labels.yml, release.yml), read by `yamllint -c .yamllint.yml .github/` and by
+# `./scripts/check.sh --only docs`. The version is pinned in scripts/check.sh (YAMLLINT_VERSION).
+extends: default
+
+rules:
+  # No file starts with `---`: GitHub reads each file as one document.
+  document-start: disable
+  # Long run: blocks, descriptions and URLs stay on one line.
+  line-length: disable
+  # The default config sets truthy, comments and comments-indentation to warning: they are raised to
+  # error here, so a plain `yamllint -c .yamllint.yml .github/` fails where check.sh (--strict) does.
+  # `on:` is a key, not a boolean; values stay true or false.
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+    level: error
+  # One space before a comment, as in the `uses: x@<sha> # vX` pins that Dependabot writes.
+  comments:
+    min-spaces-from-content: 1
+    level: error
+  comments-indentation:
+    level: error
+  # Two spaces, as .editorconfig; sequences stay indented under their key (the default).
+  indentation:
+    spaces: 2

@@ -7,3 +7,4 @@ The root `AGENTS.md` has the project rules and the Definition of done. These rul
 - One copy-paste block per step, and say what output to expect.
 - Use placeholders such as `<influxdb-token>` for secrets, never a real token, key or password.
 - Simple words and short sentences: many readers are not security experts.
+- Markdown: `./scripts/check.sh --only docs` runs markdownlint-cli2 and checks the relative links and anchors. Leave a blank line around headings, lists and code blocks (a code block inside a numbered step stays right under it), and give every code block a language (`text` for log output).

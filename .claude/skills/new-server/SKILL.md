@@ -10,6 +10,7 @@ The user runs every command and pastes the output. You give short, concise, prec
 Never ask for a token or key (Tailscale auth key, CrowdSec enroll key, Cloudflare tunnel token, Telegram bot token): the user types it at the script prompt or in their own terminal on the server, never in the chat.
 
 ## 0. Before starting, ask only what is unknown
+
 - Which OS, and is it a VPS, a bare-metal machine or a laptop?
 - Which panel manages it (`PANEL`) and how it reaches the server (`PANEL_ACCESS`; see `CLAUDE.local.md`, usually **tailscale**).
 - Do they have console access (provider console or physical)? This is required in case SSH locks them out.
@@ -30,6 +31,7 @@ Never ask for a token or key (Tailscale auth key, CrowdSec enroll key, Cloudflar
   - On a new site, add its LAN (for example `192.168.1.0/24`) to the allowed SSH sources.
 
 ## 1. Get the scripts on the server
+
 ```bash
 # from the admin machine
 git clone https://github.com/exceev-consulting/server-prep.git ~/server-prep   # or scp -r it from your workstation
@@ -38,9 +40,11 @@ cd ~/server-prep && chmod +x server-*.sh
 ```
 
 ## 2. Pre-configuration (fresh server)
+
 ```bash
 sudo ./server-preconfig.sh          # hostname, SSH + sudo, network saved, no sleep, Tailscale
 ```
+
 - Answer `current` for the network if the IP isn't saved yet.
 - Open the Tailscale URL on the Mac.
 - Read the checks: 0 FAIL is required.
@@ -49,6 +53,7 @@ sudo ./server-preconfig.sh          # hostname, SSH + sudo, network saved, no sl
 The guide and troubleshooting are in `server-preconfig.md`.
 
 ## 3. Baseline audit, then a preview
+
 ```bash
 sudo ./server-audit.sh
 sudo ./server-prep.sh --dry-run
@@ -77,6 +82,7 @@ sudo ./server-prep.sh --dry-run
 **SSH step:** before confirming, the user must open a **new** terminal and run `ssh -p 822 <user>@<server>`. Pick the command the script prints by where the user is: the local-IP command only from a network listed in `ADMIN_IPS`, otherwise the Tailscale one (`ssh -p 822 <user>@100.x.y.z`). With Tailscale-only access (no `ADMIN_IPS`), the script prints only the Tailscale command, because the firewall blocks the local IP. If they don't confirm, the change rolls back after 10 minutes.
 
 ## 5. If a step fails
+
 Re-run only that step:
 `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>`.
 The saved answers are the defaults, so the user mostly presses Enter. `--yes` skips the questions (each one gets its default, so a default-no question stays no), but never use it for the `ssh` step: instead of the second-terminal login test, it only checks the login on the server itself, which cannot see a firewall outside the server (a cloud security group) or the user's key (#65). Never add `--force` unless the user asks for it: it answers yes to the default-no questions.
@@ -86,13 +92,16 @@ Check the known fixes in `AGENTS.md` → *Hard-won gotchas*. The log is in `/var
 Logs from 1.1.1 and older can hold the tunnel token: ask them to check the lines before pasting.
 
 ## 6. Connect to the panel
+
 In the panel, add a server (Coolify: Servers → Add).
+
 - IP: the Tailscale IP.
 - User: `root`.
 - Port: `822`.
 - Key: the panel key.
 
 Then click Validate. If it fails:
+
 - On the server, run `sudo journalctl -u ssh -n 0 -f`. Click Validate again in the panel, read the new SSH lines, then press Ctrl+C.
 - Check the saved panel public key and its installed entry:
   ```bash
@@ -105,6 +114,7 @@ Then click Validate. If it fails:
 - Check that the port in the panel matches `SSH_PORT` (`822` in this guide).
 
 ## 7. After the run
+
 1. **CrowdSec:** `sudo cscli console enroll <key>` (if not done earlier), then accept the machine in app.crowdsec.net.
 2. **Monitoring:** follow the `monitoring` skill (`/monitoring` in Claude Code, `$monitoring` in Codex).
 3. **Laptop with GitHub runners:** `sudo extras/github-runners/limit-runners-memory.sh`.
