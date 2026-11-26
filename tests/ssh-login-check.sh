@@ -378,10 +378,11 @@ no_yes() {   # as in tests/sshd-ports.sh: a todo for the SSH step has a dry run 
     return 0
 }
 # The step's report of a file sshd reads before 00-server-prep.conf (issue #204) reads sample files in
-# the temporary folder, never the host's /etc/ssh: its main file has the usual Include line.
+# the temporary folder, never the host's /etc/ssh: its main file has the usual Include line, with a
+# path relative to that folder, since the report follows it (sshd reads such a path in /etc/ssh).
 eval "$(declare -f ssh_report_overrides | sed '1s/^ssh_report_overrides/real_report_overrides/')"
 mkdir -p "$tmp/ssh/sshd_config.d"
-printf 'Include /etc/ssh/sshd_config.d/*.conf\n' > "$tmp/ssh/sshd_config"
+printf 'Include sshd_config.d/*.conf\n' > "$tmp/ssh/sshd_config"
 ssh_report_overrides() { real_report_overrides "$tmp/ssh/sshd_config.d"; }
 
 reset_step
