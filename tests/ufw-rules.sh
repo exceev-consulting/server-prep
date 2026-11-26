@@ -600,6 +600,9 @@ temp_kept 'after a failed login check of --yes (phase A, timer armed)'
 [[ $STEP_NOTES == *'deleted 1 UFW rule(s) of earlier answers: allow 80/tcp'* ]] ||
     fail "step_firewall after a failed login check of --yes: notes '$STEP_NOTES'"
 CURRENT_SSH_PORTS='22 '; LISTEN='22 '; TIMERS=''
+out="$(ufw_plan_cleanup 2>&1)"
+[[ $out != *'port 22 '* && $out != *'SSH rules among them'* ]] ||
+    fail "ufw_plan_cleanup once the rollback timer put SSH back on 22: the plan lists a temporary SSH rule:"$'\n'"$out"
 fw 'once the rollback timer put SSH back on 22' 0
 temp_kept 'once the rollback timer put SSH back on 22'
 [[ " ${CALLS[*]} " != *' delete '* ]] || fail "step_firewall once the rollback timer put SSH back on 22: deleted $(printf '%s; ' "${CALLS[@]}")"
