@@ -549,8 +549,10 @@ DRY_RUN=0
 
 # step_docker and the log driver (issue #239): only json-file and local take max-size and max-file.
 # Another driver keeps daemon.json as it is, max-size already set for a built-in driver that refuses
-# it gives a warning and a to-do (no write), and a failed Docker restart fails the step. The step
-# reads $tmp/daemon.json instead of /etc/docker/daemon.json; the real jq does the work.
+# it gives a warning and a to-do (no write) with DOCKER_LOG_OPTS_FIX (tests/audit-docker-logs.sh runs
+# it), a log-opts that is not an object fails the step with no write (a failed merge gave an empty
+# file), and a failed Docker restart fails the step. The step reads $tmp/daemon.json instead of
+# /etc/docker/daemon.json; the real jq does the work.
 if command -v jq >/dev/null 2>&1; then
     real_step_docker="$(declare -f step_docker)"
     real_have="$(declare -f have)"
@@ -617,7 +619,11 @@ if command -v jq >/dev/null 2>&1; then
         'Docker will not start' "remove max-size and max-file from log-opts in /etc/docker/daemon.json (the journald log driver"
     expect_docker_driver 'syslog with max-file already set: warning and to-do, no write' \
         '{"log-driver": "syslog", "log-opts": {"max-file": "3"}}' 0 untouched \
-        'Docker will not start' "jq 'del(.[\"log-opts\"][\"max-size\", \"max-file\"])'"
+        'Docker will not start' "will not start): $DOCKER_LOG_OPTS_FIX"
+    expect_docker_driver 'json-file with a log-opts string: no empty daemon.json' '{"log-opts": "x"}' 1 untouched \
+        'log-opts is not a JSON object - left untouched'
+    expect_docker_driver 'local with a log-opts list: no empty daemon.json' '{"log-driver": "local", "log-opts": []}' 1 untouched \
+        'log-opts is not a JSON object - left untouched'
     expect_docker_driver 'no daemon.json: json-file rotation merged' '' 0 written 'container log rotation set (10m x 3)'
     [[ "$(jq -r '.["log-driver"]' "$tmp/docker-written")" == json-file ]] || { printf 'not ok: docker log driver: no daemon.json did not get json-file\n'; exit 1; }
     expect_docker_driver 'json-file: rotation merged, max-size kept' '{"log-driver": "json-file", "log-opts": {"max-size": "50m"}}' 0 written \

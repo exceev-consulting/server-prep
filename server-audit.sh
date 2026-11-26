@@ -1889,6 +1889,10 @@ fi
 # none takes any option, and a plugin driver gets them as they are. The same list is in server-prep.sh
 # (tests/audit-docker-logs.sh checks that they match).
 DOCKER_NO_ROTATION_DRIVERS="journald syslog gelf fluentd awslogs splunk gcplogs logentries"
+# The command that removes max-size and max-file from log-opts, then restarts Docker: jq runs as root
+# and the file is written only when jq read it (a pipe from jq to "sudo tee" would empty daemon.json when
+# jq fails, and still restart Docker). The same line is in server-prep.sh (tests/audit-docker-logs.sh).
+DOCKER_LOG_OPTS_FIX="daemon_json=\"\$(sudo jq 'del(.[\"log-opts\"][\"max-size\", \"max-file\"])' /etc/docker/daemon.json)\" && sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak && printf '%s\n' \"\$daemon_json\" | sudo tee /etc/docker/daemon.json > /dev/null && sudo systemctl restart docker"
 
 # docker_log_rotation FILE: the dock.log_rotation result for the Docker daemon config FILE
 # (/etc/docker/daemon.json; missing, empty or unreadable means Docker's defaults). Sets DLR_STATUS
@@ -1898,7 +1902,7 @@ DOCKER_NO_ROTATION_DRIVERS="journald syslog gelf fluentd awslogs splunk gcplogs 
 # and local take max-size and max-file, local rotates by default (20m x 5) and journald limits its own
 # size, so the driver decides and max-size alone never passes. Test: tests/audit-docker-logs.sh.
 docker_log_rotation() {
-    local f="$1" text="" flat driver="" size="" opts=no fields
+    local f="$1" text="" flat driver="" size="" opts=no fields byjq=0
     DLR_STATUS=""; DLR_MSG=""; DLR_FIX=""
     [[ -r $f ]] && text="$(cat -- "$f" 2>/dev/null)"
     if [[ -n ${text//[[:space:]]/} ]] && have jq &&
@@ -1907,6 +1911,7 @@ docker_log_rotation() {
                          (.["log-opts"] | if type == "object" and (has("max-size") or has("max-file")) then "yes" else "no" end)' \
                   <<<"$text" 2>/dev/null)"; then
         { read -r driver; read -r size; read -r opts; } <<<"$fields"
+        byjq=1
     else
         flat="$(tr '\r\n\t' '   ' <<<"$text")"
         driver="$(sed -nE 's/.*"log-driver"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' <<<"$flat")"
@@ -1931,7 +1936,9 @@ docker_log_rotation() {
             if [[ " $DOCKER_NO_ROTATION_DRIVERS " == *" $driver "* && $opts == yes ]]; then
                 DLR_STATUS=FAIL
                 DLR_MSG="max-size or max-file set in ${f} for the ${driver} log driver, which refuses them: Docker will not start"
-                DLR_FIX="sudo cp ${f} ${f}.bak && jq 'del(.[\"log-opts\"][\"max-size\", \"max-file\"])' ${f}.bak | sudo tee ${f} > /dev/null && sudo systemctl restart docker"
+                # jq could not read the file (missing, or not valid JSON): the command would stop at jq
+                if [[ $byjq -eq 1 ]]; then DLR_FIX="$DOCKER_LOG_OPTS_FIX"
+                else DLR_FIX="remove max-size and max-file from log-opts in ${f} by hand, then: sudo systemctl restart docker"; fi
             elif [[ $driver == journald ]]; then
                 DLR_STATUS=PASS; DLR_MSG="journald driver: the journal limits its own size (SystemMaxUse)"
             else

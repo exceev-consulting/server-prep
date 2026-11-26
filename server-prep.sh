@@ -1671,6 +1671,11 @@ DOCKER_NO_ROTATION_DRIVERS="journald syslog gelf fluentd awslogs splunk gcplogs 
 docker_driver_refuses_rotation() {   # docker_driver_refuses_rotation DRIVER: true for a driver in that list
     [[ " $DOCKER_NO_ROTATION_DRIVERS " == *" $1 "* ]]
 }
+# The command the operator runs to remove max-size and max-file from log-opts, then restart Docker. jq
+# runs as root (daemon.json can be 600) and the file is written only when jq read it: a pipe from jq to
+# "sudo tee" would empty daemon.json when jq fails or is missing, and still restart Docker. The same
+# line is in server-audit.sh (tests/audit-docker-logs.sh checks that they match and runs it).
+DOCKER_LOG_OPTS_FIX="daemon_json=\"\$(sudo jq 'del(.[\"log-opts\"][\"max-size\", \"max-file\"])' /etc/docker/daemon.json)\" && sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak && printf '%s\n' \"\$daemon_json\" | sudo tee /etc/docker/daemon.json > /dev/null && sudo systemctl restart docker"
 
 step_docker() {
     if ! yes_ "$INSTALL_DOCKER"; then return $SKIP_RC; fi
@@ -1718,7 +1723,7 @@ step_docker() {
                 jq -e '.["log-opts"] | type == "object" and (has("max-size") or has("max-file"))' >/dev/null 2>&1 <<<"$cur"; then
                 warn "/etc/docker/daemon.json sets max-size or max-file for the ${driver} log driver, which refuses them: Docker will not start with this file"
                 note "log driver ${driver} with max-size or max-file in /etc/docker/daemon.json: Docker will not start (file left as it is)"
-                todo "Docker: remove max-size and max-file from log-opts in /etc/docker/daemon.json (the ${driver} log driver refuses them, so Docker will not start): sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak && jq 'del(.[\"log-opts\"][\"max-size\", \"max-file\"])' /etc/docker/daemon.json.bak | sudo tee /etc/docker/daemon.json > /dev/null && sudo systemctl restart docker"
+                todo "Docker: remove max-size and max-file from log-opts in /etc/docker/daemon.json (the ${driver} log driver refuses them, so Docker will not start): ${DOCKER_LOG_OPTS_FIX}"
             elif [[ $driver == none ]]; then
                 note "log driver none: containers keep no logs, nothing to rotate"
             elif [[ $driver == journald ]]; then
@@ -1728,9 +1733,12 @@ step_docker() {
             fi
             return 0 ;;
     esac
-    new="$(jq '. + {"log-driver": (.["log-driver"] // "json-file"),
+    # a failed merge (log-opts not an object) gives no output: never write that empty file
+    if ! new="$(jq '. + {"log-driver": (.["log-driver"] // "json-file"),
                    "log-opts": ((.["log-opts"] // {}) + {"max-size": (.["log-opts"]["max-size"] // "10m"),
-                                                         "max-file": (.["log-opts"]["max-file"] // "3")})}' <<<"$cur")"
+                                                         "max-file": (.["log-opts"]["max-file"] // "3")})}' 2>/dev/null <<<"$cur")"; then
+        note "/etc/docker/daemon.json: log-opts is not a JSON object - left untouched"; return 1
+    fi
     if [[ "$(jq -S . <<<"$cur")" != "$(jq -S . <<<"$new")" ]]; then
         printf '%s\n' "$new" | write_file /etc/docker/daemon.json 644
         note "container log rotation set (10m x 3)"
