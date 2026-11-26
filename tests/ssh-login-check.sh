@@ -8,8 +8,9 @@
 # ssh_login_check with fake sshd, ss, ufw and ssh-keyscan, and
 # step_ssh's choice: phase B and the timer stopped when the check passes; the old port, its temporary
 # UFW rules and the rollback timer kept when it fails; with --yes --force and no admin key, the check
-# skips only its key check. Only a temporary folder is written: no root needed, nothing on the host is
-# touched.
+# skips only its key check; a file sshd reads before 00-server-prep.conf (issue #204) is reported in
+# each case, and a failed check's to-do points to it. Only a temporary folder is written: no root
+# needed, nothing on the host is touched.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -376,6 +377,12 @@ no_yes() {   # as in tests/sshd-ports.sh: a todo for the SSH step has a dry run 
     done
     return 0
 }
+# The step's report of a file sshd reads before 00-server-prep.conf (issue #204) reads sample files in
+# the temporary folder, never the host's /etc/ssh: its main file has the usual Include line.
+eval "$(declare -f ssh_report_overrides | sed '1s/^ssh_report_overrides/real_report_overrides/')"
+mkdir -p "$tmp/ssh/sshd_config.d"
+printf 'Include /etc/ssh/sshd_config.d/*.conf\n' > "$tmp/ssh/sshd_config"
+ssh_report_overrides() { real_report_overrides "$tmp/ssh/sshd_config.d"; }
 
 reset_step
 st=0; step_ssh > "$tmp/step-out" 2>&1 || st=$?
@@ -411,6 +418,39 @@ st=0; step_ssh > "$tmp/step-out" 2>&1 || st=$?
 grep -qF 'Continue anyway (I have console/physical access)? no (--yes keeps the default)' "$tmp/step-out" ||
     fail "step_ssh, no key, --yes: the answer is not shown: $(cat "$tmp/step-out")"
 pass 'step_ssh with --yes and no admin key: the guard keeps its default (no) and the step changes nothing'
+
+# A file read before 00-server-prep.conf, such as Dokploy's (issue #204): a run with --yes reports it
+# whatever the login check gives, and the to-do of a failed check points to it, since sshd -T applies it
+over_text='00-dokploy.conf is read first and sets PermitRootLogin prohibit-password'
+printf 'PermitRootLogin prohibit-password\n' > "$tmp/ssh/sshd_config.d/00-dokploy.conf"
+reset_step
+st=0; step_ssh > "$tmp/step-out" 2>&1 || st=$?
+c="$(calls)"
+[[ $st -eq 0 && $c == *'write_sshd_config 822;'* && $c == *ssh_close_old_ports* && $c == *"systemctl stop $timer"* ]] ||
+    fail "step_ssh, file read first, check passed: status $st, calls '$c'"
+grep -qF "$over_text" "$tmp/step-out" || fail "step_ssh, file read first: no warning: $(cat "$tmp/step-out")"
+[[ $STEP_NOTES == *"$over_text"* && ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *"$over_text"* ]] ||
+    fail "step_ssh, file read first, check passed: notes '$STEP_NOTES', todo '${MANUAL_TODO[*]}'"
+pass 'step_ssh with --yes and a file read first: the step names it, and a passed login check still runs phase B'
+
+reset_step; CHECK_RC=1
+st=0; step_ssh > "$tmp/step-out" 2>&1 || st=$?
+c="$(calls)"
+[[ $st -eq 1 && $c != *ssh_close_old_ports* && $c != *"stop $timer"* ]] ||
+    fail "step_ssh, file read first, check failed: status $st, calls '$c'"
+[[ ${#MANUAL_TODO[@]} -eq 2 && ${MANUAL_TODO[0]} == *"$over_text"* && ${MANUAL_TODO[1]} == *'no SSH handshake'* &&
+    ${MANUAL_TODO[1]} == *'sees what the other SSH to-do reports about 00-dokploy.conf'* ]] ||
+    fail "step_ssh, file read first, check failed: todo '${MANUAL_TODO[*]}'"
+no_yes 'step_ssh, file read first, check failed'
+pass 'step_ssh with --yes and a file read first: a failed login check keeps the old port, and its to-do points to that file'
+
+reset_step; : > "$test_home/.ssh/authorized_keys"
+st=0; step_ssh > "$tmp/step-out" 2>&1 || st=$?
+[[ $st -eq $SKIP_RC && -z $(calls) && $STEP_NOTES == *'aborted: no SSH key for admin'* &&
+    ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *"$over_text"* ]] ||
+    fail "step_ssh, file read first, no key, --yes: status $st, calls '$(calls)', notes '$STEP_NOTES', todo '${MANUAL_TODO[*]}'"
+pass 'step_ssh with --yes, no admin key and a file read first: the step changes nothing but still names that file'
+rm -f "$tmp/ssh/sshd_config.d/00-dokploy.conf"
 
 # --yes --force goes past the guard; the real login check then skips only its key check
 eval "$real_check"

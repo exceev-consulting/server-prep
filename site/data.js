@@ -48,13 +48,13 @@ window.SERVER_PREP_DATA = {
       "name": "ssh",
       "title": "SSH security",
       "gate": null,
-      "details": "port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server"
+      "details": "port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. Warns when a file sshd reads first (Dokploy's `00-dokploy.conf`) changes these settings. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server"
     },
     {
       "name": "ips",
       "title": "Intrusion prevention",
       "gate": null,
-      "details": "fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted, LAPI moved off 8080"
+      "details": "fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted (the fail2ban whitelist is kept when a panel adds its own fail2ban file, such as Dokploy's `dokploy.local`), LAPI moved off 8080"
     },
     {
       "name": "unattended",
@@ -214,7 +214,7 @@ window.SERVER_PREP_DATA = {
       "example": "cloudflared",
       "default": null,
       "comment": null,
-      "help": "How the panel server reaches this server (comma list): cloudflared, tailscale, public root login is allowed ONLY from the matching sources: cloudflared -> 127.0.0.1/::1 (tunnel), tailscale -> 100.64.0.0/10, public -> PANEL_IP",
+      "help": "How the panel server reaches this server (comma list): cloudflared, tailscale, public root login is allowed ONLY from the matching sources: cloudflared -> 127.0.0.1/::1 (tunnel), tailscale -> 100.64.0.0/10 and fd7a:115c:a1e0::/48, public -> PANEL_IP",
       "saved": true,
       "secret": false
     },
@@ -733,7 +733,7 @@ window.SERVER_PREP_DATA = {
     }
   ],
   "audit": {
-    "checks": 64,
+    "checks": 66,
     "sections": [
       {
         "key": "system",
@@ -904,6 +904,15 @@ window.SERVER_PREP_DATA = {
               "WARN",
               "PASS"
             ]
+          },
+          {
+            "id": "ssh.dropin_override",
+            "title": "SSH settings override",
+            "statuses": [
+              "INFO",
+              "WARN",
+              "PASS"
+            ]
           }
         ]
       },
@@ -985,6 +994,15 @@ window.SERVER_PREP_DATA = {
               "WARN",
               "PASS",
               "FAIL"
+            ]
+          },
+          {
+            "id": "ips.f2b_ignoreip",
+            "title": "fail2ban whitelist",
+            "statuses": [
+              "WARN",
+              "INFO",
+              "PASS"
             ]
           },
           {

@@ -96,6 +96,41 @@ What server-prep does for Dokploy today (`PANEL=dokploy`):
 - moves the CrowdSec API to `8091`, because Dokploy's Traefik uses 8080 too;
 - the audit shows `/etc/dokploy` and a running `dokploy-traefik` container as INFO lines.
 
+### Dokploy's server Security dialog
+
+Dokploy 0.31 and later has a **Security** dialog for each server (the shield button on the server card). On a server prepared by server-prep:
+
+- **Use its read-only tabs** (Exposed Ports, Updates, Activity): they change nothing.
+- **Do not save its SSH and Fail2ban tabs.** Each one writes a file that is read before or after server-prep's file, and wins over it:
+  - the SSH tab writes `/etc/ssh/sshd_config.d/00-dokploy.conf`. sshd reads it before `00-server-prep.conf` and keeps the first value it reads. Dokploy connects as root, so it always writes `PermitRootLogin prohibit-password`: server-prep's `Match Address` block no longer decides where root may log in from with a key, and only `AllowUsers` still limits it;
+  - the Fail2ban tab writes `/etc/fail2ban/jail.d/dokploy.local`. fail2ban reads it after `jail.local`, and its `ignoreip` list replaces server-prep's: the tailnet ranges (IPv4 and IPv6), `PANEL_IP` and your `ADMIN_IPS` leave the whitelist, so a few failed logins from your office can ban it.
+- **Change SSH and fail2ban through server-prep instead:** edit `ADMIN_IPS` or `SSH_PORT` in `/etc/server-prep/server-prep.conf`, then re-run the step (a dry run first, and never `--yes` for the `ssh` step).
+- The Exposed Ports tab says that ports published by Docker bypass UFW. It shows that for every published port and does not check for ufw-docker. When the audit's "Docker vs firewall" (`fw.docker_bypass`) is PASS, the warning is wrong: server-prep's ufw-docker rules send those ports through UFW.
+
+If the tabs were saved already:
+
+- the audit warns: `ssh.dropin_override` ("00-dokploy.conf is read first and sets PermitRootLogin prohibit-password", also named in `ssh.root_login`) and `ips.f2b_ignoreip` (the addresses missing from the whitelist, and the file that set it). The SSH step warns too and adds a to-do;
+- the `ips` step keeps the whitelist: it also writes `/etc/fail2ban/jail.d/zz-server-prep.local`, read after Dokploy's file, which keeps Dokploy's list and adds server-prep's addresses back. On a server prepared before this change, run it again:
+
+  ```bash
+  sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes
+  ```
+
+  The audit's `ips.f2b_ignoreip` is then PASS.
+
+To undo a save, delete Dokploy's files, check the SSH configuration, then reload SSH and restart fail2ban:
+
+```bash
+sudo rm /etc/ssh/sshd_config.d/00-dokploy.conf
+sudo sshd -t && sudo systemctl reload ssh
+sudo rm -f /etc/fail2ban/jail.d/dokploy.local /etc/fail2ban/jail.d/dokploy-backend.local /etc/fail2ban/fail2ban.d/dokploy.local
+sudo systemctl restart fail2ban
+```
+
+`sudo sshd -t` prints nothing when the configuration is valid. Dokploy writes `dokploy-backend.local` only on systems without `/var/log/auth.log`. Deleting `dokploy.local` also removes Dokploy's manual-ban jail (`dokploy-manual`), so its **Ban IP** button works again only after a new save of the Fail2ban tab.
+
+Keep `zz-server-prep.local`: it adds server-prep's addresses to the `[DEFAULT]` whitelist of `/etc/fail2ban/jail.local`. If you ever delete `jail.local` (to manage fail2ban yourself), delete `/etc/fail2ban/jail.d/zz-server-prep.local` with it. Without a `[DEFAULT]` whitelist to add to, fail2ban rejects its whole configuration and does not start; the audit's `ips.f2b_ignoreip` warns then.
+
 There is no Dokploy guide yet. If you run it, please share your result (see [Providers and hardware](Providers-and-hardware)).
 
 ## Openship

@@ -1556,11 +1556,16 @@ step_update() {
     return 0
 }
 
+# Tailscale's address ranges, IPv4 and IPv6: a tailnet device can connect over either (MagicDNS can
+# give the IPv6 address first). With PANEL_ACCESS=tailscale, root may log in from both
+# (compute_root_sources), and both are on the whitelists of fail2ban and CrowdSec (ips_whitelist).
+# The audit's f2b_wanted (server-audit.sh) looks for the same two in fail2ban's whitelist.
+TAILNET_RANGES=(100.64.0.0/10 fd7a:115c:a1e0::/48)
 ROOT_SOURCES=()
 compute_root_sources() {
     ROOT_SOURCES=()
     [[ "$PANEL_ACCESS" == *cloudflared* ]] && ROOT_SOURCES+=(127.0.0.1 ::1)
-    [[ "$PANEL_ACCESS" == *tailscale* ]] && ROOT_SOURCES+=(100.64.0.0/10 fd7a:115c:a1e0::/48)
+    [[ "$PANEL_ACCESS" == *tailscale* ]] && ROOT_SOURCES+=("${TAILNET_RANGES[@]}")
     [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]] && ROOT_SOURCES+=("$PANEL_IP")
     return 0
 }
@@ -1933,17 +1938,147 @@ sshd_port_dropins() {
     return 0
 }
 
-write_sshd_config() {   # write_sshd_config "PORTS"
-    local ports p allow="AllowUsers ${ADMIN_USER}" src
-    # Each port once: on a host prepared by an older version, phase A can get "822 22 822".
-    ports="$(uniq_ports <<<"$1")"
+# sshd_dropin_overrides DIR [OWN]: the lines sshd reads before server-prep's DIR/00-server-prep.conf
+# and keeps instead of its values, one "FILE<TAB>Keyword<TAB>value" line each, in sshd's read order.
+# sshd keeps the first value it reads for a keyword. It reads the main sshd_config next to DIR up to
+# its Include of DIR, then DIR/*.conf in byte (C) order: a line there, or in a drop-in whose name
+# sorts before 00-server-prep.conf (Dokploy's 00-dokploy.conf), wins. Port and AllowUsers add up
+# instead, so each of their values that OWN lacks counts. Only the keywords server-prep sets that
+# decide who logs in and where (ChallengeResponseAuthentication is KbdInteractiveAuthentication's old
+# name), and only global lines: what follows a Match is conditional. A main file without an Include of
+# DIR makes sshd read no drop-in at all, 00-server-prep.conf included: the only line is then
+# "MAIN<TAB>Include<TAB>". OWN is the text server-prep writes (DIR/00-server-prep.conf by default);
+# without it nothing is printed. Reads files only.
+# The same code is in server-prep.sh and server-audit.sh: tests/sshd-dropin-override.sh checks both.
+sshd_dropin_overrides() {
+    local dir="$1" own="${2:-$1/00-server-prep.conf}" main f files=() hasmain=0
+    [[ -r $own ]] || return 0
+    main="${dir%/*}/sshd_config"
+    [[ -f $main && -r $main ]] && files+=("$main") && hasmain=1
+    # the drop-ins that sort before 00-server-prep.conf, whether that file exists yet or not
+    while IFS= read -r f; do
+        [[ ${f##*/} == 00-server-prep.conf ]] && break
+        [[ -f $f && -r $f ]] && files+=("$f")
+    done < <(printf '%s\n' "$dir"/*.conf "$dir/00-server-prep.conf" | LC_ALL=C sort -u)
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    awk -v main="$main" -v hasmain="$hasmain" -v inc="${dir##*/}/" '
+        # The lines of the main file wait for its Include line. Without one, sshd reads neither
+        # 00-server-prep.conf nor the other drop-ins: only the Include line is missing then.
+        function emit(s) { if (FILENAME == main && !included) buf[++nb] = s; else print s }
+        function endmain() { if (hasmain && !included && !noinc) { print main "\tInclude\t"; noinc = 1 } }
+        BEGIN {
+            n = split("permitrootlogin passwordauthentication kbdinteractiveauthentication authenticationmethods allowusers maxauthtries port", m, " ")
+            for (i = 1; i <= n; i++) managed[m[i]] = 1
+        }
+        FNR == 1 { if (FILENAME != ARGV[1] && FILENAME != main) endmain(); inmatch = 0; stop = 0 }
+        { line = $0; sub(/\r$/, "", line); sub(/^[[:space:]]+/, "", line) }
+        noinc || stop || line == "" || line ~ /^#/ { next }
+        {
+            kw = line; sub(/[[:space:]=].*$/, "", kw); k = tolower(kw)
+            val = substr(line, length(kw) + 1); sub(/^[[:space:]]*=?[[:space:]]*/, "", val)
+            sub(/[[:space:]]+#.*$/, "", val); sub(/[[:space:]]+$/, "", val)
+            if (k == "challengeresponseauthentication") k = "kbdinteractiveauthentication"
+        }
+        k == "match" { inmatch = 1; next }
+        FILENAME == main && k == "include" && index(val, inc) {
+            stop = 1; included = 1
+            for (i = 1; i <= nb; i++) print buf[i]
+            next
+        }
+        inmatch || !(k in managed) { next }
+        {
+            v = val; gsub(/[[:space:]]+/, " ", v)
+            if (k != "allowusers") v = tolower(v)
+            if (k == "permitrootlogin" && v == "without-password") v = "prohibit-password"
+        }
+        FILENAME == ARGV[1] {
+            if (k == "port") ownport[v] = 1
+            else if (k == "allowusers") { c = split(v, t, " "); for (i = 1; i <= c; i++) ownuser[t[i]] = 1 }
+            else if (!(k in own)) own[k] = v
+            next
+        }
+        k == "port" { if (!(v in ownport)) emit(FILENAME "\t" kw "\t" val); next }
+        k == "allowusers" {
+            c = split(v, t, " ")
+            for (i = 1; i <= c; i++) if (!(t[i] in ownuser)) { emit(FILENAME "\t" kw "\t" val); break }
+            next
+        }
+        !(k in seen) { seen[k] = 1; if ((k in own) && own[k] != v) emit(FILENAME "\t" kw "\t" val) }
+        END { endmain() }
+    ' "$own" "${files[@]}"
+}
+# sshd_override_text: the lines of sshd_dropin_overrides on stdin as one sentence, nothing for no input.
+# A phrase per file, joined with "; ", then what sshd does with the values. sshd keeps the first value
+# of most keywords ("sets"), but adds up those of Port and AllowUsers ("adds"):
+#   00-dokploy.conf is read first and sets PermitRootLogin prohibit-password, MaxAuthTries 6: sshd keeps these values, not those of 00-server-prep.conf
+#   00-ops.conf is read first and adds AllowUsers deploy: sshd uses these values as well as those of 00-server-prep.conf
+#   sshd_config sets PermitRootLogin yes before its Include line: sshd keeps these values, ...
+#   sshd_config has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included
+sshd_override_text() {
+    awk -F'\t' '
+        NF >= 3 {
+            name = $1; sub(/.*\//, "", name)
+            if (!(name in seen)) { seen[name] = 1; order[++n] = name }
+            k = tolower($2)
+            if (k == "include") noinc[name] = 1
+            else if (k == "port" || k == "allowusers") { add[name] = add[name] (add[name] == "" ? "" : ", ") $2 " " $3; nadd++ }
+            else { set[name] = set[name] (set[name] == "" ? "" : ", ") $2 " " $3; nset++ }
+        }
+        END {
+            for (i = 1; i <= n; i++) {
+                s = order[i]; p = ""
+                if (set[s] != "") p = "sets " set[s]
+                if (add[s] != "") p = p (p == "" ? "" : " and ") "adds " add[s]
+                if (s in noinc) p = "has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included"
+                else if (s == "sshd_config") p = p " before its Include line"
+                else p = "is read first and " p
+                out = out (i > 1 ? "; " : "") s " " p
+            }
+            if (nset && nadd) out = out ": sshd keeps the values set instead of those of 00-server-prep.conf, and uses the values added along with them"
+            else if (nset) out = out ": sshd keeps these values, not those of 00-server-prep.conf"
+            else if (nadd) out = out ": sshd uses these values as well as those of 00-server-prep.conf"
+            if (n) print out
+        }'
+}
+
+# ssh_report_overrides DIR: when a line sshd reads before 00-server-prep.conf sets one of its login
+# settings to another value or adds to them, or when sshd reads no drop-in (sshd_dropin_overrides), a
+# warning, a note and a to-do that name the file and the settings, and status 0. Report only:
+# server-prep's file keeps its name (issue #204). It is compared with the configuration the step
+# writes, so a dry run and a first run see it too. Port lines are left out: write_sshd_config comments
+# them out in every file it reads (the audit counts them). SSH_OVERRIDE_FILES gets the names of the
+# files it reports, joined with ", " (empty for none): the automatic login check of --yes reads
+# sshd -T, which applies them too, so its to-do points to them when it fails (issue #65).
+SSH_OVERRIDE_FILES=""
+ssh_report_overrides() {
+    local lines over panel_file=""
+    SSH_OVERRIDE_FILES=""
+    lines="$(sshd_dropin_overrides "$1" <(sshd_prep_conf "$SSH_PORT") | awk -F'\t' 'tolower($2) != "port"')"
+    over="$(sshd_override_text <<<"$lines")"
+    [[ -n $over ]] || return 1
+    SSH_OVERRIDE_FILES="$(awk -F'\t' 'NF >= 3 { n = $1; sub(/.*\//, "", n); if (!(n in s)) { s[n] = 1; out = out (out == "" ? "" : ", ") n } }
+        END { print out }' <<<"$lines")"
+    warn "$over"
+    note "$over"
+    if [[ $over == *"no Include line"* ]]; then
+        todo "SSH: ${over}. Add the line 'Include /etc/ssh/sshd_config.d/*.conf' at the top of /etc/ssh/sshd_config, then check and reload SSH: sudo sshd -t && sudo systemctl reload ssh"
+    else
+        [[ ${PANEL,,} == dokploy ]] && panel_file=" (Dokploy's server Security dialog writes 00-dokploy.conf)"
+        todo "SSH: ${over}. If you did not choose them, remove them from that file, or delete the file if a panel wrote it${panel_file}, then check and reload SSH: sudo sshd -t && sudo systemctl reload ssh"
+    fi
+    return 0
+}
+
+# sshd_prep_conf "PORTS": the text of 00-server-prep.conf for these ports. Reads only.
+sshd_prep_conf() {
+    local p allow="AllowUsers ${ADMIN_USER}" src
     if [[ -n "$PANEL_PUBKEY" || -s /root/.ssh/authorized_keys ]]; then
         for src in "${ROOT_SOURCES[@]}"; do allow+=" root@${src}"; done
     fi
-    {
-        echo "# Managed by server-prep.sh"
-        for p in $ports; do echo "Port $p"; done
-        cat <<EOF
+    echo "# Managed by server-prep.sh"
+    # Each port once: on a host prepared by an older version, phase A can get "822 22 822".
+    for p in $(uniq_ports <<<"$1"); do echo "Port $p"; done
+    cat <<EOF
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -1966,7 +2101,10 @@ ClientAliveCountMax 2
 LogLevel VERBOSE
 ${allow}
 EOF
-    } | write_file /etc/ssh/sshd_config.d/00-server-prep.conf 644
+}
+
+write_sshd_config() {   # write_sshd_config "PORTS"
+    sshd_prep_conf "$1" | write_file /etc/ssh/sshd_config.d/00-server-prep.conf 644
 
     # Root (the panel) allowed with a key, only from trusted sources. Match blocks
     # must be at the end of the main file. Its Port lines are commented out: sshd would listen there too.
@@ -2341,7 +2479,10 @@ ssh_finish_move() {
 
 step_ssh() {
     compute_root_sources
-    local home nkeys=0 nokey=""
+    local home nkeys=0 nokey="" over=0
+    # sshd keeps the first value it reads: a file read before 00-server-prep.conf can win (issue #204).
+    # Reported before the no-key guard, so a step that stops there (the default of --yes) still names it.
+    ssh_report_overrides /etc/ssh/sshd_config.d && over=1
     home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
     [[ -s "$home/.ssh/authorized_keys" ]] && nkeys=$(grep -cE '^[^#[:space:]]' "$home/.ssh/authorized_keys")
     if [[ $nkeys -eq 0 && $DRY_RUN -eq 0 ]]; then
@@ -2359,8 +2500,10 @@ step_ssh() {
     for f in /etc/ssh/sshd_config.d/*; do
         [[ -e $f && ${f##*/} != 00-server-prep.conf ]] && others+=("${f##*/}")
     done
-    if [[ ${#others[@]} -gt 0 ]]; then
-        note "other drop-ins present (${others[*]}) - 00-server-prep.conf is read first and wins; their Port lines are commented out (sshd listens on every Port line)"
+    if [[ ${#others[@]} -gt 0 && $over -eq 1 ]]; then
+        note "other drop-ins present (${others[*]}); their Port lines are commented out (sshd listens on every Port line)"
+    elif [[ ${#others[@]} -gt 0 ]]; then
+        note "other drop-ins present (${others[*]}) - none read before 00-server-prep.conf changes its login settings; their Port lines are commented out (sshd listens on every Port line)"
     fi
 
     # The ports SSH has now: what sshd -T reported, plus those of the Port lines about to be commented
@@ -2461,7 +2604,7 @@ EOF
         local kept=""
         for p in $old_ports; do [[ $p == "$SSH_PORT" ]] || kept+="$p "; done
         note "automatic login check failed (${SSH_CHECK_FAILED})${SSH_CHECK_SKIPPED:+; ${SSH_CHECK_SKIPPED}}${kept:+: old SSH port(s) ${kept}and their temporary UFW rules kept}; the rollback timer puts back the SSH configuration from before this run in 10 minutes"
-        todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}. Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
+        todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}.${SSH_OVERRIDE_FILES:+ The check reads sshd -T, so it sees what the other SSH to-do reports about ${SSH_OVERRIDE_FILES}: that can be the cause.} Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
         return 1
     fi
     if [[ "${answer,,}" == "n" ]]; then
@@ -2487,11 +2630,49 @@ EOF
     return 0
 }
 
-step_ips() {
-    local did=0 ignore="127.0.0.1/8 ::1"
-    [[ "$PANEL_ACCESS" == *tailscale* ]] && ignore+=" 100.64.0.0/10"
+# f2b_prep_local "ADDRESSES": the text of /etc/fail2ban/jail.d/zz-server-prep.local, server-prep's own
+# file in jail.d. fail2ban reads jail.conf, jail.d/*.conf, jail.local, then jail.d/*.local in name
+# order, and the last value of a setting wins. So a panel's file there can replace what jail.local
+# sets: Dokploy's dokploy.local sets its own [DEFAULT] ignoreip, without the tailnet, PANEL_IP or
+# ADMIN_IPS (issue #204). "zz-" sorts after such files, and %(known/ignoreip)s keeps the list they set
+# and adds server-prep's addresses. It must be in [sshd], not [DEFAULT]: fail2ban keeps no earlier
+# [DEFAULT] value, so there it points back to itself and fail2ban does not start ("Recursion limit
+# exceeded"). In a jail, it is the value an earlier file gave that jail, else the [DEFAULT] one, which
+# jail.local always sets. With neither, fail2ban rejects its whole configuration ("Bad value
+# substitution ... 'known/ignoreip'") and no jail runs: the file must go with jail.local, which its
+# header says, and the audit's ips.f2b_ignoreip warns when it is left alone. Settings that must win
+# over other fail2ban files can go here too (#119).
+f2b_prep_local() {
+    local ips=()
+    IFS=$' \t\n,' read -r -d '' -a ips <<<"$1"
+    cat <<EOF
+# Managed by server-prep.sh. Read after jail.local and the other jail.d/*.local files (zz-), so its
+# settings win over theirs.
+# Another file can set its own [DEFAULT] ignoreip (Dokploy: dokploy.local) and drop the addresses of
+# jail.local. %(known/ignoreip)s keeps that list, and server-prep's addresses are added back. It is
+# set per jail: in [DEFAULT], %(known/ignoreip)s cannot reach the value it replaces.
+# It needs the [DEFAULT] ignoreip of server-prep's jail.local (or of another file): without one,
+# fail2ban rejects its whole configuration and does not start. Delete this file with jail.local.
+[sshd]
+ignoreip = %(known/ignoreip)s ${ips[*]}
+EOF
+}
+
+# ips_whitelist: the addresses the ips step whitelists in fail2ban (ignoreip of jail.local and
+# zz-server-prep.local) and CrowdSec, separated by spaces: the loopback, the tailnet's ranges
+# (TAILNET_RANGES) when PANEL_ACCESS has tailscale, PANEL_IP and ADMIN_IPS. The audit's
+# ips.f2b_ignoreip looks for all but the loopback (f2b_wanted in server-audit.sh).
+ips_whitelist() {
+    local ignore="127.0.0.1/8 ::1"
+    [[ "$PANEL_ACCESS" == *tailscale* ]] && ignore+=" ${TAILNET_RANGES[*]}"
     [[ -n "$PANEL_IP" ]] && ignore+=" $PANEL_IP"
     ignore+=" ${ADMIN_IPS//,/ }"
+    printf '%s\n' "$ignore"
+}
+
+step_ips() {
+    local did=0 ignore
+    ignore="$(ips_whitelist)"
 
     if yes_ "$INSTALL_FAIL2BAN"; then
         did=1
@@ -2514,6 +2695,8 @@ enabled = true
 port = ${SSH_PORT}
 mode = aggressive
 EOF
+        # keeps the whitelist when a later jail.d file sets its own (f2b_prep_local)
+        f2b_prep_local "$ignore" | write_file /etc/fail2ban/jail.d/zz-server-prep.local 644
         run systemctl enable fail2ban
         run systemctl restart fail2ban || { note "fail2ban failed to start (journalctl -u fail2ban)"; return 1; }
         note "fail2ban sshd jail on port ${SSH_PORT}"
@@ -3278,9 +3461,10 @@ rollback_step() {
 
 write_rollback() {
     [[ $DRY_RUN -eq 1 ]] && return 0
-    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=()
+    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 f2b_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=()
     for f in "${CHANGED_FILES[@]}" "${NEW_FILES[@]}"; do
         [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/* ]] && ssh_files=1
+        [[ $f == /etc/fail2ban/* ]] && f2b_files=1
     done
     [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]] && endlessh=1
     # The restored SSH files are this run's backups, so sshd goes back to the ports it had before
@@ -3362,6 +3546,9 @@ write_rollback() {
             echo "if systemctl is-active --quiet endlessh 2>/dev/null || systemctl is-enabled --quiet endlessh 2>/dev/null; then systemctl disable --now endlessh; fi"
         fi
         echo "sysctl --system >/dev/null"
+        # fail2ban reads its files only when it starts: without a restart, it keeps this run's jail.local
+        # and zz-server-prep.local (whitelist, port) until the next one. Before sshd -t, which can stop the script.
+        [[ $f2b_files -eq 1 ]] && echo "systemctl try-restart fail2ban 2>/dev/null"
         if [[ -n $allow ]]; then
             echo "if command -v ufw >/dev/null 2>&1; then"
             printf '%s' "$allow"

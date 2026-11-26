@@ -43,6 +43,29 @@ Highlights of each release. The full list of merged pull requests is in each
   you kept every service: set `DISABLE_SERVICES=none` there before a `--yes` re-run. `--validate`, the plan and the
   to-do of a run from those answers say so, and the questions warn before the first service. A `--yes` run without the
   `services` step keeps that empty value in the answers, so the next run with it still warns.
+- Fix: saving the SSH or Fail2ban tab of Dokploy's server Security dialog (Dokploy 0.31 and later) undid two
+  protections of server-prep without a word. `00-dokploy.conf` is read before `00-server-prep.conf`, so root could log
+  in with a key from any address (`PermitRootLogin prohibit-password`), and `jail.d/dokploy.local` replaced fail2ban's
+  whitelist, so the office IP or a tailnet device could be banned. The `ips` step now also writes
+  `/etc/fail2ban/jail.d/zz-server-prep.local`, read after such files, which keeps their whitelist and adds the tailnet
+  range, `PANEL_IP` and `ADMIN_IPS` back to the sshd jail. It needs `jail.local`: delete both or neither, or fail2ban
+  does not start. `rollback.sh` deletes it, and restarts fail2ban once it has put back fail2ban's files. The SSH step
+  warns and adds a to-do when a file read first changes one of its login settings or adds users, or when
+  `sshd_config` has no `Include` of `sshd_config.d`, even when it stops because the admin has no SSH key. In a run
+  with `--yes`, the to-do of a failed automatic login check points to that file: the check reads `sshd -T`, which
+  applies it. The audit has two new checks, both WARN in those cases:
+  `ssh.dropin_override` names the file and the settings (`ssh.root_login` names it too), and `ips.f2b_ignoreip` lists
+  the addresses missing from the whitelist and the file that set it, or says that `zz-server-prep.local` is left
+  without `jail.local`. It and `ips.f2b_sshd_jail` read the jail files as fail2ban does: a value goes on over lines
+  indented deeper than its option, and ` ;` starts a comment. The wiki's Panels page says which tabs of the dialog to
+  use on a prepared server and how to undo a save. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes`.
+- Fix: with `PANEL_ACCESS=tailscale`, the `ips` step whitelisted only the tailnet's IPv4 range (`100.64.0.0/10`) in
+  fail2ban and CrowdSec, while SSH also trusts its IPv6 range (`fd7a:115c:a1e0::/48`). A tailnet device that connected
+  over IPv6 (MagicDNS can give that address first) could be banned after a few failed logins. Both ranges are now
+  whitelisted, and the audit's `ips.f2b_ignoreip` warns when the IPv6 one is missing. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --dry-run`, then the same command with
+  `--yes`. The `PANEL_ACCESS` help in `server-prep.conf.example` and the setup console now names both ranges.
 - `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
   reports (`kern.suid`, `kern.world_writable`, `net.exposure`) no longer makes the `--json` report invalid or reaches
   your terminal as an escape sequence. Any local user can create such a name. The JSON report writes these characters

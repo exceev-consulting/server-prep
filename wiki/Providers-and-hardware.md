@@ -57,7 +57,7 @@ These are handled by the scripts today. Each one links to its fix on [Troublesho
 - Keep the provider's network config. At the network question of `server-preconfig.sh`, press Enter (`keep`).
 - Find the provider's web console **before** you start. You need it if SSH breaks.
 - Many providers put a **cloud firewall** in front of the server. Open the new SSH port (`822`) there too, and keep 22 open until the SSH step is confirmed. Otherwise the server works but you can't reach it.
-- Cloud images can add their own file in `/etc/ssh/sshd_config.d/`. server-prep's `00-server-prep.conf` is read first and wins for most settings, but sshd listens on every `Port` line it reads. So the SSH step comments out the `Port` lines of `/etc/ssh/sshd_config` and of the other files, after a backup, and lists those files in its notes.
+- Cloud images can add their own file in `/etc/ssh/sshd_config.d/`. For most settings sshd keeps the first value it reads, and it reads these files in name order, so server-prep's `00-server-prep.conf` wins over the usual ones (`50-cloud-init.conf`...). A file whose name sorts before it, such as Dokploy's `00-dokploy.conf`, wins over it: the SSH step and the audit (`ssh.dropin_override`) name that file and the settings it changes. sshd listens on every `Port` line it reads, though. So the SSH step comments out the `Port` lines of `/etc/ssh/sshd_config` and of the other files, after a backup, and lists those files in its notes.
 
 **Dedicated or on-premise**
 

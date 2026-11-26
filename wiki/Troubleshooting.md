@@ -55,7 +55,7 @@ systemctl list-timers 'server-prep-ssh-rollback-*'
 
 You see one line while the timer is waiting, and none once you confirmed or it ran.
 
-With `--yes`, the automatic login check confirms instead of you. When it fails, the `ssh` step fails with a to-do that names the check (SSH not on the new port, the admin refused by `sshd -T` or without a key, no SSH handshake). The key check reads only the `AuthorizedKeysFile` files: keys that an `AuthorizedKeysCommand` gives are not seen, so such a server fails it. The old port and its temporary UFW rule stay, and the timer still puts back the old SSH config after 10 minutes. Fix the cause, then run the step interactively and test a login from a second terminal when it asks:
+With `--yes`, the automatic login check confirms instead of you. When it fails, the `ssh` step fails with a to-do that names the check (SSH not on the new port, the admin refused by `sshd -T` or without a key, no SSH handshake). The key check reads only the `AuthorizedKeysFile` files: keys that an `AuthorizedKeysCommand` gives are not seen, so such a server fails it. `sshd -T` also applies a file that sshd reads before `00-server-prep.conf`, such as Dokploy's `00-dokploy.conf` (see [Panels](Panels#dokploys-server-security-dialog)): the step names that file in another to-do, and the failed check's to-do points to it. The old port and its temporary UFW rule stay, and the timer still puts back the old SSH config after 10 minutes. Fix the cause, then run the step interactively and test a login from a second terminal when it asks:
 
 ```bash
 sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh --dry-run
