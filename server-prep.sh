@@ -2067,7 +2067,7 @@ ufw_stale_rules() {
 # ufw_plan_cleanup: for the plan, the rules of earlier answers the firewall step will delete. Nothing
 # when UFW is not installed yet, or ufw show added does not run (a dry run without root).
 ufw_plan_cleanup() {
-    local added stale keep_temp=0 spec c ssh=0 unapplied
+    local added stale keep_temp=0 spec c ssh=0 blocked
     ufw_wanted_rules
     ssh_move_pending && keep_temp=1
     added="$(ufw_added 2>/dev/null)"
@@ -2077,9 +2077,9 @@ ufw_plan_cleanup() {
         echo "  Firewall cleanup .. none, the rules of earlier answers stay: in ADMIN_IPS / PANEL_IP, ${UFW_WANT_BAD}"
         return 0
     fi
-    unapplied="$(ufw_unapplied <<<"$added")"
-    if [[ -n $unapplied ]]; then
-        echo "  Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule the firewall step does not manage blocks ${unapplied}"
+    blocked="$(ufw_unapplied <<<"$added")"
+    if [[ -n $blocked ]]; then
+        echo "  Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule the firewall step does not manage blocks ${blocked}"
         return 0
     fi
     echo "  Firewall cleanup .. deletes the UFW rules server-prep added for earlier answers:"
@@ -2098,7 +2098,7 @@ ufw_plan_cleanup() {
 # by its words and comment, not its number: ufw deletes its IPv6 copy too, and nothing else. Returns 1
 # when a delete fails.
 ufw_prune_rules() {
-    local keep_temp=0 added stale spec c k list="" n=0 failed="" absent="" unapplied
+    local keep_temp=0 added stale spec c k list="" n=0 failed="" absent="" blocked
     local -a words=()
     local -A have=() bad=()
     ssh_move_pending && keep_temp=1
@@ -2114,11 +2114,11 @@ ufw_prune_rules() {
     # A wanted rule held by a rule the step does not manage with another action is not applied: it counts
     # as missing, so nothing is deleted (an old SSH rule may be the only SSH opening left). In a dry run
     # too: the rules that hold wanted ones are there before any add.
-    unapplied="$(ufw_unapplied <<<"$added")"
-    if [[ -n $unapplied ]]; then
-        warn "the UFW rules of earlier answers are kept: a UFW rule the firewall step does not manage blocks ${unapplied} (see above)"
-        note "UFW rules of earlier answers kept: not applied: ${unapplied}"
-        todo "UFW: the rules server-prep added for earlier answers stay while ${unapplied} is not applied. Apply it with the command of the to-do above, or change the answers, then re-run the firewall step: it deletes them"
+    blocked="$(ufw_unapplied <<<"$added")"
+    if [[ -n $blocked ]]; then
+        warn "the UFW rules of earlier answers are kept: a UFW rule the firewall step does not manage blocks ${blocked} (see above)"
+        note "UFW rules of earlier answers kept: not applied: ${blocked}"
+        todo "UFW: the rules server-prep added for earlier answers stay while ${blocked} is not applied. Apply it with the command of the to-do above, or change the answers, then re-run the firewall step: it deletes them"
         return 1
     fi
     if [[ $DRY_RUN -eq 0 ]]; then
