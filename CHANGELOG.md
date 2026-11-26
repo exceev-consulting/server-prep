@@ -65,9 +65,10 @@ Highlights of each release. The full list of merged pull requests is in each
   `sshd_config.d/*.conf`. They stopped reading the main file at that first `Include`, so a `PermitRootLogin yes`
   between the two lines went unreported, and so did the lines of the file it names, which sshd reads there, before
   `00-server-prep.conf`, even though its name sorts after it. They now read each `Include` where it stands, as sshd
-  does, up to the one that reaches `00-server-prep.conf`. When none reaches it, the message now says that
-  `sshd_config` has no `Include` line for `00-server-prep.conf`. The stock `sshd_config` of Debian and Ubuntu has a
-  single `Include` of `sshd_config.d/*.conf`, so only hand-made layouts were affected.
+  does, up to the one that reaches `00-server-prep.conf`. A file outside `sshd_config.d` is named by its full path,
+  and the step reports its `Port` lines, which it does not comment out. When no `Include` reaches
+  `00-server-prep.conf`, the message now says that `sshd_config` has no `Include` line for it. The stock `sshd_config`
+  of Debian and Ubuntu has a single `Include` of `sshd_config.d/*.conf`, so only hand-made layouts were affected.
 - Fix: with `PANEL_ACCESS=tailscale`, the `ips` step whitelisted only the tailnet's IPv4 range (`100.64.0.0/10`) in
   fail2ban and CrowdSec, while SSH also trusts its IPv6 range (`fd7a:115c:a1e0::/48`). A tailnet device that connected
   over IPv6 (MagicDNS can give that address first) could be banned after a few failed logins. Both ranges are now

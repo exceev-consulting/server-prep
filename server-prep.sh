@@ -1952,16 +1952,16 @@ sshd_port_dropins() {
 # next Match or the end of its file. An included file starts as its Include line stands, so the files
 # of an Include in a conditional block are not read; one that reaches 00-server-prep.conf there still
 # ends the walk, as before (sshd refuses the Port line of 00-server-prep.conf in a Match block). A
-# file read twice counts once. An Include inside an included file is not followed (no stock layout
-# has one). A main file with no Include that reaches 00-server-prep.conf makes sshd read none of its
-# settings: the only line is then "MAIN<TAB>Include<TAB>". Without a readable main file, the stock
-# "Include DIR/*.conf" is assumed.
+# file read twice counts once, whatever path names it. An Include inside an included file is not
+# followed (no stock layout has one). A main file with no Include that reaches 00-server-prep.conf
+# makes sshd read none of the settings in that file: the only line is then "MAIN<TAB>Include<TAB>".
+# Without a readable main file, the stock "Include DIR/*.conf" is assumed.
 # OWN is the text server-prep writes (DIR/00-server-prep.conf by default). That file may not exist
 # yet: a pattern that would match it reaches it all the same. Without OWN nothing is printed. Reads
 # files only.
 # The same code is in server-prep.sh and server-audit.sh: tests/sshd-dropin-override.sh checks both.
 sshd_dropin_overrides() {
-    local dir="$1" own="${2:-$1/00-server-prep.conf}" base="${1%/*}" main="" l p f d hits incs=() IFS=
+    local dir="$1" own="${2:-$1/00-server-prep.conf}" base="${1%/*}" main="" l p f d i hits incs=() IFS=
     [[ -r $own ]] || return 0
     [[ -f $base/sshd_config && -r $base/sshd_config ]] && main="$base/sshd_config"
     # The files each Include line of the main file reads, as "LINE FILE" pairs, up to 00-server-prep.conf
@@ -1978,7 +1978,10 @@ sshd_dropin_overrides() {
             if [[ ${f##*/} == 00-server-prep.conf && (${f%/*} -ef $dir || ${f%/*} == "$dir") ]]; then
                 incs+=("$l" ""); break 2
             fi
-            [[ -f $f && -r $f ]] && incs+=("$l" "$f")
+            [[ -f $f && -r $f ]] || continue
+            # a file already listed under another path (// or /./ in it, a link) keeps that path: it counts once
+            for ((i = 1; i < ${#incs[@]}; i += 2)); do [[ $f -ef ${incs[i]} ]] && f="${incs[i]}" && break; done
+            incs+=("$l" "$f")
         done <<<"$hits"
     done < <(if [[ -z $main ]]; then printf '0\t%s/*.conf\n' "$dir"; else awk '
         # The patterns of each Include line, split as sshd does (argv_split): on blanks outside
@@ -2057,16 +2060,18 @@ sshd_dropin_overrides() {
         }' "$own" "$main" "${incs[@]}"
 }
 # sshd_override_text: the lines of sshd_dropin_overrides on stdin as one sentence, nothing for no input.
-# A phrase per file, joined with "; ", then what sshd does with the values. sshd keeps the first value
-# of most keywords ("sets"), but adds up those of Port and AllowUsers ("adds"):
+# A phrase per file, joined with "; ", then what sshd does with the values. A file is named by its name
+# when it is the main sshd_config or in a sshd_config.d folder, by its full path otherwise (a file
+# that an Include names elsewhere). sshd keeps the first value of most keywords ("sets"), but adds up
+# those of Port and AllowUsers ("adds"):
 #   00-dokploy.conf is read first and sets PermitRootLogin prohibit-password, MaxAuthTries 6: sshd keeps these values, not those of 00-server-prep.conf
 #   00-ops.conf is read first and adds AllowUsers deploy: sshd uses these values as well as those of 00-server-prep.conf
 #   sshd_config sets PermitRootLogin yes before its Include line: sshd keeps these values, ...
-#   sshd_config has no Include line for 00-server-prep.conf: sshd reads none of its settings
+#   sshd_config has no Include line for 00-server-prep.conf: sshd reads none of the settings in 00-server-prep.conf
 sshd_override_text() {
     awk -F'\t' '
         NF >= 3 {
-            name = $1; sub(/.*\//, "", name)
+            name = $1; if (name ~ /(^|\/)sshd_config(\.d(\/\.?)*\/[^\/]+)?$/) sub(/.*\//, "", name)
             if (!(name in seen)) { seen[name] = 1; order[++n] = name }
             k = tolower($2)
             if (k == "include") noinc[name] = 1
@@ -2078,7 +2083,7 @@ sshd_override_text() {
                 s = order[i]; p = ""
                 if (set[s] != "") p = "sets " set[s]
                 if (add[s] != "") p = p (p == "" ? "" : " and ") "adds " add[s]
-                if (s in noinc) p = "has no Include line for 00-server-prep.conf: sshd reads none of its settings"
+                if (s in noinc) p = "has no Include line for 00-server-prep.conf: sshd reads none of the settings in 00-server-prep.conf"
                 else if (s == "sshd_config") p = p " before its Include line"
                 else p = "is read first and " p
                 out = out (i > 1 ? "; " : "") s " " p
@@ -2094,19 +2099,26 @@ sshd_override_text() {
 # settings to another value or adds to them, or when sshd does not read 00-server-prep.conf
 # (sshd_dropin_overrides), a warning, a note and a to-do that name the file and the settings, and
 # status 0. Report only: server-prep's file keeps its name (issue #204). It is compared with the
-# configuration the step writes, so a dry run and a first run see it too. Port lines are left out:
-# write_sshd_config comments them out in every file it reads (the audit counts them).
-# SSH_OVERRIDE_FILES gets the names of the files it reports, joined with ", " (empty for none): the
-# automatic login check of --yes reads sshd -T, which applies them too, so its to-do points to them
-# when it fails (issue #65).
+# configuration the step writes, so a dry run and a first run see it too. The Port lines of the main
+# file and of DIR/*.conf are left out: write_sshd_config comments them out itself (the audit counts
+# them). Those of another file, one that an Include names, are reported: the step does not edit it.
+# SSH_OVERRIDE_FILES gets the files it reports, named as in its sentence and joined with ", " (empty
+# for none): the automatic login check of --yes reads sshd -T, which applies them too, so its to-do
+# points to them when it fails (issue #65).
 SSH_OVERRIDE_FILES=""
 ssh_report_overrides() {
-    local lines over panel_file=""
+    local lines="" over panel_file="" f k v
     SSH_OVERRIDE_FILES=""
-    lines="$(sshd_dropin_overrides "$1" <(sshd_prep_conf "$SSH_PORT") | awk -F'\t' 'tolower($2) != "port"')"
+    while IFS=$'\t' read -r f k v; do
+        [[ ${k,,} == port && ($f -ef ${1%/*}/sshd_config || ($f == *.conf && ${f%/*} -ef $1)) ]] ||
+            lines+="${f}"$'\t'"${k}"$'\t'"${v}"$'\n'
+    done < <(sshd_dropin_overrides "$1" <(sshd_prep_conf "$SSH_PORT"))
     over="$(sshd_override_text <<<"$lines")"
     [[ -n $over ]] || return 1
-    SSH_OVERRIDE_FILES="$(awk -F'\t' 'NF >= 3 { n = $1; sub(/.*\//, "", n); if (!(n in s)) { s[n] = 1; out = out (out == "" ? "" : ", ") n } }
+    SSH_OVERRIDE_FILES="$(awk -F'\t' 'NF >= 3 {
+            n = $1; if (n ~ /(^|\/)sshd_config(\.d(\/\.?)*\/[^\/]+)?$/) sub(/.*\//, "", n)
+            if (!(n in s)) { s[n] = 1; out = out (out == "" ? "" : ", ") n }
+        }
         END { print out }' <<<"$lines")"
     warn "$over"
     note "$over"

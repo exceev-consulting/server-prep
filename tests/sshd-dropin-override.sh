@@ -179,7 +179,7 @@ put sshd_config.d/00-dokploy.conf "${DOKPLOY/MaxAuthTries 3/MaxAuthTries 9}"
 expect 'two files: one phrase each, joined with "; "' \
     "sshd_config sets PermitRootLogin yes before its Include line; 00-dokploy.conf is read first and sets MaxAuthTries 9$KEEP"
 
-NOINC='sshd_config has no Include line for 00-server-prep.conf: sshd reads none of its settings'
+NOINC='sshd_config has no Include line for 00-server-prep.conf: sshd reads none of the settings in 00-server-prep.conf'
 setup; put sshd_config 'PermitRootLogin yes
 PasswordAuthentication yes'; put sshd_config.d/00-dokploy.conf "$DOKPLOY"
 expect 'a main file without an Include: sshd reads no drop-in, so that is all there is to say' "$NOINC"
@@ -236,6 +236,15 @@ MaxAuthTries 6'
 raw 'a file read twice, by its name then by the glob, counts once' \
     "sshd_config.d/00-a.conf${T}AllowUsers${T}deploy
 sshd_config.d/00-a.conf${T}MaxAuthTries${T}6"
+put sshd_config "Include /etc/ssh/sshd_config.d/00-a.conf
+Include /etc/ssh/sshd_config.d/./*.conf"
+raw 'a file read twice under two paths (/./ in one) counts once, under the first' \
+    "sshd_config.d/00-a.conf${T}AllowUsers${T}deploy
+sshd_config.d/00-a.conf${T}MaxAuthTries${T}6"
+put sshd_config "$GLOB"; ln -s 00-a.conf "$ssh/sshd_config.d/00-b.conf"
+raw 'a link to a drop-in read already counts once' \
+    "sshd_config.d/00-a.conf${T}AllowUsers${T}deploy
+sshd_config.d/00-a.conf${T}MaxAuthTries${T}6"
 
 setup; put sshd_config "PasswordAuthentication yes
 Include /etc/ssh/sshd_config.d/00-server-prep.conf
@@ -246,15 +255,21 @@ expect 'an Include of 00-server-prep.conf by name: what comes after it is read a
 
 setup; put sshd_config "Include extra.conf
 $GLOB"; put extra.conf 'MaxAuthTries 6'
-expect 'a file outside sshd_config.d, by a path relative to /etc/ssh, read before the glob' \
-    "extra.conf is read first and sets MaxAuthTries 6$KEEP"
+expect 'a file outside sshd_config.d, by a path relative to /etc/ssh, read before the glob: named by its full path' \
+    "$ssh/extra.conf is read first and sets MaxAuthTries 6$KEEP"
 raw 'its line names its path' "extra.conf${T}MaxAuthTries${T}6"
 put sshd_config 'Include = "my extra.conf" /etc/ssh/sshd_config.d/*.conf # cloud images and panels'
 put 'my extra.conf' 'MaxAuthTries 6'
 expect "two patterns on one Include line, one in quotes with a blank, an '=' and a comment: read in turn" \
-    "my extra.conf is read first and sets MaxAuthTries 6$KEEP"
+    "$ssh/my extra.conf is read first and sets MaxAuthTries 6$KEEP"
 put sshd_config 'include my\ extra.conf sshd_config.d/*.conf'
-expect 'a blank escaped with \ and the keyword in lower case' "my extra.conf is read first and sets MaxAuthTries 6$KEEP"
+expect 'a blank escaped with \ and the keyword in lower case' "$ssh/my extra.conf is read first and sets MaxAuthTries 6$KEEP"
+put sshd_config 'Include /etc/ssh/my\ extra.conf # /etc/ssh/sshd_config.d/*.conf'
+expect 'a word that starts with # starts a comment: the glob after it is not read' "$NOINC"
+setup; mkdir "$ssh/a" "$ssh/b"; put sshd_config "Include a/x.conf b/x.conf
+$GLOB"; put a/x.conf 'MaxAuthTries 6'; put b/x.conf 'PermitRootLogin yes'
+expect 'two files with one name in two folders: each is named by its path' \
+    "$ssh/a/x.conf is read first and sets MaxAuthTries 6; $ssh/b/x.conf is read first and sets PermitRootLogin yes$KEEP"
 
 setup; put sshd_config "$CLOUD
 PermitRootLogin yes"; put sshd_config.d/50-cloud-init.conf 'PasswordAuthentication yes'
@@ -298,7 +313,7 @@ Include extra.conf
 PermitRootLogin yes
 $GLOB"; put extra.conf 'PasswordAuthentication yes'
 expect "an Include and a line after 'Match all' are global" \
-    "extra.conf is read first and sets PasswordAuthentication yes; sshd_config sets PermitRootLogin yes before its Include line$KEEP"
+    "$ssh/extra.conf is read first and sets PasswordAuthentication yes; sshd_config sets PermitRootLogin yes before its Include line$KEEP"
 
 setup; put sshd_config.d/00-a.conf 'Include /etc/ssh/sshd_config.d/00-a.conf
 MaxAuthTries 6'
@@ -363,7 +378,20 @@ if ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || [[ -n $STEP_NOT
     fail "ssh_report_overrides reports a Port line, which the step comments out itself: $STEP_NOTES ${MANUAL_TODO[*]}"
 fi
 expect 'the audit still counts that Port line' "00-a.conf is read first and adds Port 22$ADDS"
-pass 'the SSH step leaves out Port lines, which write_sshd_config comments out itself'
+put sshd_config "Port 22
+$GLOB"; rm "$ssh/sshd_config.d/00-a.conf"
+if ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || [[ -n $STEP_NOTES || ${#MANUAL_TODO[@]} -gt 0 ]]; then
+    fail "ssh_report_overrides reports a Port line of the main file, which the step comments out itself: $STEP_NOTES ${MANUAL_TODO[*]}"
+fi
+pass 'the SSH step leaves out the Port lines of the main file and of sshd_config.d/*.conf, which write_sshd_config comments out itself'
+setup; put sshd_config "Include extra.conf
+$GLOB"; put extra.conf 'Port 22'
+STEP_NOTES="" MANUAL_TODO=()
+ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || fail 'ssh_report_overrides leaves out the Port line of a file that an Include names, which the step does not edit'
+[[ ${#MANUAL_TODO[@]} -eq 1 && ${MANUAL_TODO[0]} == *"$ssh/extra.conf is read first and adds Port 22"* ]] ||
+    fail "the to-do does not name that file by its path: ${MANUAL_TODO[*]}"
+[[ $SSH_OVERRIDE_FILES == "$ssh/extra.conf" ]] || fail "SSH_OVERRIDE_FILES is '$SSH_OVERRIDE_FILES', want '$ssh/extra.conf'"
+pass 'the SSH step reports the Port line of a file that an Include names, by its path: the step does not edit that file'
 setup; put sshd_config 'PermitRootLogin no'
 STEP_NOTES="" MANUAL_TODO=()
 ssh_report_overrides "$ssh/sshd_config.d" > /dev/null 2>&1 || fail 'ssh_report_overrides says nothing about a main file without an Include'
