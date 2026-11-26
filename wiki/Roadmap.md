@@ -32,11 +32,11 @@ Each phase is a GitHub [milestone](https://github.com/exceev-consulting/server-p
 
 Fixes from a code review of the scripts, the docs and CI (October 2026). Each defect was found by reading the code. **None was reproduced on a server yet**, so confirm it on a throwaway VM first. Examples:
 
-- secrets in a log file that other users can read ([#64](https://github.com/exceev-consulting/server-prep/issues/64));
-- `--yes` answering the SSH safety prompt by itself ([#65](https://github.com/exceev-consulting/server-prep/issues/65));
-- `rollback.sh` that can lock you out ([#71](https://github.com/exceev-consulting/server-prep/issues/71));
-- the audit's "Docker vs firewall" check passing too easily ([#69](https://github.com/exceev-consulting/server-prep/issues/69));
-- `server-prep.sh` exiting 0 when a step failed ([#76](https://github.com/exceev-consulting/server-prep/issues/76)).
+- **done:** secrets in a log file that other users can read ([#64](https://github.com/exceev-consulting/server-prep/issues/64));
+- **done:** `--yes` answering the SSH safety prompt by itself ([#65](https://github.com/exceev-consulting/server-prep/issues/65));
+- **done:** `rollback.sh` that can lock you out ([#71](https://github.com/exceev-consulting/server-prep/issues/71));
+- **done:** the audit's "Docker vs firewall" check passing too easily ([#69](https://github.com/exceev-consulting/server-prep/issues/69));
+- **done:** `server-prep.sh` exiting 0 when a step failed ([#76](https://github.com/exceev-consulting/server-prep/issues/76)).
 
 Many of these are small and labelled `good first issue` or `agent-ready`.
 

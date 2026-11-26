@@ -1,4 +1,5 @@
 # scripts/check-files.sh fails when a tracked file matches the report, config, Claude Code and secret patterns below (or *.log): keep both lists in step.
+# lychee.toml's exclude_path lists the Markdown ones too (a glob input does not follow .gitignore).
 
 # Reports contain hostnames, IPs and server details
 *-report-*.txt

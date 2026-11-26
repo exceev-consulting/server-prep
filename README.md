@@ -40,7 +40,7 @@ An audit runs before and after, so you see exactly what changed.
 - **A firewall that also covers Docker.** UFW denies by default, and published container ports obey it too.
 - **Intrusion blocking and updates.** fail2ban, CrowdSec and automatic security updates.
 - **Ready for your panel.** Root logs in only with the panel's key, and only from its route: Tailscale, a Cloudflare Tunnel or its IP.
-- **Proof, not promises.** A read-only audit with 59 checks, a score, and an exit code for CI or cron.
+- **Proof, not promises.** A read-only audit with 66 checks, a score, and an exit code for CI or cron.
 - **Safe to run.** A dry run, a backup of every file it changes, a rollback script and a Markdown report. Every step can run twice.
 
 ## Quick start
@@ -76,8 +76,13 @@ names the check: finish with an interactive run of `--only ssh,endlessh`. This c
 server (a cloud security group) or the key on your computer, so make the first run on a server interactive.
 Check the file first, no root needed: `./server-prep.sh --config web-01.conf --validate` reads it without running it
 and prints one line per problem, with its line number and what to do. It runs on Linux, or on any machine with bash 4
-or later (the `/bin/bash` of macOS is too old: install a current bash first). The saved answers in `/etc/server-prep/` can
-only be read by root: check them with `sudo`, which still changes nothing.
+or later (the `/bin/bash` of macOS is too old: install a current bash first).
+
+Every run saves its answers, without the secrets, in `/etc/server-prep/server-prep.conf`, and a re-run from them does
+what the first run did: `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step>` asks the
+questions with your answers as the defaults (add `--yes` to skip them). At a question that
+shows `(- = ...)`, type `-` to empty an answer. `DISABLE_SERVICES=none` keeps every service, an empty value disables them
+all. The saved answers can only be read by root: check them with `sudo`, which still changes nothing.
 
 Run part of it only: `--only ssh,firewall` / `--skip aide,endlessh` (`--list-steps` prints the names).
 An unknown step name is refused. Exit 0 means every selected step completed or was skipped. Exit 1 means
@@ -132,12 +137,12 @@ Both work the same way. Only a few details change:
 | `users` | admin user + your SSH key; the panel's key for root, restricted with `from="..."` to the panel's sources |
 | `docker` | Docker CE from the official download.docker.com repo if missing (key fingerprint checked, pinned at 900; a Docker CE already installed from that repo gets the same check), container log rotation |
 | `firewall` | UFW deny-incoming; SSH only from admin IPs / tailnet / tunnel; optional 80/443; **[ufw-docker](https://github.com/chaifeng/ufw-docker) (pinned, checksum-verified) so published container ports obey UFW** (Docker networking untouched); a re-run deletes the rules server-prep added for earlier answers (comment `server-prep: ...`), never yours |
-| `ssh` | port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server |
-| `ips` | fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted, LAPI moved off 8080 |
+| `ssh` | port 822 (`Port` lines in other files commented out, so SSH listens only there), keys only, `PermitRootLogin no` + `Match Address <panel sources>` → root key login only from the panel, `AllowUsers`, MaxAuthTries 3, no X11/agent forwarding. Warns when a file sshd reads first (Dokploy's `00-dokploy.conf`) changes these settings. **10-minute auto-rollback** until you confirm a new login works; with `--yes`, the old port closes only after an automatic login check on the server |
+| `ips` | fail2ban (sshd jail on the right port) + CrowdSec with firewall bouncer (INPUT + DOCKER-USER) from CrowdSec's official packagecloud repo (key fingerprint checked, pinned at 900, never the old distro/ESM build), panel/admin IPs whitelisted (the fail2ban whitelist is kept when a panel adds its own fail2ban file, such as Dokploy's `dokploy.local`), LAPI moved off 8080 |
 | `unattended` | daily security updates (+ Docker CE, CrowdSec, cloudflared, Telegraf, Tailscale), optional auto-reboot |
 | `sysctl` | ~30 kernel/network parameters, rare protocols blacklisted (Docker/Tailscale compatible) |
 | `auth` | sudo log file (`/var/log/sudo.log`), pwquality minlen 12 + complexity, password dictionary built (`cracklib-runtime`) so `passwd` works |
-| `services` | disable avahi, cups, bluetooth, ModemManager; mask Ctrl-Alt-Del; optional headless boot |
+| `services` | disable the desktop services you choose (avahi, cups, bluetooth, ModemManager, apport); mask Ctrl-Alt-Del; optional headless boot |
 | `laptop` | laptop used as a server: ignore lid close, mask sleep/suspend |
 | `logging` | persistent journald (1 GB cap), swap file if none |
 | `auditd` | audit rules: identity files, sudoers, SSH, Docker, cron, firewall, admin root commands; with `PANEL=openship`, Openship's SSH key folders where they exist |

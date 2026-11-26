@@ -60,7 +60,7 @@ DOCKER_AUTO_UPDATE="${DOCKER_AUTO_UPDATE:-yes}"
 THIRD_PARTY_AUTO_UPDATE="${THIRD_PARTY_AUTO_UPDATE:-yes}"   # CrowdSec, cloudflared, Telegraf, Tailscale in unattended-upgrades
 AUTO_REBOOT="${AUTO_REBOOT:-no}"
 AUTO_REBOOT_TIME="${AUTO_REBOOT_TIME:-04:00}"
-DISABLE_SERVICES="${DISABLE_SERVICES:-}"      # filled interactively; default = all candidates
+DISABLE_SERVICES="${DISABLE_SERVICES:-}"      # filled interactively; empty = all candidates, none = nothing
 HEADLESS="${HEADLESS:-no}"
 LAPTOP_MODE="${LAPTOP_MODE:-auto}"
 INSTALL_AUDITD="${INSTALL_AUDITD:-yes}"
@@ -97,6 +97,8 @@ FORCE=0   # --force: with --yes, yes to the questions whose default is no (confi
 ONLY=""
 SKIP=""
 CONFIG_FILE=""
+SAVED_ANSWERS=0   # 1 when --config is an answers file that save_answers wrote
+OLD_EMPTY_SERVICES=0   # 1 when those answers hold an empty DISABLE_SERVICES, as 1.1.1 or older saved "keep every service"
 VALIDATE=0
 UPGRADE=0
 
@@ -285,7 +287,7 @@ valid_ip() {   # valid_ip ADDR[/PREFIX]: an IPv4 or IPv6 address or network
 # validate_config FILE: check a config file in two phases and print one line per finding, then a total.
 # Phase 1 reads the text and runs nothing. Phase 2 loads the known settings in a subshell and checks them.
 validate_config() {
-    local v_file="$1" v_errors=0 v_warns=0 v_notes=0 v_dash=0 n=0 i line key value best best_d best_d_new d name chunk
+    local v_file="$1" v_errors=0 v_warns=0 v_notes=0 v_dash=0 v_saved=0 n=0 i line key value best best_d best_d_new d name chunk
     local LC_ALL=C   # byte-wise matching, the same result in every locale
     local -A v_line=()
     local -a v_assign=() v_assign_line=() v_lines=()
@@ -304,6 +306,7 @@ validate_config() {
         vtotal; return 1
     fi
     mapfile -t v_lines < "$v_file"
+    [[ "${v_lines[0]:-}" == '# server-prep answers - '* ]] && v_saved=1   # the first line save_answers writes
     # A pasted private key, a BOM or Windows line endings: one error for the whole file, then stop
     for line in "${v_lines[@]}"; do
         n=$((n + 1))
@@ -537,9 +540,19 @@ validate_values() {
     done
     read -rd '' -a list <<< "$DISABLE_SERVICES"
     for item in "${list[@]}"; do
+        if [[ ${item,,} == none ]]; then
+            [[ ${#list[@]} -eq 1 ]] ||
+                vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES has none next to service names: write none alone to disable no service, or list only the services to disable"
+            continue
+        fi
         [[ " $SERVICE_CANDIDATES " == *" $item "* ]] ||
             vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES has $(vq "$item"), which is not one of: ${SERVICE_CANDIDATES}. The service of that name will be disabled: check the name"
     done
+    # save_answers writes none or a list since #74: an empty value in saved answers comes from 1.1.1 or older,
+    # which saved "keep every service" that way, and a --yes re-run reads it as every candidate
+    if [[ ${v_saved:-0} -eq 1 && -z "${DISABLE_SERVICES//[[:space:]]/}" ]]; then
+        vsay WARN "$(vline DISABLE_SERVICES)" "DISABLE_SERVICES is empty, which disables every candidate (${SERVICE_CANDIDATES}). Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, write DISABLE_SERVICES=none, or list only the services to disable"
+    fi
     for k in ONLY SKIP; do
         [[ -n "${v_line[$k]:-}" ]] || continue
         read -rd '' -a list <<< "${!k}"
@@ -695,8 +708,18 @@ fi
 
 if [[ -n "$CONFIG_FILE" ]]; then
     [[ -r "$CONFIG_FILE" ]] || { echo "Cannot read $CONFIG_FILE" >&2; exit 2; }
+    # The first line save_answers writes. Only from a regular file: reading a line of a pipe
+    # (--config <(...)) would take it away from the source below.
+    if [[ -f "$CONFIG_FILE" ]]; then
+        saved_head=""
+        IFS= read -r saved_head < "$CONFIG_FILE" || :
+        [[ $saved_head == '# server-prep answers - '* ]] && SAVED_ANSWERS=1
+        unset saved_head
+    fi
     # shellcheck disable=SC1090
     . "$CONFIG_FILE"
+    # save_answers writes none or a list since #74: empty saved answers come from 1.1.1 or older
+    [[ $SAVED_ANSWERS -eq 1 && -z "${DISABLE_SERVICES//[[:space:]]/}" ]] && OLD_EMPTY_SERVICES=1
 fi
 # Configs written before 1.1 used COOLIFY_* names
 PANEL_PUBKEY="${PANEL_PUBKEY:-${COOLIFY_PUBKEY:-}}"
@@ -779,10 +802,18 @@ tailscale_ipv4() {
 # ----------------------------------------------------------------------------
 # Interactive prompts (read from /dev/tty so "curl | bash" also works)
 # ----------------------------------------------------------------------------
-ask() {   # ask VAR "question" "default"
-    local __var="$1" q="$2" def="${!1:-${3:-}}" ans=""
+ask() {   # ask VAR "question" "default" [optional]: on an optional question, - or none empties the answer
+    local __var="$1" q="$2" def="${!1:-${3:-}}" opt="${4:-}" ans=""
     if [[ $INTERACTIVE -eq 1 ]]; then
-        read -r -p "${C_BOLD}?${C_0} ${q} ${C_D}[${def}]${C_0}: " ans < /dev/tty || true
+        # Enter keeps the default, so - (or none) is the only way to empty a saved answer. A question
+        # that needs a value asks again. At the end of input ans stays empty and the default is kept.
+        while true; do
+            ans=""
+            read -r -p "${C_BOLD}?${C_0} ${q} ${C_D}[${def}]${C_0}: " ans < /dev/tty || true
+            [[ $ans == - || ${ans,,} == none ]] || break
+            [[ $opt == optional ]] && { printf -v "$__var" ''; return 0; }
+            warn "This answer cannot be empty: type a value, or press Enter to keep [${def}]"
+        done
         printf -v "$__var" '%s' "${ans:-$def}"
     else
         printf -v "$__var" '%s' "$def"
@@ -1146,6 +1177,19 @@ explain() {
     for l in "$@"; do printf '%s\n' "  ${C_D}${l}${C_0}"; done
 }
 
+removed_words() {   # removed_words LABEL OLD NEW: a "LABEL item" line for each item of the list OLD that NEW no longer has
+    local w new seen=" "
+    local -a o=() n=()
+    read -ra o <<< "${2//,/ }"
+    read -ra n <<< "${3//,/ }"
+    new=" ${n[*]} "
+    for w in "${o[@]}"; do
+        [[ $new == *" $w "* || $seen == *" $w "* ]] && continue
+        seen+="$w "
+        printf '%s %s\n' "$1" "$w"
+    done
+}
+
 service_help() {
     case "$1" in
         avahi-daemon) echo "Avahi: announces this machine on the local network (printers, .local names). Useless on a server, and it listens on UDP 5353." ;;
@@ -1162,7 +1206,10 @@ questions() {
     [[ $INTERACTIVE -eq 1 ]] || return 0
     title "Server preparation - questions"
     echo "  Host: ${HOST_SHORT} | ${OS_PRETTY} | laptop: $([[ $IS_LAPTOP == 1 ]] && echo yes || echo no) | docker: $([[ $HAS_DOCKER == 1 ]] && echo yes || echo no) | tailscale: $([[ $HAS_TAILSCALE == 1 ]] && echo yes || echo no) | cloudflared: $([[ $HAS_CLOUDFLARED == 1 ]] && echo yes || echo no)"
-    echo "  Press Enter to accept the [default]. Nothing changes until you confirm the plan at the end."
+    echo "  Press Enter to accept the [default]. Where a question shows (- = ...), type - to leave it empty."
+    echo "  Nothing changes until you confirm the plan at the end."
+    # what opened firewall rules before the answers below (the to-do at the end of section 3)
+    local old_ips="$ADMIN_IPS" old_ports="$EXTRA_PORTS" old_access="$PANEL_ACCESS" old_panel_ip="$PANEL_IP" old_web="$EXPOSE_WEB"
 
     # ---------------------------------------------------------------- 1
     echo; echo "${C_BOLD}1. Admin account${C_0}"
@@ -1179,7 +1226,7 @@ questions() {
             "(no key yet? create one there with:  ssh-keygen -t ed25519). Paste the whole line." \
             "Never paste the private key (the file without .pub)."
     while true; do
-        ask ADMIN_PUBKEY "Admin SSH public key (empty = keep current keys)" "${ADMIN_PUBKEY:-}"
+        ask ADMIN_PUBKEY "Admin SSH public key (- = none, keep current keys)" "${ADMIN_PUBKEY:-}" optional
         [[ -z "$ADMIN_PUBKEY" ]] || valid_pubkey "$ADMIN_PUBKEY" && break
         warn "That is not a valid public key (expected one line like: ssh-ed25519 AAAA... comment)"
         ADMIN_PUBKEY=""
@@ -1191,14 +1238,14 @@ questions() {
             "apps here by connecting over SSH as root with its own key. The name is used in messages, and two" \
             "names also change settings: coolify creates /data/coolify; openship leaves Openship's deploy files" \
             "out of AIDE and has auditd watch its SSH key folders."
-    ask PANEL "Panel (coolify, dokploy, openship, other name; empty = none)" "${PANEL:-}"
+    ask PANEL "Panel (coolify, dokploy, openship, other name; - = none)" "${PANEL:-}" optional
     set_panel_label
     explain "${PANEL_LABEL^}'s SSH public key: open the SSH key the panel uses for servers and copy its" \
             "public part (Coolify: Keys & Tokens -> Private Keys -> the key -> Public Key)." \
             "It is installed in /root/.ssh/authorized_keys and only accepted from the sources chosen below." \
             "Leave empty if this server will not be managed by a panel."
     while true; do
-        ask PANEL_PUBKEY "${PANEL_LABEL^} SSH public key (empty = skip)" "${PANEL_PUBKEY:-}"
+        ask PANEL_PUBKEY "${PANEL_LABEL^} SSH public key (- = skip)" "${PANEL_PUBKEY:-}" optional
         [[ -z "$PANEL_PUBKEY" ]] || valid_pubkey "$PANEL_PUBKEY" && break
         warn "Invalid public key"; PANEL_PUBKEY=""
     done
@@ -1212,7 +1259,9 @@ questions() {
             "  public      : straight to this server's public IP - typical for a VPS. Only the panel" \
             "                server's IP will be allowed to log in as root." \
             "Root login is refused from every other address, even with the right key."
-    ask PANEL_ACCESS "Access methods" "${PANEL_ACCESS:-$def_access}"
+    # From the saved answers, an access emptied with - stays empty when you press Enter
+    [[ $SAVED_ANSWERS -eq 1 ]] && def_access="$PANEL_ACCESS"
+    ask PANEL_ACCESS "Access methods (- = none)" "${PANEL_ACCESS:-$def_access}" optional
     if [[ "$PANEL_ACCESS" == *public* ]]; then
         explain "The public IPv4 of the server running ${PANEL_LABEL}. On that server run:  curl -4 ifconfig.me"
         ask PANEL_IP "${PANEL_LABEL^} server public IP" "$PANEL_IP"
@@ -1233,12 +1282,15 @@ questions() {
             "Current SSH port(s): ${CURRENT_SSH_PORTS}"
     ask SSH_PORT "New SSH port" "$SSH_PORT"
     local def_ips="${ADMIN_IPS:-$LAN_CIDR}"
+    # From the saved answers, sources emptied with - stay empty when you press Enter
+    [[ $SAVED_ANSWERS -eq 1 ]] && def_ips="$ADMIN_IPS"
     explain "Addresses allowed to reach the SSH port directly (space-separated IPs or networks)." \
             "Suggested: your local network ${LAN_CIDR:-?} and your office/home public IP if it is fixed." \
             "The tunnel, Tailscale and the panel IP chosen above are allowed automatically." \
-            "Empty + no tunnel/tailscale/panel IP = SSH open to everyone (rate-limited, keys only)." \
+            "None (-) + no tunnel/tailscale/panel IP = SSH open to everyone (rate-limited, keys only)." \
+            "None (-) + only the panel IP = only the panel server reaches SSH: you are locked out." \
             "On a re-run, the SSH rules of addresses removed here are deleted (the plan lists them)."
-    ask ADMIN_IPS "Allowed SSH sources" "$def_ips"
+    ask ADMIN_IPS "Allowed SSH sources (- = none)" "$def_ips" optional
     local def_web=no; [[ "$PANEL_ACCESS" == *public* ]] && def_web=yes
     explain "Ports 80/443 are where your deployed apps answer (the panel's reverse proxy, e.g. Traefik or Caddy)." \
             "  yes : visitors reach the apps directly on this server's IP (normal for a VPS)." \
@@ -1246,8 +1298,26 @@ questions() {
             "        Nothing is exposed on the internet - recommended behind a home box."
     ask_yn EXPOSE_WEB "Open 80/443 to the internet?" "${EXPOSE_WEB:-$def_web}"
     explain "Other ports to open to everyone, e.g. a database you must reach from outside (5432/tcp)." \
-            "Format: port/proto separated by spaces. Most setups need none - keep it empty unless sure."
-    ask EXTRA_PORTS "Extra ports" "$EXTRA_PORTS"
+            "Format: port/proto separated by spaces. Most setups need none - keep it empty unless sure." \
+            "On a re-run, the rules of ports removed here are deleted (the plan lists them)."
+    ask EXTRA_PORTS "Extra ports (- = none)" "$EXTRA_PORTS" optional
+    # step_firewall deletes the rules server-prep added for an answer removed here, and the plan lists
+    # them (#67). A run without that step leaves them open: name them (#74). cloudflared has no rule:
+    # the tunnel arrives on loopback.
+    local gone=""
+    if ! step_selected firewall; then
+        gone="$(
+            yes_ "$old_web" && ! yes_ "$EXPOSE_WEB" && echo "ports 80/443"
+            removed_words port "$old_ports" "$EXTRA_PORTS"
+            removed_words "SSH source" "$old_ips" "$ADMIN_IPS"
+            removed_words access "${old_access//cloudflared/}" "$PANEL_ACCESS"
+            [[ "$PANEL_ACCESS" == *public* ]] && removed_words "panel IP" "$old_panel_ip" "$PANEL_IP"
+        )"
+    fi
+    if [[ -n "$gone" ]]; then
+        gone="$(paste -sd ';' <<< "$gone")"
+        todo "The firewall step is not part of this run, so UFW still allows what an earlier run opened for the answers you removed (${gone//;/, }). The firewall step deletes those rules, and its plan lists them: sudo ./server-prep.sh --config $CONF_DIR/server-prep.conf --only firewall --dry-run, then the same without --dry-run"
+    fi
 
     # ---------------------------------------------------------------- 4
     echo; echo "${C_BOLD}4. Protection${C_0}"
@@ -1286,16 +1356,29 @@ questions() {
     echo; echo "${C_BOLD}5. Services${C_0}"
     explain "Every running service is something that can be attacked. These are desktop services" \
             "a server does not need. Disabling is reversible: sudo systemctl enable --now <name>"
-    local s sel="" a
+    local s sel="" a def asked=0
     for s in $SERVICE_CANDIDATES; do
         systemctl cat "$s" >/dev/null 2>&1 || continue
-        local def=yes
+        [[ $asked -eq 0 && $OLD_EMPTY_SERVICES -eq 1 ]] &&
+            warn "The saved answers hold an empty DISABLE_SERVICES, which means every service, but 1.1.1 or older saved it so when you kept every service. Each question below defaults to yes: answer n to keep a service"
+        asked=1
+        def=yes   # empty = every candidate; none, or a list without it, = no
         [[ -n "$DISABLE_SERVICES" && " $DISABLE_SERVICES " != *" $s "* ]] && def=no
         echo "  ${C_D}- $(service_help "$s")${C_0}"
         a=$def; ask_yn a "  Disable ${s}" "$def"
         [[ $a == yes ]] && sel+="$s "
     done
-    DISABLE_SERVICES="${sel% }"
+    # The answer is what you chose, whatever else is installed: none when you kept every service, since
+    # an empty value means every candidate to a --yes re-run (#74). With no candidate installed nothing
+    # was asked, so the value stays as it was (empty: every candidate, the default of each question).
+    if [[ $asked -eq 1 ]]; then
+        DISABLE_SERVICES="${sel% }"
+        DISABLE_SERVICES="${DISABLE_SERVICES:-none}"
+    else
+        explain "None of them is installed: nothing to ask. If one gets installed later, a re-run from the saved" \
+                "answers disables it when DISABLE_SERVICES lists it (now: ${DISABLE_SERVICES:-every one}; none = keep them)."
+    fi
+    OLD_EMPTY_SERVICES=0   # answered here, or nothing to answer: the plan need not warn
     if [[ $IS_LAPTOP -eq 1 ]]; then
         explain "Laptop detected: closing the lid and idle sleep will be disabled so the apps stay online." \
                 "Tip: keep it plugged in, and if the BIOS allows it, limit battery charge to ~80%."
@@ -1340,7 +1423,7 @@ questions() {
         ask TELEGRAM_CHAT_ID "Telegram chat id" "$TELEGRAM_CHAT_ID"
         explain "${PANEL_LABEL^} logs in as root every few minutes; alerting on those would spam you." \
                 "Users listed here never trigger a login alert (space-separated)."
-        ask TELEGRAM_IGNORE_USERS "Users without login alerts" "$TELEGRAM_IGNORE_USERS"
+        ask TELEGRAM_IGNORE_USERS "Users without login alerts (- = none)" "$TELEGRAM_IGNORE_USERS" optional
     fi
     explain "Timezone used for logs, scheduled reboots and reports (e.g. Europe/Paris, UTC)."
     ask TIMEZONE "Timezone" "$TIMEZONE"
@@ -1355,7 +1438,9 @@ summary_and_confirm() {
     if [[ "$PANEL_ACCESS" == *public* && -z "$PANEL_IP" ]]; then
         die "PANEL_ACCESS contains 'public' but PANEL_IP is empty"
     fi
-    [[ -z "$DISABLE_SERVICES" && $INTERACTIVE -eq 0 ]] && DISABLE_SERVICES="$SERVICE_CANDIDATES"
+    # Empty = every candidate (a config without the setting, or questions that asked nothing because no
+    # candidate is installed), none = disable nothing. save_answers writes the list, or none (#74).
+    [[ -z "${DISABLE_SERVICES//[[:space:]]/}" ]] && DISABLE_SERVICES="$SERVICE_CANDIDATES"
     title "Plan"
     cat <<EOF
   Admin user ........ ${ADMIN_USER} $([[ -n "$ADMIN_PUBKEY" ]] && echo "(+1 key)")
@@ -1374,12 +1459,47 @@ summary_and_confirm() {
 EOF
     # The rules the firewall step will delete, shown before the operator says yes (issue #67)
     if step_selected firewall && have ufw; then ufw_plan_cleanup; fi
-    confirm "Proceed?" yes || die "Aborted by user"
+    # --validate warns about this lockout, but the questions never run it: an answer of - at "Allowed SSH
+    # sources" leads here. Make Proceed default to no: --yes keeps that default, so a --yes run stops there
+    # before any change, and only --yes --force goes on (#65). Worked out first, because the warning about
+    # old answers below says whether the run goes on; its own warning comes last, just above Proceed?.
+    local go=yes stop="Aborted by user" how="Answer n and add your IP or network at 'Allowed SSH sources' (ADMIN_IPS)"
+    if step_selected firewall && [[ -z "${ADMIN_IPS//[[:space:],]/}" && "$PANEL_ACCESS" == *public* &&
+          "$PANEL_ACCESS" != *tailscale* && "$PANEL_ACCESS" != *cloudflared* ]]; then
+        go=no
+        [[ $ASSUME_YES -eq 1 ]] && stop="Stopped before any change: no allowed SSH source (ADMIN_IPS), see the warning above"
+    fi
+    if [[ $ASSUME_YES -eq 1 && $FORCE -eq 1 ]]; then
+        how="With --yes --force the run goes on: until ADMIN_IPS holds your IP or network, only a console lets you log in"
+    elif [[ $ASSUME_YES -eq 1 ]]; then
+        how="With --yes the run stops here (Proceed? keeps its default, no): add your IP or network to ADMIN_IPS, or use --yes --force only with a console at hand (--validate warns about this before a run)"
+    fi
+    # Answers saved by 1.1.1 or older, read with --yes (the questions warn at a terminal): this run reads the
+    # empty value as every candidate, so say it here and in the to-do. save_answers then lists them all when
+    # the services step runs, and keeps the empty value otherwise, so the next run warns again.
+    # Proceed? keeps its default, so the run does not wait here: say what it does, not to press Ctrl-C. It
+    # goes on (default yes, or --force), or stops at Proceed? on the lockout above, before it disables anything.
+    if [[ $OLD_EMPTY_SERVICES -eq 1 ]]; then
+        local next
+        if [[ $go == yes || $FORCE -eq 1 ]]; then
+            next="With --yes the run goes on$(step_selected services && printf '%s' " and disables them"): if you kept them, the to-do at the end says what to do."
+        else
+            next="With --yes this run stops at Proceed? below, before any change (no allowed SSH source, see the warning below)."
+        fi
+        warn "The saved answers hold an empty DISABLE_SERVICES, which means every service listed above. Answers saved by 1.1.1 or older hold it empty when you kept every service. ${next} To keep them, set DISABLE_SERVICES=none in ${CONFIG_FILE} before a --yes run (--validate warns about this)"
+        todo "The saved answers held an empty DISABLE_SERVICES, which means every candidate service: ${SERVICE_CANDIDATES}. Answers saved by 1.1.1 or older hold it empty when you kept every service: if you did, set DISABLE_SERVICES=none in $CONF_DIR/server-prep.conf$(step_selected services && printf '%s' ", and turn back on each service you use: sudo systemctl enable --now <name>")"
+    fi
+    [[ $go == no ]] &&
+        warn "No allowed SSH source and no Tailscale or tunnel: the firewall will allow SSH only from ${PANEL_LABEL}'s server (${PANEL_IP}), so you will be locked out of new SSH logins. ${how}"
+    confirm "Proceed?" "$go" || die "$stop"
 }
 
 save_answers() {
     [[ $DRY_RUN -eq 1 ]] && return 0
-    local f="$CONF_DIR/server-prep.conf"
+    local f="$CONF_DIR/server-prep.conf" services="$DISABLE_SERVICES"
+    # Answers saved by 1.1.1 or older with an empty DISABLE_SERVICES, on a --yes run without the services
+    # step: keep it empty, so the next run with that step still warns (this run read it as every candidate).
+    [[ $OLD_EMPTY_SERVICES -eq 1 ]] && ! step_selected services && services=""
     {
         echo "# server-prep answers - ${TS} - reuse with: --config $f --yes"
         # AUDIT_SCRIPT (found at run time by preflight) and AUDIT_URL (a re-run would fetch and run the
@@ -1389,7 +1509,7 @@ save_answers() {
                  TIMEZONE INSTALL_FAIL2BAN INSTALL_CROWDSEC CROWDSEC_LAPI_PORT INSTALL_DOCKER DOCKER_AUTO_UPDATE THIRD_PARTY_AUTO_UPDATE AUTO_REBOOT \
                  AUTO_REBOOT_TIME DISABLE_SERVICES HEADLESS LAPTOP_MODE INSTALL_AUDITD INSTALL_RKHUNTER INSTALL_AIDE INSTALL_ENDLESSH INSTALL_TELEGRAF \
                  TELEGRAM_ENABLE TELEGRAM_CHAT_ID TELEGRAM_IGNORE_USERS SWAP_SIZE PTRACE_SCOPE; do
-            printf '%s=%q\n' "$v" "${!v}"
+            if [[ $v == DISABLE_SERVICES ]]; then printf '%s=%q\n' "$v" "$services"; else printf '%s=%q\n' "$v" "${!v}"; fi
         done
         echo "# secrets (CLOUDFLARED_TOKEN, TELEGRAM_BOT_TOKEN, CROWDSEC_ENROLL_KEY) are not saved here"
     } > "$f"
@@ -1447,11 +1567,16 @@ step_update() {
     return 0
 }
 
+# Tailscale's address ranges, IPv4 and IPv6: a tailnet device can connect over either (MagicDNS can
+# give the IPv6 address first). With PANEL_ACCESS=tailscale, root may log in from both
+# (compute_root_sources), and both are on the whitelists of fail2ban and CrowdSec (ips_whitelist).
+# The audit's f2b_wanted (server-audit.sh) looks for the same two in fail2ban's whitelist.
+TAILNET_RANGES=(100.64.0.0/10 fd7a:115c:a1e0::/48)
 ROOT_SOURCES=()
 compute_root_sources() {
     ROOT_SOURCES=()
     [[ "$PANEL_ACCESS" == *cloudflared* ]] && ROOT_SOURCES+=(127.0.0.1 ::1)
-    [[ "$PANEL_ACCESS" == *tailscale* ]] && ROOT_SOURCES+=(100.64.0.0/10 fd7a:115c:a1e0::/48)
+    [[ "$PANEL_ACCESS" == *tailscale* ]] && ROOT_SOURCES+=("${TAILNET_RANGES[@]}")
     [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]] && ROOT_SOURCES+=("$PANEL_IP")
     return 0
 }
@@ -2221,17 +2346,147 @@ sshd_port_dropins() {
     return 0
 }
 
-write_sshd_config() {   # write_sshd_config "PORTS"
-    local ports p allow="AllowUsers ${ADMIN_USER}" src
-    # Each port once: on a host prepared by an older version, phase A can get "822 22 822".
-    ports="$(uniq_ports <<<"$1")"
+# sshd_dropin_overrides DIR [OWN]: the lines sshd reads before server-prep's DIR/00-server-prep.conf
+# and keeps instead of its values, one "FILE<TAB>Keyword<TAB>value" line each, in sshd's read order.
+# sshd keeps the first value it reads for a keyword. It reads the main sshd_config next to DIR up to
+# its Include of DIR, then DIR/*.conf in byte (C) order: a line there, or in a drop-in whose name
+# sorts before 00-server-prep.conf (Dokploy's 00-dokploy.conf), wins. Port and AllowUsers add up
+# instead, so each of their values that OWN lacks counts. Only the keywords server-prep sets that
+# decide who logs in and where (ChallengeResponseAuthentication is KbdInteractiveAuthentication's old
+# name), and only global lines: what follows a Match is conditional. A main file without an Include of
+# DIR makes sshd read no drop-in at all, 00-server-prep.conf included: the only line is then
+# "MAIN<TAB>Include<TAB>". OWN is the text server-prep writes (DIR/00-server-prep.conf by default);
+# without it nothing is printed. Reads files only.
+# The same code is in server-prep.sh and server-audit.sh: tests/sshd-dropin-override.sh checks both.
+sshd_dropin_overrides() {
+    local dir="$1" own="${2:-$1/00-server-prep.conf}" main f files=() hasmain=0
+    [[ -r $own ]] || return 0
+    main="${dir%/*}/sshd_config"
+    [[ -f $main && -r $main ]] && files+=("$main") && hasmain=1
+    # the drop-ins that sort before 00-server-prep.conf, whether that file exists yet or not
+    while IFS= read -r f; do
+        [[ ${f##*/} == 00-server-prep.conf ]] && break
+        [[ -f $f && -r $f ]] && files+=("$f")
+    done < <(printf '%s\n' "$dir"/*.conf "$dir/00-server-prep.conf" | LC_ALL=C sort -u)
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    awk -v main="$main" -v hasmain="$hasmain" -v inc="${dir##*/}/" '
+        # The lines of the main file wait for its Include line. Without one, sshd reads neither
+        # 00-server-prep.conf nor the other drop-ins: only the Include line is missing then.
+        function emit(s) { if (FILENAME == main && !included) buf[++nb] = s; else print s }
+        function endmain() { if (hasmain && !included && !noinc) { print main "\tInclude\t"; noinc = 1 } }
+        BEGIN {
+            n = split("permitrootlogin passwordauthentication kbdinteractiveauthentication authenticationmethods allowusers maxauthtries port", m, " ")
+            for (i = 1; i <= n; i++) managed[m[i]] = 1
+        }
+        FNR == 1 { if (FILENAME != ARGV[1] && FILENAME != main) endmain(); inmatch = 0; stop = 0 }
+        { line = $0; sub(/\r$/, "", line); sub(/^[[:space:]]+/, "", line) }
+        noinc || stop || line == "" || line ~ /^#/ { next }
+        {
+            kw = line; sub(/[[:space:]=].*$/, "", kw); k = tolower(kw)
+            val = substr(line, length(kw) + 1); sub(/^[[:space:]]*=?[[:space:]]*/, "", val)
+            sub(/[[:space:]]+#.*$/, "", val); sub(/[[:space:]]+$/, "", val)
+            if (k == "challengeresponseauthentication") k = "kbdinteractiveauthentication"
+        }
+        k == "match" { inmatch = 1; next }
+        FILENAME == main && k == "include" && index(val, inc) {
+            stop = 1; included = 1
+            for (i = 1; i <= nb; i++) print buf[i]
+            next
+        }
+        inmatch || !(k in managed) { next }
+        {
+            v = val; gsub(/[[:space:]]+/, " ", v)
+            if (k != "allowusers") v = tolower(v)
+            if (k == "permitrootlogin" && v == "without-password") v = "prohibit-password"
+        }
+        FILENAME == ARGV[1] {
+            if (k == "port") ownport[v] = 1
+            else if (k == "allowusers") { c = split(v, t, " "); for (i = 1; i <= c; i++) ownuser[t[i]] = 1 }
+            else if (!(k in own)) own[k] = v
+            next
+        }
+        k == "port" { if (!(v in ownport)) emit(FILENAME "\t" kw "\t" val); next }
+        k == "allowusers" {
+            c = split(v, t, " ")
+            for (i = 1; i <= c; i++) if (!(t[i] in ownuser)) { emit(FILENAME "\t" kw "\t" val); break }
+            next
+        }
+        !(k in seen) { seen[k] = 1; if ((k in own) && own[k] != v) emit(FILENAME "\t" kw "\t" val) }
+        END { endmain() }
+    ' "$own" "${files[@]}"
+}
+# sshd_override_text: the lines of sshd_dropin_overrides on stdin as one sentence, nothing for no input.
+# A phrase per file, joined with "; ", then what sshd does with the values. sshd keeps the first value
+# of most keywords ("sets"), but adds up those of Port and AllowUsers ("adds"):
+#   00-dokploy.conf is read first and sets PermitRootLogin prohibit-password, MaxAuthTries 6: sshd keeps these values, not those of 00-server-prep.conf
+#   00-ops.conf is read first and adds AllowUsers deploy: sshd uses these values as well as those of 00-server-prep.conf
+#   sshd_config sets PermitRootLogin yes before its Include line: sshd keeps these values, ...
+#   sshd_config has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included
+sshd_override_text() {
+    awk -F'\t' '
+        NF >= 3 {
+            name = $1; sub(/.*\//, "", name)
+            if (!(name in seen)) { seen[name] = 1; order[++n] = name }
+            k = tolower($2)
+            if (k == "include") noinc[name] = 1
+            else if (k == "port" || k == "allowusers") { add[name] = add[name] (add[name] == "" ? "" : ", ") $2 " " $3; nadd++ }
+            else { set[name] = set[name] (set[name] == "" ? "" : ", ") $2 " " $3; nset++ }
+        }
+        END {
+            for (i = 1; i <= n; i++) {
+                s = order[i]; p = ""
+                if (set[s] != "") p = "sets " set[s]
+                if (add[s] != "") p = p (p == "" ? "" : " and ") "adds " add[s]
+                if (s in noinc) p = "has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included"
+                else if (s == "sshd_config") p = p " before its Include line"
+                else p = "is read first and " p
+                out = out (i > 1 ? "; " : "") s " " p
+            }
+            if (nset && nadd) out = out ": sshd keeps the values set instead of those of 00-server-prep.conf, and uses the values added along with them"
+            else if (nset) out = out ": sshd keeps these values, not those of 00-server-prep.conf"
+            else if (nadd) out = out ": sshd uses these values as well as those of 00-server-prep.conf"
+            if (n) print out
+        }'
+}
+
+# ssh_report_overrides DIR: when a line sshd reads before 00-server-prep.conf sets one of its login
+# settings to another value or adds to them, or when sshd reads no drop-in (sshd_dropin_overrides), a
+# warning, a note and a to-do that name the file and the settings, and status 0. Report only:
+# server-prep's file keeps its name (issue #204). It is compared with the configuration the step
+# writes, so a dry run and a first run see it too. Port lines are left out: write_sshd_config comments
+# them out in every file it reads (the audit counts them). SSH_OVERRIDE_FILES gets the names of the
+# files it reports, joined with ", " (empty for none): the automatic login check of --yes reads
+# sshd -T, which applies them too, so its to-do points to them when it fails (issue #65).
+SSH_OVERRIDE_FILES=""
+ssh_report_overrides() {
+    local lines over panel_file=""
+    SSH_OVERRIDE_FILES=""
+    lines="$(sshd_dropin_overrides "$1" <(sshd_prep_conf "$SSH_PORT") | awk -F'\t' 'tolower($2) != "port"')"
+    over="$(sshd_override_text <<<"$lines")"
+    [[ -n $over ]] || return 1
+    SSH_OVERRIDE_FILES="$(awk -F'\t' 'NF >= 3 { n = $1; sub(/.*\//, "", n); if (!(n in s)) { s[n] = 1; out = out (out == "" ? "" : ", ") n } }
+        END { print out }' <<<"$lines")"
+    warn "$over"
+    note "$over"
+    if [[ $over == *"no Include line"* ]]; then
+        todo "SSH: ${over}. Add the line 'Include /etc/ssh/sshd_config.d/*.conf' at the top of /etc/ssh/sshd_config, then check and reload SSH: sudo sshd -t && sudo systemctl reload ssh"
+    else
+        [[ ${PANEL,,} == dokploy ]] && panel_file=" (Dokploy's server Security dialog writes 00-dokploy.conf)"
+        todo "SSH: ${over}. If you did not choose them, remove them from that file, or delete the file if a panel wrote it${panel_file}, then check and reload SSH: sudo sshd -t && sudo systemctl reload ssh"
+    fi
+    return 0
+}
+
+# sshd_prep_conf "PORTS": the text of 00-server-prep.conf for these ports. Reads only.
+sshd_prep_conf() {
+    local p allow="AllowUsers ${ADMIN_USER}" src
     if [[ -n "$PANEL_PUBKEY" || -s /root/.ssh/authorized_keys ]]; then
         for src in "${ROOT_SOURCES[@]}"; do allow+=" root@${src}"; done
     fi
-    {
-        echo "# Managed by server-prep.sh"
-        for p in $ports; do echo "Port $p"; done
-        cat <<EOF
+    echo "# Managed by server-prep.sh"
+    # Each port once: on a host prepared by an older version, phase A can get "822 22 822".
+    for p in $(uniq_ports <<<"$1"); do echo "Port $p"; done
+    cat <<EOF
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -2254,7 +2509,10 @@ ClientAliveCountMax 2
 LogLevel VERBOSE
 ${allow}
 EOF
-    } | write_file /etc/ssh/sshd_config.d/00-server-prep.conf 644
+}
+
+write_sshd_config() {   # write_sshd_config "PORTS"
+    sshd_prep_conf "$1" | write_file /etc/ssh/sshd_config.d/00-server-prep.conf 644
 
     # Root (the panel) allowed with a key, only from trusted sources. Match blocks
     # must be at the end of the main file. Its Port lines are commented out: sshd would listen there too.
@@ -2629,7 +2887,10 @@ ssh_finish_move() {
 
 step_ssh() {
     compute_root_sources
-    local home nkeys=0 nokey=""
+    local home nkeys=0 nokey="" over=0
+    # sshd keeps the first value it reads: a file read before 00-server-prep.conf can win (issue #204).
+    # Reported before the no-key guard, so a step that stops there (the default of --yes) still names it.
+    ssh_report_overrides /etc/ssh/sshd_config.d && over=1
     home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
     [[ -s "$home/.ssh/authorized_keys" ]] && nkeys=$(grep -cE '^[^#[:space:]]' "$home/.ssh/authorized_keys")
     if [[ $nkeys -eq 0 && $DRY_RUN -eq 0 ]]; then
@@ -2647,8 +2908,10 @@ step_ssh() {
     for f in /etc/ssh/sshd_config.d/*; do
         [[ -e $f && ${f##*/} != 00-server-prep.conf ]] && others+=("${f##*/}")
     done
-    if [[ ${#others[@]} -gt 0 ]]; then
-        note "other drop-ins present (${others[*]}) - 00-server-prep.conf is read first and wins; their Port lines are commented out (sshd listens on every Port line)"
+    if [[ ${#others[@]} -gt 0 && $over -eq 1 ]]; then
+        note "other drop-ins present (${others[*]}); their Port lines are commented out (sshd listens on every Port line)"
+    elif [[ ${#others[@]} -gt 0 ]]; then
+        note "other drop-ins present (${others[*]}) - none read before 00-server-prep.conf changes its login settings; their Port lines are commented out (sshd listens on every Port line)"
     fi
 
     # The ports SSH has now: what sshd -T reported, plus those of the Port lines about to be commented
@@ -2749,7 +3012,7 @@ EOF
         local kept=""
         for p in $old_ports; do [[ $p == "$SSH_PORT" ]] || kept+="$p "; done
         note "automatic login check failed (${SSH_CHECK_FAILED})${SSH_CHECK_SKIPPED:+; ${SSH_CHECK_SKIPPED}}${kept:+: old SSH port(s) ${kept}and their temporary UFW rules kept}; the rollback timer puts back the SSH configuration from before this run in 10 minutes"
-        todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}. Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
+        todo "SSH: the automatic login check of this non-interactive run failed (${SSH_CHECK_FAILED}). In about 10 minutes the rollback timer (server-prep-ssh-rollback-${TS}.timer) puts back the SSH configuration from before this run${kept:+, with port(s) ${kept% }}.${SSH_OVERRIDE_FILES:+ The check reads sshd -T, so it sees what the other SSH to-do reports about ${SSH_OVERRIDE_FILES}: that can be the cause.} Fix the cause, then run the SSH step interactively and test a login from a second terminal when it asks: ${SSH_AGAIN} --dry-run, then the same without --dry-run"
         return 1
     fi
     if [[ "${answer,,}" == "n" ]]; then
@@ -2775,11 +3038,49 @@ EOF
     return 0
 }
 
-step_ips() {
-    local did=0 ignore="127.0.0.1/8 ::1"
-    [[ "$PANEL_ACCESS" == *tailscale* ]] && ignore+=" 100.64.0.0/10"
+# f2b_prep_local "ADDRESSES": the text of /etc/fail2ban/jail.d/zz-server-prep.local, server-prep's own
+# file in jail.d. fail2ban reads jail.conf, jail.d/*.conf, jail.local, then jail.d/*.local in name
+# order, and the last value of a setting wins. So a panel's file there can replace what jail.local
+# sets: Dokploy's dokploy.local sets its own [DEFAULT] ignoreip, without the tailnet, PANEL_IP or
+# ADMIN_IPS (issue #204). "zz-" sorts after such files, and %(known/ignoreip)s keeps the list they set
+# and adds server-prep's addresses. It must be in [sshd], not [DEFAULT]: fail2ban keeps no earlier
+# [DEFAULT] value, so there it points back to itself and fail2ban does not start ("Recursion limit
+# exceeded"). In a jail, it is the value an earlier file gave that jail, else the [DEFAULT] one, which
+# jail.local always sets. With neither, fail2ban rejects its whole configuration ("Bad value
+# substitution ... 'known/ignoreip'") and no jail runs: the file must go with jail.local, which its
+# header says, and the audit's ips.f2b_ignoreip warns when it is left alone. Settings that must win
+# over other fail2ban files can go here too (#119).
+f2b_prep_local() {
+    local ips=()
+    IFS=$' \t\n,' read -r -d '' -a ips <<<"$1"
+    cat <<EOF
+# Managed by server-prep.sh. Read after jail.local and the other jail.d/*.local files (zz-), so its
+# settings win over theirs.
+# Another file can set its own [DEFAULT] ignoreip (Dokploy: dokploy.local) and drop the addresses of
+# jail.local. %(known/ignoreip)s keeps that list, and server-prep's addresses are added back. It is
+# set per jail: in [DEFAULT], %(known/ignoreip)s cannot reach the value it replaces.
+# It needs the [DEFAULT] ignoreip of server-prep's jail.local (or of another file): without one,
+# fail2ban rejects its whole configuration and does not start. Delete this file with jail.local.
+[sshd]
+ignoreip = %(known/ignoreip)s ${ips[*]}
+EOF
+}
+
+# ips_whitelist: the addresses the ips step whitelists in fail2ban (ignoreip of jail.local and
+# zz-server-prep.local) and CrowdSec, separated by spaces: the loopback, the tailnet's ranges
+# (TAILNET_RANGES) when PANEL_ACCESS has tailscale, PANEL_IP and ADMIN_IPS. The audit's
+# ips.f2b_ignoreip looks for all but the loopback (f2b_wanted in server-audit.sh).
+ips_whitelist() {
+    local ignore="127.0.0.1/8 ::1"
+    [[ "$PANEL_ACCESS" == *tailscale* ]] && ignore+=" ${TAILNET_RANGES[*]}"
     [[ -n "$PANEL_IP" ]] && ignore+=" $PANEL_IP"
     ignore+=" ${ADMIN_IPS//,/ }"
+    printf '%s\n' "$ignore"
+}
+
+step_ips() {
+    local did=0 ignore
+    ignore="$(ips_whitelist)"
 
     if yes_ "$INSTALL_FAIL2BAN"; then
         did=1
@@ -2802,6 +3103,8 @@ enabled = true
 port = ${SSH_PORT}
 mode = aggressive
 EOF
+        # keeps the whitelist when a later jail.d file sets its own (f2b_prep_local)
+        f2b_prep_local "$ignore" | write_file /etc/fail2ban/jail.d/zz-server-prep.local 644
         run systemctl enable fail2ban
         run systemctl restart fail2ban || { note "fail2ban failed to start (journalctl -u fail2ban)"; return 1; }
         note "fail2ban sshd jail on port ${SSH_PORT}"
@@ -3068,6 +3371,7 @@ step_services() {
     before=$(systemctl list-units --type=service --state=running --no-legend | wc -l)
     local s
     for s in $DISABLE_SERVICES; do
+        [[ ${s,,} == none ]] && continue   # none = disable nothing
         case "$s" in
             avahi-daemon) svc_disable avahi-daemon.socket avahi-daemon.service ;;
             cups) svc_disable cups.path cups.socket cups.service ;;
@@ -3387,11 +3691,17 @@ EOF
 
 step_telegram() {
     yes_ "$TELEGRAM_ENABLE" || return $SKIP_RC
-    # the answers file never holds the token: a re-run without one keeps the token already installed
+    # The answers file never holds the token: a re-run without one (--config /etc/server-prep/server-prep.conf
+    # --yes) keeps the token already installed (#74). It is read here, never printed or logged: only
+    # telegram.env and curl's stdin (server-prep-notify) get it.
     if [[ -z "$TELEGRAM_BOT_TOKEN" && -f "$CONF_DIR/telegram.env" ]]; then
         TELEGRAM_BOT_TOKEN="$(sed -n 's/^TELEGRAM_BOT_TOKEN=//p' "$CONF_DIR/telegram.env" 2>/dev/null | tail -n 1)"
+        # a hand-edited telegram.env may quote it, which the scripts that source it accept
+        [[ $TELEGRAM_BOT_TOKEN =~ ^\"(.*)\"$ || $TELEGRAM_BOT_TOKEN =~ ^\'(.*)\'$ ]] && TELEGRAM_BOT_TOKEN="${BASH_REMATCH[1]}"
+        [[ -n "$TELEGRAM_BOT_TOKEN" ]] && note "bot token kept from $CONF_DIR/telegram.env"
     fi
-    [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]] || { note "token/chat id missing"; return 1; }
+    [[ -n "$TELEGRAM_BOT_TOKEN" ]] || { note "bot token missing: type it at the prompt (it is not saved in the answers) or set TELEGRAM_BOT_TOKEN"; return 1; }
+    [[ -n "$TELEGRAM_CHAT_ID" ]] || { note "chat id missing: set TELEGRAM_CHAT_ID"; return 1; }
     # the token goes into a curl config line (url = "..."), whose errors are silenced: catch a bad paste here
     [[ $TELEGRAM_BOT_TOKEN =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || { note "the bot token does not look like 123456:ABC-..."; return 1; }
     write_file "$CONF_DIR/telegram.env" 600 <<EOF
@@ -3560,9 +3870,10 @@ rollback_step() {
 
 write_rollback() {
     [[ $DRY_RUN -eq 1 ]] && return 0
-    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=() ufw_files=()
+    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 f2b_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=() ufw_files=()
     for f in "${CHANGED_FILES[@]}" "${NEW_FILES[@]}"; do
         [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/* ]] && ssh_files=1
+        [[ $f == /etc/fail2ban/* ]] && f2b_files=1
     done
     # The UFW rules of before the run, when UFW was on then (step_firewall): what the firewall step
     # added and deleted, Endlessh's rule and phase B's deletes are all undone by the copy.
@@ -3654,6 +3965,9 @@ write_rollback() {
             echo "if systemctl is-active --quiet endlessh 2>/dev/null || systemctl is-enabled --quiet endlessh 2>/dev/null; then systemctl disable --now endlessh; fi"
         fi
         echo "sysctl --system >/dev/null"
+        # fail2ban reads its files only when it starts: without a restart, it keeps this run's jail.local
+        # and zz-server-prep.local (whitelist, port) until the next one. Before sshd -t, which can stop the script.
+        [[ $f2b_files -eq 1 ]] && echo "systemctl try-restart fail2ban 2>/dev/null"
         if [[ -n $allow ]]; then
             echo "if command -v ufw >/dev/null 2>&1; then"
             printf '%s' "$allow"

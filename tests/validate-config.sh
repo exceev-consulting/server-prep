@@ -245,6 +245,43 @@ broken "a bad IPv6 address after a long service name" \
 [[ "$out" == *'WARN '*'"systemd-networkd-wait-online"'* ]] || fail "a long service name is not shown"
 printf 'ok: long plain values are still shown\n'
 
+# DISABLE_SERVICES=none (what save_answers writes when every service is kept, issue #74) is no unknown service
+for line in 'DISABLE_SERVICES="none"' "$(printf 'DISABLE_SERVICES=%q' none)" 'DISABLE_SERVICES="NONE"'; do
+    cp "$tmp/good.conf" "$tmp/none.conf"
+    printf '%s\n' "$line" >> "$tmp/none.conf"
+    check "$tmp/none.conf"
+    [[ $status -eq 0 && "$out" == "config OK (0 warning(s), 0 note(s))" ]] ||
+        fail "$line gives exit $status, want 0 and only \"config OK\""
+    printf 'ok: %s gives exit 0 and config OK\n' "$line"
+done
+cp "$tmp/good.conf" "$tmp/none.conf"
+printf 'DISABLE_SERVICES="none cups"\n' >> "$tmp/none.conf"
+check "$tmp/none.conf"
+[[ $status -eq 0 && $(count WARN) -eq 1 && $(count ERROR) -eq 0 && "$out" == *"write none alone"* ]] ||
+    fail "DISABLE_SERVICES=\"none cups\" gives exit $status, want 0 and one warning that says to write none alone"
+printf 'ok: DISABLE_SERVICES with none next to a service name gives one warning\n'
+# Answers saved by 1.1.1 or older hold DISABLE_SERVICES='' when every service was kept, which a --yes re-run
+# reads as every candidate: a warning on saved answers only (in a config written by hand, empty is the default)
+for line in "DISABLE_SERVICES=''" "DISABLE_SERVICES=' '"; do
+    cp "$tmp/saved.conf" "$tmp/old-answers.conf"
+    printf '%s\n' "$line" >> "$tmp/old-answers.conf"
+    check "$tmp/old-answers.conf"
+    n="$(wc -l < "$tmp/old-answers.conf")"
+    [[ $status -eq 0 && $(count WARN) -eq 1 && $(count ERROR) -eq 0 &&
+       "$out" == *"WARN $tmp/old-answers.conf:$n DISABLE_SERVICES is empty"*"1.1.1 or older"*"DISABLE_SERVICES=none"* ]] ||
+        fail "saved answers with $line give exit $status, want 0 and one warning on line $n that says to write DISABLE_SERVICES=none"
+    printf 'ok: saved answers with %s give one warning\n' "$line"
+done
+for f in good saved; do
+    cp "$tmp/$f.conf" "$tmp/empty-services.conf"
+    [[ $f == good ]] && printf "DISABLE_SERVICES=''\n" >> "$tmp/empty-services.conf"
+    [[ $f == saved ]] && printf 'DISABLE_SERVICES=none\n' >> "$tmp/empty-services.conf"
+    check "$tmp/empty-services.conf"
+    [[ $status -eq 0 && "$out" == "config OK (0 warning(s), 0 note(s))" ]] ||
+        fail "the $f config with $(tail -n 1 "$tmp/empty-services.conf") gives exit $status, want 0 and only \"config OK\""
+done
+printf 'ok: an empty DISABLE_SERVICES in a config written by hand, or none in saved answers, gives no warning\n'
+
 # Lockout: public access and no ADMIN_IPS
 cp "$tmp/good.conf" "$tmp/lockout.conf"
 printf 'PANEL_ACCESS="public"\nADMIN_IPS=""\n' >> "$tmp/lockout.conf"

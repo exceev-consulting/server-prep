@@ -24,6 +24,7 @@ flowchart LR
 | A login in front of admin tools | Cloudflare Zero Trust (Access), [step 8](#8-secure-your-public-urls-with-zero-trust) |
 
 **You need:**
+
 - a free Cloudflare account and a domain whose DNS is managed by Cloudflare;
 - a server prepared with server-prep and added to Coolify, with the Coolify proxy running.
 
@@ -70,7 +71,7 @@ Official docs: [Cloudflare, create a tunnel](https://developers.cloudflare.com/c
    | Domains / ports | | **leave empty**: cloudflared has no web page and opens no port |
 
 6. **Save**, then **Deploy**. In **Logs** you should see 4 lines:
-   ```
+   ```text
    Registered tunnel connection connIndex=0 ... protocol=quic
    ...
    Registered tunnel connection connIndex=3 ... protocol=quic
@@ -128,10 +129,12 @@ Official doc: [Coolify, configure your resource domain](https://coolify.io/docs/
 ## 6. Test
 
 From your workstation:
+
 ```bash
 curl -sI https://demo.example.com | head -3     # HTTP/2 200 and server: cloudflare
 dig +short demo.example.com                     # Cloudflare IPs (104.x, 172.6x.x), not your server
 ```
+
 The browser shows "Welcome to nginx!".
 
 ## 7. Close 80/443 on the server
@@ -216,6 +219,7 @@ Official doc: [Cloudflare, create a policy](https://developers.cloudflare.com/cl
 
 Save. Test in a **private browser window**: Cloudflare's login page appears first, asks for your email,
 sends a code, and only then shows the app. From a terminal:
+
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://influxdb.example.com    # 302: sent to the Cloudflare login
 ```
@@ -230,7 +234,7 @@ Scripts and agents (Telegraf, backups, CI) can't type an email code. Give them a
    pick a duration, and copy the **Client ID** and **Client Secret** (shown once).
 2. In the application, add a second policy: Action **Service Auth**, Include **Service Token** → `telegraf`.
 3. The machine sends two headers with every request:
-   ```
+   ```text
    CF-Access-Client-Id: <client id>
    CF-Access-Client-Secret: <client secret>
    ```

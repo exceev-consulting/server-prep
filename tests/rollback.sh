@@ -297,7 +297,23 @@ grep -q 'endlessh' "$tmp/calls" && fail 'no SSH file: Endlessh is stopped althou
 grep -qF 'SSH goes back' "$tmp/stdout" && fail 'no SSH file: says SSH goes back to another port'
 grep -qF 'loses its SSH access' "$tmp/stdout" && fail 'no SSH file: says the panel loses SSH'
 grep -qF 'Endlessh rule' "$tmp/stdout" && fail 'no SSH file: lists an Endlessh rule'
-pass 'a run that touched no SSH file: no UFW rule, no Endlessh stop, no panel warning'
+grep -q 'fail2ban' "$tmp/calls" && fail 'no SSH file: fail2ban is restarted although this run changed none of its files'
+pass 'a run that touched no SSH file: no UFW rule, no Endlessh stop, no panel warning, no fail2ban restart'
+
+# --- a run of the ips step: fail2ban reads its restored files only when it restarts (issue #204) -------
+setup
+CHANGED_FILES=(/etc/fail2ban/jail.local)
+NEW_FILES=(/etc/fail2ban/jail.d/zz-server-prep.local)
+generate 'fail2ban files'
+run_rb 'fail2ban files'
+called "cp -a $BACKUP_DIR/etc/fail2ban/jail.local /etc/fail2ban/jail.local" || fail 'fail2ban files: jail.local is not copied back'
+called 'rm -f /etc/fail2ban/jail.d/zz-server-prep.local' || fail 'fail2ban files: zz-server-prep.local is not deleted'
+f2b=$(first "$tmp/calls" '^systemctl try-restart fail2ban$')
+gone=$(first "$tmp/calls" '^rm -f /etc/fail2ban/jail.d/zz-server-prep.local$')
+check=$(first "$tmp/calls" '^sshd -t$')
+((f2b > gone)) || fail 'fail2ban files: fail2ban is not restarted after its files are put back'
+((check == 0 || f2b < check)) || fail 'fail2ban files: fail2ban is restarted after sshd -t, which can stop rollback.sh'
+pass 'a run of the ips step: its fail2ban files put back, then fail2ban restarted, before sshd -t'
 
 # --- Endlessh not installed by this run (package missing, INSTALL_ENDLESSH=no, or --only ssh) ----------
 # Another run can put Endlessh on 22 later: rollback.sh looks at run time and stops it when it is on.

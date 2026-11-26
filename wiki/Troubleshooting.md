@@ -55,7 +55,7 @@ systemctl list-timers 'server-prep-ssh-rollback-*'
 
 You see one line while the timer is waiting, and none once you confirmed or it ran.
 
-With `--yes`, the automatic login check confirms instead of you. When it fails, the `ssh` step fails with a to-do that names the check (SSH not on the new port, the admin refused by `sshd -T` or without a key, no SSH handshake). The key check reads only the `AuthorizedKeysFile` files: keys that an `AuthorizedKeysCommand` gives are not seen, so such a server fails it. The old port and its temporary UFW rule stay (a firewall re-run keeps them too, until the SSH step finishes the move), and the timer still puts back the old SSH config after 10 minutes. Fix the cause, then run the step interactively and test a login from a second terminal when it asks:
+With `--yes`, the automatic login check confirms instead of you. When it fails, the `ssh` step fails with a to-do that names the check (SSH not on the new port, the admin refused by `sshd -T` or without a key, no SSH handshake). The key check reads only the `AuthorizedKeysFile` files: keys that an `AuthorizedKeysCommand` gives are not seen, so such a server fails it. `sshd -T` also applies a file that sshd reads before `00-server-prep.conf`, such as Dokploy's `00-dokploy.conf` (see [Panels](Panels#dokploys-server-security-dialog)): the step names that file in another to-do, and the failed check's to-do points to it. The old port and its temporary UFW rule stay (a firewall re-run keeps them too, until the SSH step finishes the move), and the timer still puts back the old SSH config after 10 minutes. Fix the cause, then run the step interactively and test a login from a second terminal when it asks:
 
 ```bash
 sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ssh,endlessh --dry-run
@@ -150,6 +150,8 @@ The output must show `-j ufw-user-forward`.
 | `log_martians` back to 0 after a reboot | `/etc/ufw/sysctl.conf` overrides it at boot | the `sysctl` step rewrites that file: re-run `--only sysctl` |
 | `fs.suid_dumpable=2` after a reboot | apport (Ubuntu's crash reporter) forces it | `apport` is in `DISABLE_SERVICES`: re-run `--only services` |
 | A re-run with `--config` didn't disable a newly added service | saved configs keep their old `DISABLE_SERVICES` list | edit `DISABLE_SERVICES` in `/etc/server-prep/server-prep.conf`, or disable it by hand: `sudo systemctl disable --now <service>` |
+| A `--yes` re-run disabled services you had kept | answers saved by v1.1.1 or older hold an empty `DISABLE_SERVICES` when you kept every service, and with `--yes` an empty value means all of them: the plan, the to-do and `--validate` warn about it | set `DISABLE_SERVICES=none` in `/etc/server-prep/server-prep.conf` (or list only the services to disable), then turn each one back on: `sudo systemctl enable --now <service>` |
+| A port or SSH source you removed from the answers is still open | the firewall step was not part of the run: the run's to-do names what the answers no longer give. Or the rule is not server-prep's (see the firewall rows above) | re-run `--only firewall`, with `--dry-run` first: the plan lists the rules server-prep added for earlier answers, and the run deletes them. Delete a rule of your own yourself: `sudo ufw status numbered`, then `sudo ufw delete <number>` |
 
 Check the two values after a reboot:
 

@@ -46,6 +46,44 @@ Highlights of each release. The full list of merged pull requests is in each
   `manage_etc_hosts: false`) so the next boot does not undo the hostname or `/etc/hosts`, and `--check` reports it
   (`pre.cloud_init_hostname`, INFO when cloud-init is disabled, as on Ubuntu installed from the ISO). A `cloud.cfg.d`
   file read after the drop-in still wins: the run and `--check` name it.
+- Fix: a re-run from the saved answers
+  (`sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only <step> --yes`) now does what the first run
+  did. When you keep every service, the answers say `DISABLE_SERVICES=none` instead of an empty value, which a `--yes`
+  run read as "disable them all"; the saved list holds the services you chose to disable. When none of them is
+  installed, nothing is asked and the answers keep the whole list, so a re-run disables one installed later: the
+  questions say so. The `telegram` step keeps the bot token already in `/etc/server-prep/telegram.env`, quoted or not,
+  without showing it. At a question that shows `(- = ...)`, type `-` (or `none`) to empty an answer, such as the extra
+  ports or the allowed SSH sources; on a re-run from the saved answers, Enter keeps it empty. When the firewall step
+  is not part of the run, the to-do names the ports and sources you removed: the next firewall run deletes their
+  rules. With no allowed SSH source and only the panel's public IP, the plan warns that you will be locked out and
+  `Proceed?` defaults to no, so a `--yes` run stops there before any change: add your IP or network to `ADMIN_IPS`, or
+  use `--yes --force` only with a console at hand. Answers saved by 1.1.1 or older hold an empty `DISABLE_SERVICES`
+  when you kept every service: set `DISABLE_SERVICES=none` there before a `--yes` re-run. `--validate`, the plan and
+  the to-do of a run from those answers say so, and the questions warn before the first service. A `--yes` run without
+  the `services` step keeps that empty value in the answers, so the next run with it still warns.
+- Fix: saving the SSH or Fail2ban tab of Dokploy's server Security dialog (Dokploy 0.31 and later) undid two
+  protections of server-prep without a word. `00-dokploy.conf` is read before `00-server-prep.conf`, so root could log
+  in with a key from any address (`PermitRootLogin prohibit-password`), and `jail.d/dokploy.local` replaced fail2ban's
+  whitelist, so the office IP or a tailnet device could be banned. The `ips` step now also writes
+  `/etc/fail2ban/jail.d/zz-server-prep.local`, read after such files, which keeps their whitelist and adds the tailnet
+  range, `PANEL_IP` and `ADMIN_IPS` back to the sshd jail. It needs `jail.local`: delete both or neither, or fail2ban
+  does not start. `rollback.sh` deletes it, and restarts fail2ban once it has put back fail2ban's files. The SSH step
+  warns and adds a to-do when a file read first changes one of its login settings or adds users, or when
+  `sshd_config` has no `Include` of `sshd_config.d`, even when it stops because the admin has no SSH key. In a run
+  with `--yes`, the to-do of a failed automatic login check points to that file: the check reads `sshd -T`, which
+  applies it. The audit has two new checks, both WARN in those cases:
+  `ssh.dropin_override` names the file and the settings (`ssh.root_login` names it too), and `ips.f2b_ignoreip` lists
+  the addresses missing from the whitelist and the file that set it, or says that `zz-server-prep.local` is left
+  without `jail.local`. It and `ips.f2b_sshd_jail` read the jail files as fail2ban does: a value goes on over lines
+  indented deeper than its option, and ` ;` starts a comment. The wiki's Panels page says which tabs of the dialog to
+  use on a prepared server and how to undo a save. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes`.
+- Fix: with `PANEL_ACCESS=tailscale`, the `ips` step whitelisted only the tailnet's IPv4 range (`100.64.0.0/10`) in
+  fail2ban and CrowdSec, while SSH also trusts its IPv6 range (`fd7a:115c:a1e0::/48`). A tailnet device that connected
+  over IPv6 (MagicDNS can give that address first) could be banned after a few failed logins. Both ranges are now
+  whitelisted, and the audit's `ips.f2b_ignoreip` warns when the IPv6 one is missing. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --dry-run`, then the same command with
+  `--yes`. The `PANEL_ACCESS` help in `server-prep.conf.example` and the setup console now names both ranges.
 - `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
   reports (`kern.suid`, `kern.world_writable`, `net.exposure`) no longer makes the `--json` report invalid or reaches
   your terminal as an escape sequence. Any local user can create such a name. The JSON report writes these characters
@@ -62,6 +100,8 @@ Highlights of each release. The full list of merged pull requests is in each
   `tests/exit-status.sh` run it (#35).
 - The setup console, the brand guidelines and the E2E reports moved to <https://server-prep.exceev.com/>. Links to
   the old address, `exceev-consulting.github.io/server-prep/`, redirect there.
+- The README and the wiki said the audit has 59 checks, an old count. `scripts/gen-data.sh` now writes the real number
+  into them, and `scripts/gen-data.sh --check` fails, with the file and line, when one gives another number.
 - `rollback.sh` could lock you out after a run that moved SSH: SSH went back to its old port (often 22), but UFW,
   which the run turned on, no longer allowed that port, and Endlessh still held port 22 when another run had installed
   it. Before it restarts SSH, it now stops Endlessh whenever it is on and SSH goes back to 22, allows the old SSH port in
@@ -275,6 +315,10 @@ Highlights of each release. The full list of merged pull requests is in each
   `lo`. The script now comments out every line of the old block, up to the next `iface`, `auto`, `allow-*`, `source` or
   other stanza line, and leaves comments and blank lines as they are. A re-run also repairs a file an older version
   left half commented out.
+- `scripts/check.sh --only docs` checks the workflows and the Markdown files: actionlint on `.github/workflows/`,
+  yamllint on `.github/`, markdownlint-cli2 on the Markdown files, and lychee (offline) on relative links and their
+  anchors. Their settings are in `.yamllint.yml`, `.markdownlint-cli2.yaml` and `lychee.toml`. No CI job runs this
+  section yet (part of #39).
 
 ## [1.1.1] - 2026-10-19
 

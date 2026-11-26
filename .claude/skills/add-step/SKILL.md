@@ -8,6 +8,7 @@ description: Checklist for adding or changing a step in server-prep.sh (new pack
 Use the Telegraf step as the reference implementation: `grep -n -i telegraf server-prep.sh server-audit.sh`. For a third-party apt repository, follow `cloudflared_repo` instead (`grep -n -i cloudflared server-prep.sh server-audit.sh`): Telegraf does not call `drop_other_sources`.
 
 ## Checklist (all of them, in this order)
+
 1. **`ALL_STEPS`** at the top of `server-prep.sh`: insert the name in run order.
 2. **Default setting** in the settings block: `INSTALL_X="${INSTALL_X:-yes}"`, with a short comment.
 3. **Question** in `questions()`, in the right section:
@@ -33,9 +34,10 @@ Use the Telegraf step as the reference implementation: `grep -n -i telegraf serv
     - list the id in `docs/json-output.md`, in its category's table (`tests/audit-json.sh` fails otherwise);
     - a `# step: x` comment on the line above the check (its `if` block or its `result` call), so `scripts/check-consistency.sh` maps the step to it; a step with no check on purpose goes in `NO_AUDIT_CHECK` in that script, with a reason.
 11. **`AGENTS.md`**: if you hit a non-obvious problem, add it to *Hard-won gotchas*.
-12. **Site data**: run `scripts/gen-data.sh` and commit `site/data.json` and `site/data.js`. CI runs `scripts/gen-data.sh --check`, so a new step, setting or audit check fails the build until the data is regenerated.
+12. **Site data**: run `scripts/gen-data.sh` and commit `site/data.json` and `site/data.js`, and the `README.md` and `wiki/` pages it changes when you add or remove an audit check (they give the number of checks). CI runs `scripts/gen-data.sh --check`, so a new step, setting or audit check fails the build until the data is regenerated.
 
 ## Rules
+
 - **Third-party apt repo:**
   - add the key with `apt_repo_key NAME URL FPR /etc/apt/keyrings/<name>.gpg`: it keeps only one key with the published fingerprint (a bundle or a secret key is refused) and checks a key in place on every run;
   - then call `drop_other_sources <repo URL without scheme> <your source file name>` before writing your source, so apt never sees the repository with two keys (never before `apt_repo_key`: a failed key check must leave the old source in place);
@@ -46,9 +48,11 @@ Use the Telegraf step as the reference implementation: `grep -n -i telegraf serv
 - **Anything that could lock out SSH or the firewall** must keep the rollback and confirmation flow.
 
 ## Verify
+
 ```bash
 ./scripts/check.sh   # bash -n, ShellCheck -S warning (CI fails on any warning), --help, site data, tests
 scripts/check-consistency.sh   # ALL_STEPS, main(), step_x(), README row, config example, save_answers, summary, ask_secret and audit check agree (check.sh runs it too)
 sudo ./server-prep.sh --config <test.conf> --dry-run --only x   # user runs it
 ```
+
 Commit with a message that says *why*, for example "Pin X to its repo (ESM ships an old version)".
