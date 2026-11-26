@@ -89,6 +89,7 @@ setup() {   # a fresh applied run that moved SSH from 22 to 822 and installed En
     STEP_IDS=(); STEP_RESULTS=(); STEP_DETAILS=(); MANUAL_TODO=()
     CROWDSEC_ENROLL_KEY=''
     ENDLESSH=0
+    UFW_RULES_RESTORE=0       # the firewall step found UFW off (a first run): its rule files stay as they are
     UFW_STATUS="$UFW_ENDLESSH"
     rm -f "$tmp/calls" "$tmp/stdout"
 }
@@ -155,9 +156,9 @@ pass 'the output starts with the console warning, lists what is not undone and e
 called "cp -a $BACKUP_DIR/etc/ssh/sshd_config /etc/ssh/sshd_config" || fail 'sshd_config is not copied back'
 called 'rm -f /etc/ssh/sshd_config.d/00-server-prep.conf' || fail 'the created sshd drop-in is not deleted'
 called 'systemctl disable --now endlessh' || fail 'Endlessh is not stopped'
-want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep-temp admin
-ufw allow from 203.0.113.10 to any port 22 proto tcp comment server-prep-temp panel
-ufw allow in on tailscale0 to any port 22 proto tcp comment server-prep-temp tailscale'
+want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep: server-prep-temp admin
+ufw allow from 203.0.113.10 to any port 22 proto tcp comment server-prep: server-prep-temp panel
+ufw allow in on tailscale0 to any port 22 proto tcp comment server-prep: server-prep-temp tailscale'
 [[ "$(rules)" == "$want" ]] || fail "UFW rules for port 22: got '$(rules)', want '$want'"
 grep -E '^ufw (allow|limit) ' "$tmp/calls" | grep -q 822 && fail 'rollback.sh adds a rule for the new port 822'
 pass 'UFW allows port 22 from the admin, the panel and Tailscale, with the comment phase B deletes, and nothing for 822'
@@ -223,7 +224,7 @@ generate 'no sources'
 [[ -s $tmp/out ]] && fail "no sources: write_rollback printed a warning: $(cat "$tmp/out")"
 grep -qF 'no SSH source restriction' "$rb" && fail 'no sources: the firewall warning went into rollback.sh'
 run_rb 'no sources'
-[[ "$(rules)" == 'ufw limit 22/tcp comment server-prep-temp' ]] || fail "no sources: got '$(rules)'"
+[[ "$(rules)" == 'ufw limit 22/tcp comment server-prep: server-prep-temp' ]] || fail "no sources: got '$(rules)'"
 # without the Endlessh rule's plain allow, the rate limit applies
 called 'ufw --force delete 4' && called 'ufw --force delete 2' || fail 'no sources: the Endlessh rule is not deleted'
 pass 'no SSH sources: ufw limit 22/tcp, the Endlessh rule deleted, and no warning in the output or the script'
@@ -251,10 +252,10 @@ ADMIN_IPS='192.168.1.50, 198.51.100.0/24'
 PANEL_ACCESS=''
 generate 'two old ports'
 run_rb 'two old ports'
-want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep-temp admin
-ufw allow from 198.51.100.0/24 to any port 22 proto tcp comment server-prep-temp admin
-ufw allow from 192.168.1.50 to any port 2222 proto tcp comment server-prep-temp admin
-ufw allow from 198.51.100.0/24 to any port 2222 proto tcp comment server-prep-temp admin'
+want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep: server-prep-temp admin
+ufw allow from 198.51.100.0/24 to any port 22 proto tcp comment server-prep: server-prep-temp admin
+ufw allow from 192.168.1.50 to any port 2222 proto tcp comment server-prep: server-prep-temp admin
+ufw allow from 198.51.100.0/24 to any port 2222 proto tcp comment server-prep: server-prep-temp admin'
 [[ "$(rules)" == "$want" ]] || fail "two old ports: got '$(rules)', want '$want'"
 grep -qxF 'SSH goes back to port(s) 22 2222.' "$tmp/stdout" || fail 'two old ports: the ports are not named'
 pass 'two old ports and two admin sources: one rule per port and source'
@@ -265,8 +266,8 @@ SSH_OLD_PORTS='22 2222 822 '   # step_ssh: 22 from preflight, 2222 from a drop-i
 PANEL_ACCESS=''
 generate 'port from a Port line'
 run_rb 'port from a Port line'
-want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep-temp admin
-ufw allow from 192.168.1.50 to any port 2222 proto tcp comment server-prep-temp admin'
+want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep: server-prep-temp admin
+ufw allow from 192.168.1.50 to any port 2222 proto tcp comment server-prep: server-prep-temp admin'
 [[ "$(rules)" == "$want" ]] || fail "port from a Port line: got '$(rules)', want '$want'"
 grep -qxF 'SSH goes back to port(s) 22 2222.' "$tmp/stdout" || fail 'port from a Port line: the ports are not named'
 pass "a port from a Port line step_ssh commented out gets its UFW rule back, the run's port none"
@@ -418,12 +419,65 @@ generate 'only a drop-in'
 run_rb 'only a drop-in'
 called "cp -a $BACKUP_DIR/etc/ssh/sshd_config.d/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf" ||
     fail 'only a drop-in: the drop-in is not copied back'
-want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep-temp admin
-ufw allow from 203.0.113.10 to any port 22 proto tcp comment server-prep-temp panel
-ufw allow in on tailscale0 to any port 22 proto tcp comment server-prep-temp tailscale'
+want='ufw allow from 192.168.1.50 to any port 22 proto tcp comment server-prep: server-prep-temp admin
+ufw allow from 203.0.113.10 to any port 22 proto tcp comment server-prep: server-prep-temp panel
+ufw allow in on tailscale0 to any port 22 proto tcp comment server-prep: server-prep-temp tailscale'
 [[ "$(rules)" == "$want" ]] || fail "only a drop-in: UFW rules for port 22: got '$(rules)', want '$want'"
 grep -qxF 'SSH goes back to port(s) 22.' "$tmp/stdout" || fail 'only a drop-in: the output does not name the restored SSH port'
 pass 'a run that changed only another sshd drop-in: copied back, port 22 allowed in UFW'
+
+# --- UFW was on before the run (issue #67): its rule files go back, before the rules of the old port -----
+ufw_backups() {   # the UFW rule files as the firewall step backed them up
+    mkdir -p "$BACKUP_DIR/etc/ufw"
+    printf '### tuple ### limit tcp 22 0.0.0.0/0 any 0.0.0.0/0 in\n' > "$BACKUP_DIR/etc/ufw/user.rules"
+    printf '### tuple ### limit tcp 22 ::/0 any ::/0 in\n' > "$BACKUP_DIR/etc/ufw/user6.rules"
+    mkdir -p "$BACKUP_DIR/etc/default"
+    printf 'DEFAULT_INPUT_POLICY="ACCEPT"\n' > "$BACKUP_DIR/etc/default/ufw"
+}
+setup
+UFW_RULES_RESTORE=1
+ufw_backups
+cmp() { return 1; }   # the live files differ from the backups (the real ones are root only)
+generate 'UFW on before'
+unset -f cmp
+run_rb 'UFW on before'
+called "cp -a $BACKUP_DIR/etc/ufw/user.rules /etc/ufw/user.rules" || fail 'UFW on before: user.rules is not copied back'
+called "cp -a $BACKUP_DIR/etc/ufw/user6.rules /etc/ufw/user6.rules" || fail 'UFW on before: user6.rules is not copied back'
+called "cp -a $BACKUP_DIR/etc/default/ufw /etc/default/ufw" ||
+    fail 'UFW on before: /etc/default/ufw is not copied back (the default policies of before the run)'
+copy=$(last "$tmp/calls" '^cp -a .*/etc/(ufw/user6?\.rules|default/ufw) ')
+allow1=$(first "$tmp/calls" '^ufw (allow|limit) ')
+reload=$(first "$tmp/calls" '^ufw reload$')
+((copy > 0 && allow1 > copy && reload > allow1)) ||
+    fail 'UFW on before: the rule files must be copied back before the rules of the old port are added, and UFW reloaded last'
+grep -qF 'UFW gets back the rules it had before this run' "$tmp/stdout" || fail 'UFW on before: the output does not say the UFW rules go back'
+grep -qF 'UFW stays on, with every rule this run added' "$tmp/stdout" && fail 'UFW on before: still says every rule this run added stays'
+[[ "$(rules)" == *'comment server-prep: server-prep-temp admin'* ]] || fail "UFW on before: the old port is not allowed: '$(rules)'"
+pass 'UFW on before the run: its rule files go back first, then the old SSH port is allowed, then UFW reloads'
+
+setup
+UFW_RULES_RESTORE=1
+ufw_backups
+cmp() { [[ $2 == */user6.rules || $2 == */default/ufw ]]; }   # only user.rules changed (an IPv4 rule)
+generate 'only user.rules changed'
+unset -f cmp
+grep -qF "cp -a '$BACKUP_DIR/etc/ufw/user.rules'" "$rb" || fail 'only user.rules changed: it is not copied back'
+grep -qF "cp -a '$BACKUP_DIR/etc/ufw/user6.rules'" "$rb" && fail 'only user.rules changed: user6.rules is copied back too'
+grep -qF "cp -a '$BACKUP_DIR/etc/default/ufw'" "$rb" && fail 'only user.rules changed: /etc/default/ufw is copied back too'
+setup
+UFW_RULES_RESTORE=1
+cmp() { return 1; }
+generate 'no UFW backup'
+unset -f cmp
+grep -qE "cp -a '$BACKUP_DIR/etc/(ufw|default/ufw)" "$rb" && fail 'no UFW backup: rollback.sh copies a UFW file it has no backup of'
+setup
+ufw_backups
+cmp() { return 1; }
+generate 'UFW off before'
+unset -f cmp
+grep -qE "cp -a '$BACKUP_DIR/etc/(ufw|default/ufw)" "$rb" && fail 'UFW off before: the rule files are copied back on a UFW the run turned on'
+grep -qF 'UFW stays on, with every rule this run added' "$rb" || fail 'UFW off before: the output no longer says the rules stay'
+pass 'only a UFW rule file that changed and has a backup goes back, and none when the run turned UFW on'
 
 # --- a dry run writes no rollback.sh -------------------------------------------------------------------
 setup

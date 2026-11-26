@@ -440,8 +440,9 @@ validate_values() {
         esac
     done
     if [[ -n "$PANEL_IP" ]]; then
-        valid_ip "$PANEL_IP" ||
+        if ! valid_ip "$PANEL_IP" || [[ "$PANEL_IP" == */0 ]]; then
             vsay ERROR "$(vline PANEL_IP)" "PANEL_IP is $(vq "$PANEL_IP"), which is not an IP address: set it to the public IP of your panel server (on that server: curl -4 ifconfig.me)"
+        fi
     elif [[ $has_public -eq 1 ]]; then
         l="$(vline PANEL_IP)"; [[ $l == - ]] && l="$(vline PANEL_ACCESS)"
         vsay ERROR "$l" "PANEL_ACCESS has public but PANEL_IP is empty: Set PANEL_IP to the public IP of your panel server (on that server: curl -4 ifconfig.me)"
@@ -498,8 +499,12 @@ validate_values() {
         vsay WARN "$(vline CROWDSEC_LAPI_PORT)" "CROWDSEC_LAPI_PORT is 8080, which Traefik dashboards use: use 8091"
     read -rd '' -a list <<< "${ADMIN_IPS//,/ }"
     for item in "${list[@]}"; do
-        valid_ip "$item" ||
+        if ! valid_ip "$item"; then
             vsay ERROR "$(vline ADMIN_IPS)" "ADMIN_IPS has $(vq "$item"), which is not an IP address or network: write IPs or networks like 203.0.113.4 192.168.1.0/24"
+        elif [[ "$item" == */0 ]]; then
+            # ufw would write it as "allow PORT/tcp" for one IP version, and the ips step would never ban anyone
+            vsay ERROR "$(vline ADMIN_IPS)" "ADMIN_IPS has $(vq "$item"), which is every address: SSH would be open to everyone and fail2ban and CrowdSec would ban no one. Leave ADMIN_IPS empty to open SSH to everyone (rate-limited), or write your IPs or networks like 203.0.113.4 192.168.1.0/24"
+        fi
     done
     read -rd '' -a list <<< "${EXTRA_PORTS//,/ }"
     for item in "${list[@]}"; do
@@ -1203,7 +1208,7 @@ questions() {
     echo "  Host: ${HOST_SHORT} | ${OS_PRETTY} | laptop: $([[ $IS_LAPTOP == 1 ]] && echo yes || echo no) | docker: $([[ $HAS_DOCKER == 1 ]] && echo yes || echo no) | tailscale: $([[ $HAS_TAILSCALE == 1 ]] && echo yes || echo no) | cloudflared: $([[ $HAS_CLOUDFLARED == 1 ]] && echo yes || echo no)"
     echo "  Press Enter to accept the [default]. Where a question shows (- = ...), type - to leave it empty."
     echo "  Nothing changes until you confirm the plan at the end."
-    # what opened firewall rules before the answers below: step_firewall only adds rules
+    # what opened firewall rules before the answers below (the to-do at the end of section 3)
     local old_ips="$ADMIN_IPS" old_ports="$EXTRA_PORTS" old_access="$PANEL_ACCESS" old_panel_ip="$PANEL_IP" old_web="$EXPOSE_WEB"
 
     # ---------------------------------------------------------------- 1
@@ -1283,7 +1288,8 @@ questions() {
             "Suggested: your local network ${LAN_CIDR:-?} and your office/home public IP if it is fixed." \
             "The tunnel, Tailscale and the panel IP chosen above are allowed automatically." \
             "None (-) + no tunnel/tailscale/panel IP = SSH open to everyone (rate-limited, keys only)." \
-            "None (-) + only the panel IP = only the panel server reaches SSH: you are locked out."
+            "None (-) + only the panel IP = only the panel server reaches SSH: you are locked out." \
+            "On a re-run, the SSH rules of addresses removed here are deleted (the plan lists them)."
     ask ADMIN_IPS "Allowed SSH sources (- = none)" "$def_ips" optional
     local def_web=no; [[ "$PANEL_ACCESS" == *public* ]] && def_web=yes
     explain "Ports 80/443 are where your deployed apps answer (the panel's reverse proxy, e.g. Traefik or Caddy)." \
@@ -1293,21 +1299,24 @@ questions() {
     ask_yn EXPOSE_WEB "Open 80/443 to the internet?" "${EXPOSE_WEB:-$def_web}"
     explain "Other ports to open to everyone, e.g. a database you must reach from outside (5432/tcp)." \
             "Format: port/proto separated by spaces. Most setups need none - keep it empty unless sure." \
-            "Removing a port or an SSH source does not delete the rule an earlier run added: see the to-do."
+            "On a re-run, the rules of ports removed here are deleted (the plan lists them)."
     ask EXTRA_PORTS "Extra ports (- = none)" "$EXTRA_PORTS" optional
-    # step_firewall only adds rules: name the ones an earlier run may have added for an answer
-    # removed here (#74). cloudflared has no rule: the tunnel arrives on loopback.
+    # step_firewall deletes the rules server-prep added for an answer removed here, and the plan lists
+    # them (#67). A run without that step leaves them open: name them (#74). cloudflared has no rule:
+    # the tunnel arrives on loopback.
     local gone=""
-    gone="$(
-        yes_ "$old_web" && ! yes_ "$EXPOSE_WEB" && echo "ports 80/443"
-        removed_words port "$old_ports" "$EXTRA_PORTS"
-        removed_words "SSH source" "$old_ips" "$ADMIN_IPS"
-        removed_words access "${old_access//cloudflared/}" "$PANEL_ACCESS"
-        [[ "$PANEL_ACCESS" == *public* ]] && removed_words "panel IP" "$old_panel_ip" "$PANEL_IP"
-    )"
+    if ! step_selected firewall; then
+        gone="$(
+            yes_ "$old_web" && ! yes_ "$EXPOSE_WEB" && echo "ports 80/443"
+            removed_words port "$old_ports" "$EXTRA_PORTS"
+            removed_words "SSH source" "$old_ips" "$ADMIN_IPS"
+            removed_words access "${old_access//cloudflared/}" "$PANEL_ACCESS"
+            [[ "$PANEL_ACCESS" == *public* ]] && removed_words "panel IP" "$old_panel_ip" "$PANEL_IP"
+        )"
+    fi
     if [[ -n "$gone" ]]; then
         gone="$(paste -sd ';' <<< "$gone")"
-        todo "The firewall step does not delete rules: if an earlier run opened what you removed from the answers (${gone//;/, }), UFW still allows it. List the rules with: sudo ufw status numbered, then delete each one you no longer need, highest number first: sudo ufw delete <number>"
+        todo "The firewall step is not part of this run, so UFW still allows what an earlier run opened for the answers you removed (${gone//;/, }). The firewall step deletes those rules, and its plan lists them: sudo ./server-prep.sh --config $CONF_DIR/server-prep.conf --only firewall --dry-run, then the same without --dry-run"
     fi
 
     # ---------------------------------------------------------------- 4
@@ -1448,6 +1457,8 @@ summary_and_confirm() {
   Steps ............. ${ONLY:-all}${SKIP:+ (skip: $SKIP)}
   Mode .............. $([[ $DRY_RUN == 1 ]] && echo "DRY-RUN (nothing will change)" || echo "APPLY")$([[ $ASSUME_YES -eq 1 ]] && { [[ $FORCE -eq 1 ]] && echo " | --yes --force: yes to every question" || echo " | --yes: each question's default"; })
 EOF
+    # The rules the firewall step will delete, shown before the operator says yes (issue #67)
+    if step_selected firewall && have ufw; then ufw_plan_cleanup; fi
     # --validate warns about this lockout, but the questions never run it: an answer of - at "Allowed SSH
     # sources" leads here. Make Proceed default to no: --yes keeps that default, so a --yes run stops there
     # before any change, and only --yes --force goes on (#65). Worked out first, because the warning about
@@ -1789,57 +1800,486 @@ ufw_state() { cat /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw 2>/d
 # Only this command: apt and the other tools keep the operator's language.
 ufw_status() { LC_ALL=C LANGUAGE='' ufw status "$@"; }
 
-# RUNNER is run (the default) or rollback_cmd, which only prints the commands for rollback.sh.
-ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT [RUNNER]
-    local port="$1" c="$2" r="${3:-run}" ip any=1
-    for ip in ${ADMIN_IPS//,/ }; do
-        "$r" ufw allow from "$ip" to any port "$port" proto tcp comment "$c admin"; any=0
+# Every UFW rule server-prep adds has a comment that starts with this tag (issue #67), so a firewall
+# re-run can delete the rules it added for earlier answers and never touch the operator's own rules.
+# Versions before the tag wrote the same comments without it: see ufw_fw_owned.
+UFW_TAG="server-prep: "
+
+# ufw_added: "ufw show added", the rules of /etc/ufw/user.rules and user6.rules as the commands that
+# add them ("ufw allow 80/tcp comment 'server-prep: http'"), once for both IP versions, even while UFW
+# is off. In English like ufw_status, though only its first line is translated.
+ufw_added() { LC_ALL=C LANGUAGE='' ufw show added; }
+
+# ufw_rule_split LINE: one line of "ufw show added" into UFW_R_SPEC (the rule without "ufw" and its
+# comment) and UFW_R_COMMENT (empty when the rule has none). False for the other lines (the header,
+# "(None)"). Globals, not output, so the callers need no subshell.
+ufw_rule_split() {
+    local with="^ufw (.+) comment '(.*)'$" without="^ufw (.+)$"
+    if [[ $1 =~ $with ]]; then
+        UFW_R_SPEC="${BASH_REMATCH[1]}"; UFW_R_COMMENT="${BASH_REMATCH[2]}"
+    elif [[ $1 =~ $without ]]; then
+        UFW_R_SPEC="${BASH_REMATCH[1]}"; UFW_R_COMMENT=""
+    else
+        return 1
+    fi
+}
+
+# ufw_rule_key SPEC: the rule without its action (allow, limit...) and log option. ufw keeps one rule
+# per key: adding a rule whose key is there replaces that rule, its action and comment included. ufw
+# writes the log option after the direction and the interfaces: "allow log 80/tcp", "allow out log
+# 80/tcp", "allow in on tailscale0 log to any port 822 proto tcp" (get_command in ufw's parser.py).
+ufw_rule_key() {
+    local IFS=' ' i=1
+    local -a w=() key=()
+    read -ra w <<<"$1"
+    [[ ${w[0]:-} == route ]] && { key=(route); w=("${w[@]:1}"); }
+    while [[ ${w[i]:-} == in || ${w[i]:-} == out ]]; do
+        if [[ ${w[i + 1]:-} == on ]]; then
+            key+=("${w[@]:i:3}"); i=$((i + 3))   # in on IFACE, out on IFACE
+        else
+            key+=("${w[i]}"); i=$((i + 1))        # out
+        fi
+    done
+    [[ ${w[i]:-} == log || ${w[i]:-} == log-all ]] && i=$((i + 1))
+    key+=("${w[@]:i}")
+    printf '%s\n' "${key[*]}"
+}
+
+# ufw_fw_comment TEXT: TEXT is a comment the firewall step writes after the tag. "coolify" was the
+# name of "panel" before PANEL_IP (COOLIFY_IP). Since the first version, the step wrote only these.
+ufw_fw_comment() {
+    case $1 in
+        ssh|"ssh admin"|"ssh panel"|"ssh tailscale"|"ssh coolify") ;;
+        server-prep-temp|"server-prep-temp admin"|"server-prep-temp panel"|"server-prep-temp tailscale"|"server-prep-temp coolify") ;;
+        http|https|http3|"docker http"|"docker https"|"docker http3"|extra|"docker extra") ;;
+        *) return 1 ;;
+    esac
+}
+
+# ufw_fw_shape SPEC COMMENT: SPEC (as ufw show added writes it) is the rule the firewall step adds with
+# COMMENT: SSH on one port, rate-limited from anywhere, from one address or network, or in on the
+# tailnet; 80 and 443; an extra port or range; and the route (Docker) copies of those.
+ufw_fw_shape() {
+    local spec="$1" port='[1-9][0-9]{0,4}' src='[0-9a-f.:]+(/[0-9]{1,3})?' re
+    local ports="${port}(:${port})?/(tcp|udp)"
+    case $2 in
+        ssh|server-prep-temp) re="^limit ${port}/tcp$" ;;
+        "ssh tailscale"|"server-prep-temp tailscale") re="^allow in on tailscale0 to any port ${port} proto tcp$" ;;
+        "ssh "*|"server-prep-temp "*) re="^allow from ${src} to any port ${port} proto tcp$" ;;
+        http) re="^allow 80/tcp$" ;;
+        https) re="^allow 443/tcp$" ;;
+        http3) re="^allow 443/udp$" ;;
+        "docker http") re="^route allow 80/tcp$" ;;
+        "docker https") re="^route allow 443/tcp$" ;;
+        "docker http3") re="^route allow 443/udp$" ;;
+        extra) re="^allow ${ports}$" ;;
+        "docker extra") re="^route allow ${ports}$" ;;
+        *) return 1 ;;
+    esac
+    [[ $spec =~ $re ]]
+}
+
+# ufw_fw_owned SPEC COMMENT: the firewall step manages this rule, so a re-run may delete it. With the
+# tag: one of its comments after the tag. Without (a version before the tag): one of its comments, on
+# the shape it adds for that comment. Never any other rule: the operator's, a panel's, the Endlessh
+# rule (the endlessh step's), or one whose words are not plain (ufw quotes an app profile name).
+ufw_fw_owned() {
+    local plain='^[[:alnum:] ./:_-]+$'
+    [[ $1 =~ $plain ]] || return 1
+    if [[ $2 == "$UFW_TAG"* ]]; then
+        ufw_fw_comment "${2#"$UFW_TAG"}"
+    else
+        ufw_fw_comment "$2" && ufw_fw_shape "$1" "$2"
+    fi
+}
+
+# ufw_addr ADDR: ADDR as ufw writes it in its rules (normalize_address in ufw): no /32 or /128, a
+# netmask as a prefix length, the network address of an IPv4 network, an IPv6 address in its short
+# form (inet_ntop, as ufw does; Python is there, since ufw is a Python program). False when ADDR is none
+# of these: the firewall step then cannot compare its rules with ufw's and deletes nothing.
+ufw_addr() {
+    local a="${1%%/*}" m="" o ip=0 nm=0 quad='^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$'
+    [[ $1 == */* ]] && m="${1#*/}"
+    if [[ $a =~ $quad ]]; then
+        for o in "${BASH_REMATCH[@]:1}"; do
+            (( 10#$o <= 255 )) || return 1
+            ip=$(( ip * 256 + 10#$o ))
+        done
+        # a netmask in four numbers: its prefix length when its bits are contiguous
+        if [[ $m =~ $quad ]]; then
+            for o in "${BASH_REMATCH[@]:1}"; do
+                (( 10#$o <= 255 )) || return 1
+                nm=$(( nm * 256 + 10#$o ))
+            done
+            m=0
+            while (( m < 32 && (nm >> (31 - m) & 1) )); do m=$(( m + 1 )); done
+            (( nm == (0xFFFFFFFF << (32 - m) & 0xFFFFFFFF) )) || return 1
+        fi
+        [[ $m == 32 ]] && m=""
+        if [[ -n $m ]]; then
+            # ufw writes 0.0.0.0/0 as "any"
+            [[ $m =~ ^[1-9][0-9]?$ ]] && (( 10#$m <= 32 )) || return 1
+            ip=$(( ip & (0xFFFFFFFF << (32 - 10#$m)) & 0xFFFFFFFF ))
+            a="$(( ip >> 24 & 255 )).$(( ip >> 16 & 255 )).$(( ip >> 8 & 255 )).$(( ip & 255 ))"
+        fi
+    elif [[ $a == *:* && $a =~ ^[0-9A-Fa-f:.]+$ ]]; then
+        [[ $m == 128 ]] && m=""
+        [[ -z $m ]] || { [[ $m =~ ^[1-9][0-9]{0,2}$ ]] && (( 10#$m <= 128 )); } || return 1
+        a="$(python3 -I -c 'import socket, sys
+print(socket.inet_ntop(socket.AF_INET6, socket.inet_pton(socket.AF_INET6, sys.argv[1])))' "$a" 2>/dev/null)" || return 1
+        [[ -n $a ]] || return 1
+    else
+        return 1
+    fi
+    printf '%s%s\n' "$a" "${m:+/$m}"
+}
+
+# ufw_addr_problem ADDR: why ufw_addr refused ADDR, for the firewall step's messages. A /0 network is
+# every address: ufw writes its rule as "allow PORT/tcp" for one IP version only, and the ips step
+# would never ban anyone (ADMIN_IPS goes to the fail2ban and CrowdSec allow lists).
+ufw_addr_problem() {
+    if [[ $1 =~ /(0+|0\.0\.0\.0)$ ]]; then
+        printf '%s is every address (leave ADMIN_IPS empty to open SSH to everyone, rate-limited)\n' "$1"
+    else
+        printf '%s is not an IP address or network\n' "$1"
+    fi
+}
+
+UFW_WANT=()        # the rules the current answers ask for: "SPEC<tab>COMMENT", SPEC as ufw show added writes it
+UFW_WANT_KEYS=()   # their keys (ufw_rule_key), in the same order
+UFW_WANT_EXACT=1   # 0 when an address could not be written as ufw does (ufw_addr): then nothing is deleted
+UFW_WANT_BAD=""    # those addresses and why (ufw_addr_problem), "; " between them
+UFW_RULES_RESTORE=0   # 1 once step_firewall found UFW on: rollback.sh copies its rule files back
+
+# ufw_temp_comment COMMENT: COMMENT is one of the temporary SSH rules', tagged or not (server-prep-temp)
+ufw_temp_comment() { [[ ${1#"$UFW_TAG"} == server-prep-temp* ]]; }
+
+# ufw_want ufw WORDS... comment TEXT: the runner of the firewall step for ufw_allow_ssh. It only records
+# the rule in UFW_WANT. A rule whose key is already there is left out: ufw would keep only the last one,
+# and the comment would change at every run (ADMIN_IPS and PANEL_IP can name the same address). Except
+# that a permanent rule takes the place of a temporary one (server-prep-temp): phase B of the SSH step
+# deletes the temporary rules, and an old SSH port that the answers open too (443, an EXTRA_PORTS
+# entry) would close, since without SSH sources both rules are "PORT/tcp".
+ufw_want() {
+    local IFS=' ' n=$# spec key i
+    spec="${*:2:n-3}"
+    key="$(ufw_rule_key "$spec")"
+    for i in "${!UFW_WANT_KEYS[@]}"; do
+        [[ ${UFW_WANT_KEYS[i]} == "$key" ]] || continue
+        if ufw_temp_comment "${UFW_WANT[i]#*$'\t'}" && ! ufw_temp_comment "${!n}"; then
+            UFW_WANT[i]="${spec}"$'\t'"${!n}"
+        fi
+        return 0
+    done
+    UFW_WANT+=("${spec}"$'\t'"${!n}")
+    UFW_WANT_KEYS+=("$key")
+}
+
+# ufw_want_addr ADDR: ADDR as ufw writes it (ufw_addr), or ADDR itself when it cannot say, and then
+# the comparison with ufw show added cannot hold: UFW_WANT_EXACT goes to 0 and UFW_WANT_BAD says why.
+# Sets UFW_A (a global, so the call needs no subshell).
+ufw_want_addr() {
+    local why
+    UFW_A="$(ufw_addr "$1")" && return 0
+    UFW_A="$1"; UFW_WANT_EXACT=0
+    why="$(ufw_addr_problem "$1")"
+    # once, though the rules of the old SSH port name the same address
+    [[ "; $UFW_WANT_BAD; " == *"; $why; "* ]] || UFW_WANT_BAD+="${UFW_WANT_BAD:+; }$why"
+}
+
+# RUNNER is ufw_want (step_firewall records the rules first) or rollback_cmd, which only prints the
+# commands for rollback.sh. The addresses go as ufw writes them, so the rules compare with ufw show added.
+# The lists are split with read: no pathname expansion of an entry.
+ufw_allow_ssh() {   # ufw_allow_ssh PORT COMMENT RUNNER
+    local port="$1" c="${UFW_TAG}$2" r="$3" ip any=1
+    local -a ips=()
+    read -rd '' -a ips <<<"${ADMIN_IPS//,/ }"
+    for ip in "${ips[@]}"; do
+        ufw_want_addr "$ip"
+        "$r" ufw allow from "$UFW_A" to any port "$port" proto tcp comment "$c admin"; any=0
     done
     if [[ "$PANEL_ACCESS" == *public* && -n "$PANEL_IP" ]]; then
-        "$r" ufw allow from "$PANEL_IP" to any port "$port" proto tcp comment "$c panel"; any=0
+        ufw_want_addr "$PANEL_IP"
+        "$r" ufw allow from "$UFW_A" to any port "$port" proto tcp comment "$c panel"; any=0
     fi
     if [[ "$PANEL_ACCESS" == *tailscale* ]]; then
         "$r" ufw allow in on tailscale0 to any port "$port" proto tcp comment "$c tailscale"; any=0
     fi
     [[ "$PANEL_ACCESS" == *cloudflared* ]] && any=0   # tunnel arrives on loopback (always allowed)
-    if [[ $any -eq 1 ]]; then
-        [[ $r == run ]] && warn "no SSH source restriction given: allowing port ${port} from anywhere (rate-limited)"
-        "$r" ufw limit "${port}/tcp" comment "$c"
+    [[ $any -eq 1 ]] && "$r" ufw limit "${port}/tcp" comment "$c"
+    return 0
+}
+
+# ufw_wanted_rules: every rule the current answers ask for, in UFW_WANT (see ufw_want)
+ufw_wanted_rules() {
+    local p e
+    local -a extra=()
+    UFW_WANT=(); UFW_WANT_KEYS=(); UFW_WANT_EXACT=1; UFW_WANT_BAD=""
+    ufw_allow_ssh "$SSH_PORT" ssh ufw_want
+    # keep the current SSH port(s) reachable until the new port is confirmed
+    for p in $CURRENT_SSH_PORTS; do
+        [[ "$p" == "$SSH_PORT" ]] || ufw_allow_ssh "$p" server-prep-temp ufw_want
+    done
+    if yes_ "$EXPOSE_WEB"; then
+        ufw_want ufw allow 80/tcp comment "${UFW_TAG}http"
+        ufw_want ufw allow 443/tcp comment "${UFW_TAG}https"
+        ufw_want ufw allow 443/udp comment "${UFW_TAG}http3"
+        # "route allow 80/tcp" is "route allow proto tcp from any to any port 80" as ufw writes it
+        ufw_want ufw route allow 80/tcp comment "${UFW_TAG}docker http"
+        ufw_want ufw route allow 443/tcp comment "${UFW_TAG}docker https"
+        ufw_want ufw route allow 443/udp comment "${UFW_TAG}docker http3"
     fi
+    read -rd '' -a extra <<<"${EXTRA_PORTS//,/ }"
+    for e in "${extra[@]}"; do
+        [[ "$e" == */* ]] || e="$e/tcp"
+        ufw_want ufw allow "$e" comment "${UFW_TAG}extra"
+        ufw_want ufw route allow "$e" comment "${UFW_TAG}docker extra"
+    done
+}
+
+# ssh_move_pending: the SSH step may still need the temporary rules (server-prep-temp) of an old SSH
+# port: sshd is set to another port than SSH_PORT (phase A, or a move this run starts), still listens
+# on one (a move an earlier run could not finish, see ssh_finish_move), or the SSH step's rollback
+# timer is armed (it would put the old port back). Read-only.
+ssh_move_pending() {
+    [[ -n "$(ports_except "$SSH_PORT" <<<"$CURRENT_SSH_PORTS")" ]] && return 0
+    [[ -n "$(ssh_listen_ports | ports_except "$SSH_PORT")" ]] && return 0
+    systemctl list-units --all --plain --no-legend --state=active 'server-prep-ssh-rollback-*.timer' 2>/dev/null | grep -q .
+}
+
+# ufw_stale_rules KEEP_TEMP: "ufw show added" on stdin, the wanted rules in UFW_WANT_KEYS. Prints
+# "SPEC<tab>COMMENT" for each rule the firewall step manages (ufw_fw_owned) that no wanted rule shares
+# a key with: a rule of earlier answers. With KEEP_TEMP=1 (ssh_move_pending), the temporary SSH rules
+# stay: phase B of the SSH step deletes them once the new port is confirmed.
+ufw_stale_rules() {
+    local keep_temp="$1" line key k found
+    while IFS= read -r line; do
+        ufw_rule_split "$line" && ufw_fw_owned "$UFW_R_SPEC" "$UFW_R_COMMENT" || continue
+        [[ $keep_temp -eq 1 ]] && ufw_temp_comment "$UFW_R_COMMENT" && continue
+        key="$(ufw_rule_key "$UFW_R_SPEC")"
+        found=0
+        for k in "${UFW_WANT_KEYS[@]}"; do [[ $k == "$key" ]] && { found=1; break; }; done
+        [[ $found -eq 1 ]] || printf '%s\t%s\n' "$UFW_R_SPEC" "$UFW_R_COMMENT"
+    done
+    return 0
+}
+
+# ufw_plan_cleanup: for the plan, the rules of earlier answers the firewall step will delete. Nothing
+# when UFW is not installed yet, or ufw show added does not run (a dry run without root).
+ufw_plan_cleanup() {
+    local added stale keep_temp=0 spec c ssh=0 blocked
+    ufw_wanted_rules
+    ssh_move_pending && keep_temp=1
+    added="$(ufw_added 2>/dev/null)"
+    stale="$(ufw_stale_rules "$keep_temp" <<<"$added")"
+    [[ -n $stale ]] || return 0
+    if [[ $UFW_WANT_EXACT -ne 1 ]]; then
+        echo "  Firewall cleanup .. none, the rules of earlier answers stay: in ADMIN_IPS / PANEL_IP, ${UFW_WANT_BAD}"
+        return 0
+    fi
+    blocked="$(ufw_unapplied <<<"$added")"
+    if [[ -n $blocked ]]; then
+        echo "  Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule the firewall step does not manage blocks ${blocked}"
+        return 0
+    fi
+    echo "  Firewall cleanup .. deletes the UFW rules server-prep added for earlier answers:"
+    while IFS=$'\t' read -r spec c; do
+        printf '                        %s  # %s\n' "$spec" "$c"
+        [[ ${c#"$UFW_TAG"} == ssh* || ${c#"$UFW_TAG"} == server-prep-temp* ]] && ssh=1
+    done <<<"$stale"
+    if [[ $ssh -eq 1 ]]; then
+        warn "SSH rules among them: new SSH logins then come only from the sources answered above (sessions already open stay up)"
+    fi
+    return 0
+}
+
+# ufw_prune_rules: deletes the rules of earlier answers (ufw_stale_rules), once step_firewall has added
+# the wanted ones, so SSH stays reachable throughout. A dry run only prints the commands. Each rule goes
+# by its words and comment, not its number: ufw deletes its IPv6 copy too, and nothing else. Returns 1
+# when a delete fails.
+ufw_prune_rules() {
+    local keep_temp=0 added stale spec c k list="" n=0 failed="" absent="" blocked
+    local -a words=()
+    local -A have=() bad=()
+    ssh_move_pending && keep_temp=1
+    added="$(ufw_added 2>/dev/null)"
+    stale="$(ufw_stale_rules "$keep_temp" <<<"$added")"
+    [[ -n $stale ]] || return 0
+    if [[ $UFW_WANT_EXACT -ne 1 ]]; then
+        warn "the UFW rules of earlier answers are kept: in ADMIN_IPS / PANEL_IP, ${UFW_WANT_BAD}"
+        note "UFW rules of earlier answers kept: in ADMIN_IPS / PANEL_IP, ${UFW_WANT_BAD}"
+        todo "Fix ADMIN_IPS / PANEL_IP in /etc/server-prep/server-prep.conf (${UFW_WANT_BAD}), then re-run the firewall step: it deletes the UFW rules server-prep added for earlier answers"
+        return 1
+    fi
+    # A wanted rule held by a rule the step does not manage with another action is not applied: it counts
+    # as missing, so nothing is deleted (an old SSH rule may be the only SSH opening left). In a dry run
+    # too: the rules that hold wanted ones are there before any add.
+    blocked="$(ufw_unapplied <<<"$added")"
+    if [[ -n $blocked ]]; then
+        warn "the UFW rules of earlier answers are kept: a UFW rule the firewall step does not manage blocks ${blocked} (see above)"
+        note "UFW rules of earlier answers kept: not applied: ${blocked}"
+        todo "UFW: the rules server-prep added for earlier answers stay while ${blocked} is not applied. Apply it with the command of the to-do above, or change the answers, then re-run the firewall step: it deletes them"
+        return 1
+    fi
+    if [[ $DRY_RUN -eq 0 ]]; then
+        # Every wanted rule must be there now, under the key it has here. Otherwise an add failed or
+        # ufw wrote it another way: the comparison cannot be trusted, and nothing is deleted.
+        while IFS= read -r c; do
+            ufw_rule_split "$c" && have["$(ufw_rule_key "$UFW_R_SPEC")"]=1
+        done <<<"$added"
+        for k in "${UFW_WANT_KEYS[@]}"; do [[ -n ${have[$k]:-} ]] || absent+="${absent:+, }$k"; done
+        if [[ -n $absent ]]; then
+            warn "UFW does not show the new rule(s) for ${absent}: the rules of earlier answers are kept (see $LOG_FILE)"
+            note "UFW rules of earlier answers kept: no new rule for ${absent}"
+            todo "Check the firewall step's ufw commands in $LOG_FILE, then re-run it: it deletes the UFW rules server-prep added for earlier answers"
+            return 1
+        fi
+    fi
+    while IFS=$'\t' read -r spec c; do
+        read -ra words <<<"$spec"   # the plain words of the rule (ufw_fw_owned), as ufw show added writes them
+        if [[ ${words[0]} == route ]]; then
+            run ufw --force route delete "${words[@]:1}" comment "$c"
+        else
+            run ufw --force delete "${words[@]}" comment "$c"
+        fi || bad["$spec"]=1
+    done <<<"$stale"
+    # A delete that matches no rule only prints "Could not delete non-existent rule": ufw exits 0. So the
+    # rules are read again, and a rule of earlier answers still there counts as a failed delete.
+    if [[ $DRY_RUN -eq 0 ]]; then
+        while IFS=$'\t' read -r spec c; do
+            [[ -n $spec ]] && bad["$spec"]=1
+        done <<<"$(ufw_added 2>/dev/null | ufw_stale_rules "$keep_temp")"
+    fi
+    while IFS=$'\t' read -r spec c; do
+        if [[ -n ${bad[$spec]:-} ]]; then
+            failed+="${failed:+; }$spec"
+        else
+            list+="${list:+; }${spec} (${c})"
+            n=$((n + 1))
+        fi
+    done <<<"$stale"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        note "would delete ${n} UFW rule(s) of earlier answers: ${list}"
+    elif [[ $n -gt 0 ]]; then
+        note "deleted ${n} UFW rule(s) of earlier answers: ${list}"
+    fi
+    if [[ -n $failed ]]; then
+        note "could not delete: ${failed} (see $LOG_FILE)"
+        todo "Delete the UFW rule(s) server-prep could not: ${failed} (sudo ufw status numbered, then sudo ufw delete <number>, highest first)"
+        return 1
+    fi
+    return 0
+}
+
+# ufw_held_rules: "ufw show added" on stdin, the wanted rules in UFW_WANT. Prints
+# "WANT_SPEC<tab>WANT_COMMENT<tab>SPEC<tab>COMMENT" for each wanted rule whose key a rule the firewall
+# step does not manage (ufw_fw_owned) holds: the operator's, a panel's, the endlessh step's. The step
+# leaves that rule as it is: adding the wanted one would replace it, comment included, and a later run
+# could then delete it.
+ufw_held_rules() {
+    local line w
+    local -A theirs=()
+    while IFS= read -r line; do
+        ufw_rule_split "$line" || continue
+        ufw_fw_owned "$UFW_R_SPEC" "$UFW_R_COMMENT" ||
+            theirs["$(ufw_rule_key "$UFW_R_SPEC")"]="${UFW_R_SPEC}"$'\t'"${UFW_R_COMMENT}"
+    done
+    for w in "${UFW_WANT[@]}"; do
+        line="${theirs["$(ufw_rule_key "${w%%$'\t'*}")"]:-}"
+        [[ -n $line ]] && printf '%s\t%s\n' "$w" "$line"
+    done
+    return 0
+}
+
+# ufw_rule_action SPEC: the action of a rule (allow, deny, reject, limit), route or not
+ufw_rule_action() { local s="${1#route }"; printf '%s\n' "${s%% *}"; }
+
+# ufw_keep_held WANT WANT_COMMENT SPEC COMMENT: the firewall step leaves SPEC, a rule it does not manage,
+# in the place of the wanted rule WANT (ufw_held_rules). With the same action, the answer holds: a note.
+# With another one (deny where the answers open a port, allow where they ask for limit), the answer is
+# not applied: a warning, and a to-do with the command that applies it. Returns 1 then.
+ufw_keep_held() {
+    local want="$1" wc="$2" rule="$3${4:+ # $4}" whose
+    if [[ ${4#"$UFW_TAG"} == "endlessh tarpit" ]]; then
+        whose="the endlessh step's UFW rule"
+    elif [[ $4 == "$UFW_TAG"* ]]; then
+        whose="a UFW rule of another server-prep step"
+    else
+        whose="a UFW rule without the server-prep tag"
+    fi
+    if [[ $(ufw_rule_action "$3") == "$(ufw_rule_action "$want")" ]]; then
+        note "${whose} left as it is: ${rule}"
+        return 0
+    fi
+    warn "the answers ask for '${want}', but ${whose} is in its place and stays: ${rule}"
+    note "not applied: ${want} (${whose} is in its place: ${rule})"
+    todo "UFW: the answers ask for '${want}', but ${whose} is in its place: ${rule}. server-prep never changes it. To apply the answers, run (it replaces that rule): sudo ufw ${want} comment '${wc}'"
+    return 1
+}
+
+# ufw_unapplied: "ufw show added" on stdin, the wanted rules in UFW_WANT. Prints, ", " between them, the
+# wanted rules that a rule the firewall step does not manage holds with another action (ufw_keep_held
+# returns 1): those answers are not applied. Then the rules of earlier answers must stay, like when a
+# wanted rule is missing: with the operator's "deny from ADDR to any port 822" where ADMIN_IPS asks to
+# allow ADDR, the old server-prep SSH rule may be the only SSH opening left.
+ufw_unapplied() {
+    local spec c hspec hc out=""
+    while IFS=$'\t' read -r spec c hspec hc; do
+        [[ -n $spec ]] || continue
+        [[ $(ufw_rule_action "$hspec") == "$(ufw_rule_action "$spec")" ]] || out+="${out:+, }${spec}"
+    done <<<"$(ufw_held_rules)"
+    [[ -z $out ]] || printf '%s\n' "$out"
 }
 
 step_firewall() {
     pkg_install ufw || return 1
-    local before=""
+    local before="" was_on=0 spec c hspec hc w e pruned=0
+    local -a words=() extra=()
+    local -A held=() unapplied=()
     before="$(ufw_state)"
+    ufw_status 2>/dev/null | grep -q "Status: active" && was_on=1
+    # rollback.sh copies them back when UFW was on before (see below), the default policies too: with the
+    # rules of before the run and this run's "deny incoming", SSH could be closed
+    backup_file /etc/ufw/user.rules
+    backup_file /etc/ufw/user6.rules
+    backup_file /etc/default/ufw
     # 'ufw default' reloads the whole firewall even when the policy does not change, and a reload
     # drops CrowdSec from DOCKER-USER: set the policies only when they differ.
     if [[ "$(ufw_status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
         run ufw default deny incoming
         run ufw default allow outgoing
     fi
-    ufw_allow_ssh "$SSH_PORT" "ssh"
-    # keep the current SSH port(s) reachable until the new port is confirmed
-    local p
-    for p in $CURRENT_SSH_PORTS; do
-        [[ "$p" == "$SSH_PORT" ]] || ufw_allow_ssh "$p" "server-prep-temp"
+    ufw_wanted_rules
+    for w in "${UFW_WANT[@]}"; do
+        [[ ${w%%$'\t'*} == "limit ${SSH_PORT}/tcp" ]] &&
+            warn "no SSH source restriction given: allowing port ${SSH_PORT} from anywhere (rate-limited)"
     done
-    if yes_ "$EXPOSE_WEB"; then
-        run ufw allow 80/tcp comment "http"
-        run ufw allow 443/tcp comment "https"
-        run ufw allow 443/udp comment "http3"
-        run ufw route allow proto tcp from any to any port 80 comment "docker http"
-        run ufw route allow proto tcp from any to any port 443 comment "docker https"
-        run ufw route allow proto udp from any to any port 443 comment "docker http3"
+    # A rule of the operator, a panel or another step with the key of a wanted rule stays as it is
+    # (ufw_held_rules); ufw_keep_held says when the answer is then not applied.
+    while IFS=$'\t' read -r spec c hspec hc; do
+        [[ -n $spec ]] || continue
+        held["$spec"]=1
+        ufw_keep_held "$spec" "$c" "$hspec" "$hc" || unapplied["$(ufw_rule_key "$spec")"]=1
+    done <<<"$(ufw_added 2>/dev/null | ufw_held_rules)"
+    # Add every wanted rule first, then delete the rules of earlier answers: SSH is never closed.
+    for w in "${UFW_WANT[@]}"; do
+        spec="${w%%$'\t'*}"
+        [[ -n ${held[$spec]:-} ]] && continue
+        read -ra words <<<"$spec"   # split with read: no pathname expansion of an EXTRA_PORTS entry
+        run ufw "${words[@]}" comment "${w#*$'\t'}"
+    done
+    if yes_ "$EXPOSE_WEB" && [[ -z ${unapplied[80/tcp]:-}${unapplied[443/tcp]:-}${unapplied[443/udp]:-} ]]; then
         note "80/443 open"
     fi
-    local e
-    for e in ${EXTRA_PORTS//,/ }; do
+    read -rd '' -a extra <<<"${EXTRA_PORTS//,/ }"
+    for e in "${extra[@]}"; do
         [[ "$e" == */* ]] || e="$e/tcp"
-        run ufw allow "$e" comment "extra"
-        run ufw route allow proto "${e#*/}" from any to any port "${e%/*}" comment "docker extra"
-        note "extra port $e"
+        [[ -n ${unapplied[$e]:-} ]] || note "extra port $e"
     done
+    ufw_prune_rules || pruned=1
+    # UFW was on, so the backups hold the rules that let SSH in before the run: rollback.sh copies them
+    # back (write_rollback), with the rules deleted above.
+    [[ $DRY_RUN -eq 0 && $was_on -eq 1 ]] && UFW_RULES_RESTORE=1
     # A rule or policy counts as a change only if the rule files differ. A dry run executes
     # nothing, so it keeps showing what it would do.
     if [[ $DRY_RUN -eq 1 || "$(ufw_state)" != "$before" ]]; then changed; fi
@@ -1868,7 +2308,7 @@ step_firewall() {
         run systemctl restart crowdsec-firewall-bouncer \
             && { changed; note "CrowdSec bouncer restarted: its DOCKER-USER rule was missing"; }
     fi
-    return 0
+    return "$pruned"   # 1 when rules of earlier answers are still there (ufw_prune_rules says why)
 }
 
 restart_ssh() {
@@ -3246,7 +3686,8 @@ EOF
         ss -Hltn "sport = :22" 2>/dev/null | grep -q . \
             || { note "endlessh does not listen on 22 (journalctl -u endlessh)"; return 1; }
     fi
-    run ufw allow 22/tcp comment "endlessh tarpit"
+    # Tagged as server-prep's, but only this step manages it: the firewall step never deletes it.
+    run ufw allow 22/tcp comment "${UFW_TAG}endlessh tarpit"
     note "tarpit on port 22 (journalctl -u endlessh)"
     return 0
 }
@@ -3461,11 +3902,18 @@ rollback_step() {
 
 write_rollback() {
     [[ $DRY_RUN -eq 1 ]] && return 0
-    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 f2b_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=()
+    local rb="$BACKUP_DIR/rollback.sh" f p r ssh_files=0 f2b_files=0 endlessh=0 port22=0 drop_tarpit=0 allow="" old_ports=() ufw_files=()
     for f in "${CHANGED_FILES[@]}" "${NEW_FILES[@]}"; do
         [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/* ]] && ssh_files=1
         [[ $f == /etc/fail2ban/* ]] && f2b_files=1
     done
+    # The UFW rules and default policies of before the run, when UFW was on then (step_firewall): what
+    # the firewall step added and deleted, Endlessh's rule and phase B's deletes are all undone by the copy.
+    if [[ $UFW_RULES_RESTORE -eq 1 ]]; then
+        for f in /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw; do
+            [[ -f $BACKUP_DIR$f ]] && ! cmp -s "$BACKUP_DIR$f" "$f" && ufw_files+=("$f")
+        done
+    fi
     [[ " ${NEW_FILES[*]} " == *" /etc/systemd/system/endlessh.service.d/server-prep.conf "* ]] && endlessh=1
     # The restored SSH files are this run's backups, so sshd goes back to the ports it had before
     # the run. UFW, which this run left on, no longer allows them: phase B of the SSH step deleted
@@ -3491,6 +3939,7 @@ write_rollback() {
         rollback_say "=== server-prep rollback of run ${TS} ==="
         rollback_say "Run this from the console (the provider web console, IPMI/KVM or a screen), not over SSH: SSH restarts with its old settings and an SSH session can drop or lock you out."
         rollback_say "It puts back the files this run changed and deletes the files it created."
+        [[ ${#ufw_files[@]} -gt 0 ]] && rollback_say "UFW gets back the rules it had before this run: the rules the run added go, and the ones it deleted for earlier answers come back."
         if [[ ${#old_ports[@]} -gt 0 ]]; then
             rollback_say "SSH goes back to port(s) ${old_ports[*]}."
             if [[ $endlessh -eq 1 ]]; then
@@ -3514,9 +3963,10 @@ write_rollback() {
         # What this run may have changed outside the files it tracked, step by step
         rollback_say "It does NOT undo:"
         rollback_say "  - installed packages, and services it turned on or off"
-        rollback_say "  - UFW stays on, with every rule this run added (sudo ufw status numbered)"
+        [[ ${#ufw_files[@]} -eq 0 ]] && rollback_say "  - UFW stays on, with every rule this run added (sudo ufw status numbered)"
         rollback_say "  - the ufw-docker rules in /etc/ufw/after.rules and after6.rules"
-        [[ $endlessh -eq 1 && $drop_tarpit -eq 0 && $port22 -eq 0 ]] && rollback_say "  - the Endlessh rule that allows port 22 from anywhere"
+        [[ $endlessh -eq 1 && $drop_tarpit -eq 0 && $port22 -eq 0 && ${#ufw_files[@]} -eq 0 ]] &&
+            rollback_say "  - the Endlessh rule that allows port 22 from anywhere"
         # "ufw status numbered" lists no rule while UFW is off, so the delete below finds nothing then.
         [[ $drop_tarpit -eq 1 ]] && rollback_say "  - the Endlessh rule (endlessh tarpit) if UFW is off now: it allows port 22 from anywhere again once UFW is on (sudo ufw show added)"
         rollback_step users && rollback_say "  - users it created or added to the sudo group"
@@ -3535,7 +3985,8 @@ write_rollback() {
         # Waits only on a terminal: a run from a script or a unit never blocks here.
         echo "if [ -t 0 ]; then read -r -p 'Press Enter to roll back, or Ctrl-C to stop: ' _; fi"
         echo "set -x"
-        for f in "${CHANGED_FILES[@]}"; do echo "cp -a '$BACKUP_DIR$f' '$f'"; done
+        # the UFW files before the ufw commands below, which add to them
+        for f in "${CHANGED_FILES[@]}" "${ufw_files[@]}"; do echo "cp -a '$BACKUP_DIR$f' '$f'"; done
         for f in "${NEW_FILES[@]}"; do echo "rm -f '$f'"; done
         echo "systemctl daemon-reload"
         # SSH goes back to its old port, often 22, where Endlessh may be: this run's (its config is

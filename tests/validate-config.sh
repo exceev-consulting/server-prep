@@ -119,6 +119,10 @@ broken "a bad ADMIN_IPS item" 'ADMIN_IPS="192.168.1.300"' '"192.168.1.300"'
 broken "an ADMIN_IPS item with leading zeros" 'ADMIN_IPS="192.168.001.050"' '"192.168.001.050"'   # ufw refuses it
 broken "a PANEL_IP with a leading zero" 'PANEL_IP="010.0.0.1"' "not an IP address"
 broken "a prefix length with a leading zero" 'ADMIN_IPS="192.168.1.0/024"' '"192.168.1.0/024"'
+# every address: SSH open to everyone, and fail2ban and CrowdSec would never ban anyone (issue #67)
+broken "ADMIN_IPS with every IPv4 address" 'ADMIN_IPS="192.168.1.50 0.0.0.0/0"' '"0.0.0.0/0", which is every address'
+broken "ADMIN_IPS with every IPv6 address" 'ADMIN_IPS="::/0"' '"::/0", which is every address'
+broken "a PANEL_IP of every address" 'PANEL_IP="0.0.0.0/0"' "not an IP address"
 broken "a bad TELEGRAM_CHAT_ID" 'TELEGRAM_CHAT_ID="42 x"' "write the chat id"
 broken "a TELEGRAM_IGNORE_USERS item that is no user" 'TELEGRAM_IGNORE_USERS="root \${PATH}"' "not a user name"
 broken "an ADMIN_USER with a blank" 'ADMIN_USER="Admin User"' "not a user name"

@@ -4,8 +4,9 @@
 # (issue #74): keeping every service is saved as DISABLE_SERVICES=none, which disables nothing, whatever is
 # installed; an empty value still means every candidate; LAPTOP_MODE is saved; - (or none) empties an
 # optional answer at a prompt, and Enter keeps it empty on a re-run from the saved answers; the plan warns
-# before a lockout; the to-do names the firewall rules of removed answers. No root needed: the answers go to
-# a temp folder and every call that would change the host is replaced.
+# before a lockout; a run without the firewall step names the firewall rules of removed answers in its to-do (a
+# run with it deletes them, issue #67). No root needed: the answers go to a temp folder and every call that would
+# change the host is replaced.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -144,32 +145,36 @@ for c in '1|||' '1|192.168.1.50|tailscale|192.168.1.50|tailscale' "0|||$LAN_CIDR
 done
 printf 'ok: from the saved answers Enter keeps an empty ADMIN_IPS and PANEL_ACCESS; a first run suggests the LAN and public\n'
 
-# --- questions: the to-do names the firewall rules an answer removed here ---------------------------------
-removed_todo() {   # removed_todo: the to-do after the questions; answers come from the ANSWER array, others are Enter
+# --- questions: without the firewall step, the to-do names the firewall rules an answer removed here -------
+# A run with the firewall step deletes them, and its plan lists them (issue #67): no to-do then.
+removed_todo() {   # removed_todo STEPS: the to-do after the questions of a run of STEPS (--only, empty = every step);
+                   # answers come from the ANSWER array, others are Enter
     (
         ask() { if [[ -v "ANSWER[$1]" ]]; then printf -v "$1" '%s' "${ANSWER[$1]}"; else printf -v "$1" '%s' "${!1:-${3:-}}"; fi; }
         ask_yn() { if [[ -v "ANSWER[$1]" ]]; then printf -v "$1" '%s' "${ANSWER[$1]}"; else printf -v "$1" '%s' "${!1:-${3:-no}}"; fi; }
         ask_secret() { :; }
         systemctl() { return 1; }
-        INTERACTIVE=1 SAVED_ANSWERS=1 MANUAL_TODO=()
+        INTERACTIVE=1 SAVED_ANSWERS=1 MANUAL_TODO=() ONLY="$1"
         questions > "$tmp/questions" 2>&1 || exit 1
         printf '%s\n' "${MANUAL_TODO[@]}"
     )
 }
 declare -A ANSWER=([EXTRA_PORTS]='' [ADMIN_IPS]='192.168.1.0/24' [PANEL_ACCESS]=public [EXPOSE_WEB]=no [PANEL_IP]=198.51.100.7)
 EXTRA_PORTS='5432/tcp 8000 *' ADMIN_IPS='192.168.1.0/24,203.0.113.4' PANEL_ACCESS='cloudflared,tailscale,public' PANEL_IP=198.51.100.2 \
-    EXPOSE_WEB=yes got="$(removed_todo)" || fail "questions stopped" "$tmp/questions"
+    EXPOSE_WEB=yes got="$(removed_todo ssh)" || fail "questions stopped" "$tmp/questions"
 want='ports 80/443, port 5432/tcp, port 8000, port *, SSH source 203.0.113.4, access tailscale, panel IP 198.51.100.2'
-[[ "$got" == *"($want)"*'sudo ufw delete <number>' && $(grep -c . <<< "$got") -eq 1 ]] ||
-    fail "after removing answers, the to-do is:
+[[ "$got" == *"($want)"*'--only firewall --dry-run, then the same without --dry-run' && $(grep -c . <<< "$got") -eq 1 ]] ||
+    fail "after removing answers in a run without the firewall step, the to-do is:
 $got
 want one line with: ($want)"
+got="$(removed_todo '')" || fail "questions stopped" "$tmp/questions"
+[[ -z "$got" ]] || fail "after removing answers in a run with the firewall step, which deletes their rules, the to-do is: $got"
 ANSWER=([EXTRA_PORTS]='5432/tcp 8000' [ADMIN_IPS]='192.168.1.0/24 203.0.113.4' [EXPOSE_WEB]=yes)
 EXTRA_PORTS='5432/tcp,8000' ADMIN_IPS='192.168.1.0/24' PANEL_ACCESS='tailscale,public' PANEL_IP=198.51.100.2 \
-    EXPOSE_WEB=yes got="$(removed_todo)" || fail "questions stopped" "$tmp/questions"
+    EXPOSE_WEB=yes got="$(removed_todo ssh)" || fail "questions stopped" "$tmp/questions"
 [[ -z "$got" ]] || fail "with nothing removed, the to-do is: $got"
 unset ANSWER
-printf 'ok: the to-do names the ports, sources and access methods removed from the answers, and only them\n'
+printf 'ok: without the firewall step, the to-do names the ports, sources and access methods removed from the answers, and only them\n'
 EXTRA_PORTS="" ADMIN_IPS="" PANEL_ACCESS="" PANEL_IP="" EXPOSE_WEB=""
 
 # --- summary_and_confirm: no SSH source and public access only is a lockout, Proceed defaults to no -------

@@ -5,6 +5,29 @@ Highlights of each release. The full list of merged pull requests is in each
 
 ## [Unreleased]
 
+- Fix: a firewall re-run only added rules, so tightening the answers left the old ones open: an address removed from
+  `ADMIN_IPS` could still log in over SSH, SSH stayed open to everyone after a first run without sources, 80/443 stayed
+  open after `EXPOSE_WEB` went from yes to no, and removed `EXTRA_PORTS` stayed open. The firewall step now adds the
+  rules the answers ask for first, then deletes the rules server-prep added for earlier answers, their IPv6 copies too.
+  The plan lists them before you confirm, and `--dry-run` shows the `ufw delete` commands. Every rule server-prep adds
+  now has a comment that starts with `server-prep: `. A rule from an older version counts as server-prep's only when it
+  has one of its old comments (`ssh admin`, `http`...) on the exact shape server-prep gave it: the next firewall run
+  tags it, or deletes it when the answers no longer ask for it. Any other rule, such as one you added yourself, is never
+  touched, even with the same port, unless you gave it a `server-prep: ` comment. When such a rule contradicts the
+  answers, such as a `deny 80/tcp` with `EXPOSE_WEB=yes`, the run warns and its to-do gives the `ufw` command that
+  applies the answers. While such a rule is in the place of a rule the answers ask for, a run that finds rules of
+  earlier answers keeps them and fails, so a `deny` of yours for a new SSH source (same address and port) never leaves
+  the server without an SSH rule. An `allow` of yours where the answers ask for `limit` counts too: `ufw show added`
+  prints a rule for IPv6 only (`from ::/0`) like one for both. A wider rule of yours, such as
+  `deny from 192.168.1.0/24 to any port 822`, is not checked: ufw applies the first rule that matches and adds new rules
+  at the end, so read `sudo ufw status numbered` before you change `ADMIN_IPS`. The temporary SSH rules of the old port
+  stay while SSH is moving to its new port, also after the automatic login check of `--yes` failed and kept the old
+  port: until the SSH step finishes the move. When UFW was on before a run, its `rollback.sh` now also puts back the UFW
+  rules and default policies of that time. On a server prepared earlier, run
+  `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --dry-run` to see what goes.
+- `--validate` refuses `0.0.0.0/0` and `::/0` in `ADMIN_IPS` and `PANEL_IP`: they are every address, so SSH would be
+  open to everyone and fail2ban and CrowdSec would ban no one. To open SSH to everyone (rate-limited), leave
+  `ADMIN_IPS` empty.
 - Security: `server-prep.sh --yes` answered yes to every question, even the safety ones whose default is no, and
   closed the old SSH port without any login test ([#65](https://github.com/exceev-consulting/server-prep/issues/65)).
   It went on with the SSH step when the admin had no SSH key (only the console could log in afterwards), restarted
@@ -35,14 +58,14 @@ Highlights of each release. The full list of merged pull requests is in each
   installed, nothing is asked and the answers keep the whole list, so a re-run disables one installed later: the
   questions say so. The `telegram` step keeps the bot token already in `/etc/server-prep/telegram.env`, quoted or not,
   without showing it. At a question that shows `(- = ...)`, type `-` (or `none`) to empty an answer, such as the extra
-  ports or the allowed SSH sources; on a re-run from the saved answers, Enter keeps it empty. The firewall step still
-  only adds rules: the to-do names the ports and sources you removed, with the commands to delete their rules. With no
-  allowed SSH source and only the panel's public IP, the plan warns that you will be locked out and `Proceed?`
-  defaults to no, so a `--yes` run stops there before any change: add your IP or network to `ADMIN_IPS`, or use
-  `--yes --force` only with a console at hand. Answers saved by 1.1.1 or older hold an empty `DISABLE_SERVICES` when
-  you kept every service: set `DISABLE_SERVICES=none` there before a `--yes` re-run. `--validate`, the plan and the
-  to-do of a run from those answers say so, and the questions warn before the first service. A `--yes` run without the
-  `services` step keeps that empty value in the answers, so the next run with it still warns.
+  ports or the allowed SSH sources; on a re-run from the saved answers, Enter keeps it empty. When the firewall step
+  is not part of the run, the to-do names the ports and sources you removed: the next firewall run deletes their
+  rules. With no allowed SSH source and only the panel's public IP, the plan warns that you will be locked out and
+  `Proceed?` defaults to no, so a `--yes` run stops there before any change: add your IP or network to `ADMIN_IPS`, or
+  use `--yes --force` only with a console at hand. Answers saved by 1.1.1 or older hold an empty `DISABLE_SERVICES`
+  when you kept every service: set `DISABLE_SERVICES=none` there before a `--yes` re-run. `--validate`, the plan and
+  the to-do of a run from those answers say so, and the questions warn before the first service. A `--yes` run without
+  the `services` step keeps that empty value in the answers, so the next run with it still warns.
 - Fix: saving the SSH or Fail2ban tab of Dokploy's server Security dialog (Dokploy 0.31 and later) undid two
   protections of server-prep without a word. `00-dokploy.conf` is read before `00-server-prep.conf`, so root could log
   in with a key from any address (`PermitRootLogin prohibit-password`), and `jail.d/dokploy.local` replaced fail2ban's
