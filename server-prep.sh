@@ -1940,72 +1940,117 @@ sshd_port_dropins() {
 
 # sshd_dropin_overrides DIR [OWN]: the lines sshd reads before server-prep's DIR/00-server-prep.conf
 # and keeps instead of its values, one "FILE<TAB>Keyword<TAB>value" line each, in sshd's read order.
-# sshd keeps the first value it reads for a keyword. It reads the main sshd_config next to DIR up to
-# its Include of DIR, then DIR/*.conf in byte (C) order: a line there, or in a drop-in whose name
-# sorts before 00-server-prep.conf (Dokploy's 00-dokploy.conf), wins. Port and AllowUsers add up
-# instead, so each of their values that OWN lacks counts. Only the keywords server-prep sets that
+# sshd keeps the first value it reads for a keyword. It reads the main sshd_config next to DIR line by
+# line, and the files of an Include line where that line stands: each pattern in turn (one without a
+# leading / is in the main file's folder), its files in byte (C) order. So a line wins when sshd
+# reads it before the Include that reaches 00-server-prep.conf (DIR/*.conf, or that file by name): in
+# the main file, in a drop-in whose name sorts first (Dokploy's 00-dokploy.conf), or in a file that
+# an earlier Include names, even one whose name sorts after it (issue #238). Port and AllowUsers add
+# up instead, so each of their values that OWN lacks counts. Only the keywords server-prep sets that
 # decide who logs in and where (ChallengeResponseAuthentication is KbdInteractiveAuthentication's old
-# name), and only global lines: what follows a Match is conditional. A main file without an Include of
-# DIR makes sshd read no drop-in at all, 00-server-prep.conf included: the only line is then
-# "MAIN<TAB>Include<TAB>". OWN is the text server-prep writes (DIR/00-server-prep.conf by default);
-# without it nothing is printed. Reads files only.
+# name), and only global lines: what follows a Match is conditional, up to the end of its file (an
+# included file starts global). A file read twice counts once. An Include inside an included file is
+# not followed (no stock layout has one). A main file with no Include that reaches
+# 00-server-prep.conf makes sshd read none of its settings: the only line is then
+# "MAIN<TAB>Include<TAB>". Without a readable main file, the stock "Include DIR/*.conf" is assumed.
+# OWN is the text server-prep writes (DIR/00-server-prep.conf by default). That file may not exist
+# yet: a pattern that would match it reaches it all the same. Without OWN nothing is printed. Reads
+# files only.
 # The same code is in server-prep.sh and server-audit.sh: tests/sshd-dropin-override.sh checks both.
 sshd_dropin_overrides() {
-    local dir="$1" own="${2:-$1/00-server-prep.conf}" main f files=() hasmain=0
+    local dir="$1" own="${2:-$1/00-server-prep.conf}" base="${1%/*}" main="" l p f d hits incs=() IFS=
     [[ -r $own ]] || return 0
-    main="${dir%/*}/sshd_config"
-    [[ -f $main && -r $main ]] && files+=("$main") && hasmain=1
-    # the drop-ins that sort before 00-server-prep.conf, whether that file exists yet or not
-    while IFS= read -r f; do
-        [[ ${f##*/} == 00-server-prep.conf ]] && break
-        [[ -f $f && -r $f ]] && files+=("$f")
-    done < <(printf '%s\n' "$dir"/*.conf "$dir/00-server-prep.conf" | LC_ALL=C sort -u)
-    [[ ${#files[@]} -gt 0 ]] || return 0
-    awk -v main="$main" -v hasmain="$hasmain" -v inc="${dir##*/}/" '
-        # The lines of the main file wait for its Include line. Without one, sshd reads neither
-        # 00-server-prep.conf nor the other drop-ins: only the Include line is missing then.
-        function emit(s) { if (FILENAME == main && !included) buf[++nb] = s; else print s }
-        function endmain() { if (hasmain && !included && !noinc) { print main "\tInclude\t"; noinc = 1 } }
-        BEGIN {
-            n = split("permitrootlogin passwordauthentication kbdinteractiveauthentication authenticationmethods allowusers maxauthtries port", m, " ")
-            for (i = 1; i <= n; i++) managed[m[i]] = 1
-        }
-        FNR == 1 { if (FILENAME != ARGV[1] && FILENAME != main) endmain(); inmatch = 0; stop = 0 }
-        { line = $0; sub(/\r$/, "", line); sub(/^[[:space:]]+/, "", line) }
-        noinc || stop || line == "" || line ~ /^#/ { next }
+    [[ -f $base/sshd_config && -r $base/sshd_config ]] && main="$base/sshd_config"
+    # The files each Include line of the main file reads, as "LINE FILE" pairs, up to 00-server-prep.conf
+    # (an empty FILE). IFS is empty, so a pattern only goes through glob, as in sshd.
+    while IFS=$'\t' read -r l p; do
+        [[ -n $p && $p != '~'* ]] || continue   # sshd does not expand ~: such a pattern matches nothing
+        [[ $p == /* ]] || p="$base/$p"
+        hits="$({ for f in $p; do printf '%s\n' "$f"; done
+            [[ -e $dir/00-server-prep.conf ]] || for d in ${p%/*}; do
+                # shellcheck disable=SC2053   # the name part of the pattern is a pattern on purpose
+                [[ ($d -ef $dir || $d == "$dir") && 00-server-prep.conf == ${p##*/} ]] && printf '%s\n' "$d/00-server-prep.conf"
+            done; } | LC_ALL=C sort -u)"
+        while IFS= read -r f; do
+            if [[ ${f##*/} == 00-server-prep.conf && (${f%/*} -ef $dir || ${f%/*} == "$dir") ]]; then
+                incs+=("$l" ""); break 2
+            fi
+            [[ -f $f && -r $f ]] && incs+=("$l" "$f")
+        done <<<"$hits"
+    done < <(if [[ -z $main ]]; then printf '0\t%s/*.conf\n' "$dir"; else awk '
+        # The patterns of each Include line, split as sshd does (argv_split): on blanks outside
+        # quotes, a \ keeps a quote, a \ or a blank, and a word that starts with # starts a comment.
         {
+            line = $0; sub(/\r$/, "", line); sub(/^[[:space:]]+/, "", line)
+            kw = line; sub(/[[:space:]=].*$/, "", kw)
+            if (tolower(kw) != "include") next
+            s = substr(line, length(kw) + 1); sub(/^[[:space:]]*=?[[:space:]]*/, "", s)
+            a = ""; q = ""; w = 0
+            for (i = 1; i <= length(s); i++) {
+                c = substr(s, i, 1); e = substr(s, i + 1, 1)
+                if (c == "\\" && e != "" && index(q == "" ? "\"\047\\ " : "\"\047\\", e)) { a = a e; i++; w = 1 }
+                else if (q == "" && (c == " " || c == "\t")) { if (w) print FNR "\t" a; a = ""; w = 0 }
+                else if (q == "" && !w && c == "#") break
+                else if (q == "" && (c == "\"" || c == "\047")) { q = c; w = 1 }
+                else if (c == q) q = ""
+                else { a = a c; w = 1 }
+            }
+            if (w) print FNR "\t" a
+        }' "$main"; fi)
+    awk '
+        # scan(FILE, LINE): a line sshd reads before 00-server-prep.conf, or one of OWN for FILE ""
+        function scan(file, line,    kw, k, val, v, c, t, i) {
+            sub(/\r$/, "", line); sub(/^[[:space:]]+/, "", line)
+            if (line == "" || line ~ /^#/) return
             kw = line; sub(/[[:space:]=].*$/, "", kw); k = tolower(kw)
             val = substr(line, length(kw) + 1); sub(/^[[:space:]]*=?[[:space:]]*/, "", val)
             sub(/[[:space:]]+#.*$/, "", val); sub(/[[:space:]]+$/, "", val)
             if (k == "challengeresponseauthentication") k = "kbdinteractiveauthentication"
-        }
-        k == "match" { inmatch = 1; next }
-        FILENAME == main && k == "include" && index(val, inc) {
-            stop = 1; included = 1
-            for (i = 1; i <= nb; i++) print buf[i]
-            next
-        }
-        inmatch || !(k in managed) { next }
-        {
+            if (k == "match") inmatch = 1
+            if (inmatch || !(k in managed)) return
             v = val; gsub(/[[:space:]]+/, " ", v)
             if (k != "allowusers") v = tolower(v)
             if (k == "permitrootlogin" && v == "without-password") v = "prohibit-password"
+            if (file == "") {
+                if (k == "port") ownport[v] = 1
+                else if (k == "allowusers") { c = split(v, t, " "); for (i = 1; i <= c; i++) ownuser[t[i]] = 1 }
+                else if (!(k in own)) own[k] = v
+            } else if (k == "port") { if (!(v in ownport)) out[++nout] = file "\t" kw "\t" val }
+            else if (k == "allowusers") {
+                c = split(v, t, " ")
+                for (i = 1; i <= c; i++) if (!(t[i] in ownuser)) { out[++nout] = file "\t" kw "\t" val; break }
+            } else if (!(k in seen)) { seen[k] = 1; if ((k in own) && own[k] != v) out[++nout] = file "\t" kw "\t" val }
         }
-        FILENAME == ARGV[1] {
-            if (k == "port") ownport[v] = 1
-            else if (k == "allowusers") { c = split(v, t, " "); for (i = 1; i <= c; i++) ownuser[t[i]] = 1 }
-            else if (!(k in own)) own[k] = v
-            next
+        # readinc(LINE): the files the Include at LINE of the main file reads, each from the top, global
+        function readinc(l,    i, f, line) {
+            for (i = 1; i <= nfiles[l]; i++) {
+                if ((f = files[l, i]) == "") { reached = 1; return }
+                if (f in done) continue
+                done[f] = 1; inmatch = 0
+                while ((getline line < f) > 0) scan(f, line)
+                close(f)
+            }
         }
-        k == "port" { if (!(v in ownport)) emit(FILENAME "\t" kw "\t" val); next }
-        k == "allowusers" {
-            c = split(v, t, " ")
-            for (i = 1; i <= c; i++) if (!(t[i] in ownuser)) { emit(FILENAME "\t" kw "\t" val); break }
-            next
-        }
-        !(k in seen) { seen[k] = 1; if ((k in own) && own[k] != v) emit(FILENAME "\t" kw "\t" val) }
-        END { endmain() }
-    ' "$own" "${files[@]}"
+        BEGIN {
+            n = split("permitrootlogin passwordauthentication kbdinteractiveauthentication authenticationmethods allowusers maxauthtries port", m, " ")
+            for (i = 1; i <= n; i++) managed[m[i]] = 1
+            for (i = 3; i < ARGC; i += 2) files[ARGV[i], ++nfiles[ARGV[i]]] = ARGV[i + 1]
+            while ((getline line < ARGV[1]) > 0) scan("", line)
+            main = ARGV[2]; inmatch = 0
+            if (main == "") readinc(0)
+            else {
+                done[main] = 1
+                while (!reached && (getline line < main) > 0) {
+                    ln++
+                    if (ln in nfiles) { mm = inmatch; readinc(ln); inmatch = mm }
+                    else scan(main, line)
+                }
+            }
+            # Without 00-server-prep.conf in the order, sshd reads none of its settings: only that is said
+            if (reached) for (i = 1; i <= nout; i++) print out[i]
+            else if (main != "") print main "\tInclude\t"
+            exit
+        }' "$own" "$main" "${incs[@]}"
 }
 # sshd_override_text: the lines of sshd_dropin_overrides on stdin as one sentence, nothing for no input.
 # A phrase per file, joined with "; ", then what sshd does with the values. sshd keeps the first value
@@ -2013,7 +2058,7 @@ sshd_dropin_overrides() {
 #   00-dokploy.conf is read first and sets PermitRootLogin prohibit-password, MaxAuthTries 6: sshd keeps these values, not those of 00-server-prep.conf
 #   00-ops.conf is read first and adds AllowUsers deploy: sshd uses these values as well as those of 00-server-prep.conf
 #   sshd_config sets PermitRootLogin yes before its Include line: sshd keeps these values, ...
-#   sshd_config has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included
+#   sshd_config has no Include line for 00-server-prep.conf: sshd reads none of its settings
 sshd_override_text() {
     awk -F'\t' '
         NF >= 3 {
@@ -2029,7 +2074,7 @@ sshd_override_text() {
                 s = order[i]; p = ""
                 if (set[s] != "") p = "sets " set[s]
                 if (add[s] != "") p = p (p == "" ? "" : " and ") "adds " add[s]
-                if (s in noinc) p = "has no Include line for sshd_config.d: sshd reads none of its files, 00-server-prep.conf included"
+                if (s in noinc) p = "has no Include line for 00-server-prep.conf: sshd reads none of its settings"
                 else if (s == "sshd_config") p = p " before its Include line"
                 else p = "is read first and " p
                 out = out (i > 1 ? "; " : "") s " " p
@@ -2042,13 +2087,14 @@ sshd_override_text() {
 }
 
 # ssh_report_overrides DIR: when a line sshd reads before 00-server-prep.conf sets one of its login
-# settings to another value or adds to them, or when sshd reads no drop-in (sshd_dropin_overrides), a
-# warning, a note and a to-do that name the file and the settings, and status 0. Report only:
-# server-prep's file keeps its name (issue #204). It is compared with the configuration the step
-# writes, so a dry run and a first run see it too. Port lines are left out: write_sshd_config comments
-# them out in every file it reads (the audit counts them). SSH_OVERRIDE_FILES gets the names of the
-# files it reports, joined with ", " (empty for none): the automatic login check of --yes reads
-# sshd -T, which applies them too, so its to-do points to them when it fails (issue #65).
+# settings to another value or adds to them, or when sshd does not read 00-server-prep.conf
+# (sshd_dropin_overrides), a warning, a note and a to-do that name the file and the settings, and
+# status 0. Report only: server-prep's file keeps its name (issue #204). It is compared with the
+# configuration the step writes, so a dry run and a first run see it too. Port lines are left out:
+# write_sshd_config comments them out in every file it reads (the audit counts them).
+# SSH_OVERRIDE_FILES gets the names of the files it reports, joined with ", " (empty for none): the
+# automatic login check of --yes reads sshd -T, which applies them too, so its to-do points to them
+# when it fails (issue #65).
 SSH_OVERRIDE_FILES=""
 ssh_report_overrides() {
     local lines over panel_file=""

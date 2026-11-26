@@ -60,6 +60,14 @@ Highlights of each release. The full list of merged pull requests is in each
   indented deeper than its option, and ` ;` starts a comment. The wiki's Panels page says which tabs of the dialog to
   use on a prepared server and how to undo a save. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --yes`.
+- Fix: the SSH step and the audit check `ssh.dropin_override` missed the SSH settings read after a selective `Include`
+  in `sshd_config`, such as `Include /etc/ssh/sshd_config.d/50-cloud-init.conf` above the `Include` of
+  `sshd_config.d/*.conf`. They stopped reading the main file at that first `Include`, so a `PermitRootLogin yes`
+  between the two lines went unreported, and so did the lines of the file it names, which sshd reads there, before
+  `00-server-prep.conf`, even though its name sorts after it. They now read each `Include` where it stands, as sshd
+  does, up to the one that reaches `00-server-prep.conf`. When none reaches it, the message now says that
+  `sshd_config` has no `Include` line for `00-server-prep.conf`. The stock `sshd_config` of Debian and Ubuntu has a
+  single `Include` of `sshd_config.d/*.conf`, so only hand-made layouts were affected.
 - Fix: with `PANEL_ACCESS=tailscale`, the `ips` step whitelisted only the tailnet's IPv4 range (`100.64.0.0/10`) in
   fail2ban and CrowdSec, while SSH also trusts its IPv6 range (`fd7a:115c:a1e0::/48`). A tailnet device that connected
   over IPv6 (MagicDNS can give that address first) could be banned after a few failed logins. Both ranges are now
