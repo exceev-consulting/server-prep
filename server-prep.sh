@@ -2079,7 +2079,7 @@ ufw_plan_cleanup() {
     fi
     unapplied="$(ufw_unapplied <<<"$added")"
     if [[ -n $unapplied ]]; then
-        echo "  Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule that is not server-prep's blocks ${unapplied}"
+        echo "  Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule the firewall step does not manage blocks ${unapplied}"
         return 0
     fi
     echo "  Firewall cleanup .. deletes the UFW rules server-prep added for earlier answers:"
@@ -2116,7 +2116,7 @@ ufw_prune_rules() {
     # too: the rules that hold wanted ones are there before any add.
     unapplied="$(ufw_unapplied <<<"$added")"
     if [[ -n $unapplied ]]; then
-        warn "the UFW rules of earlier answers are kept: a rule that is not server-prep's blocks ${unapplied} (see above)"
+        warn "the UFW rules of earlier answers are kept: a UFW rule the firewall step does not manage blocks ${unapplied} (see above)"
         note "UFW rules of earlier answers kept: not applied: ${unapplied}"
         todo "UFW: the rules server-prep added for earlier answers stay while ${unapplied} is not applied. Apply it with the command of the to-do above, or change the answers, then re-run the firewall step: it deletes them"
         return 1

@@ -504,7 +504,7 @@ FAKE_RULES=("limit 822/tcp comment 'server-prep: ssh'" 'deny from 192.168.1.50 t
 SSH_PORT=822; CURRENT_SSH_PORTS='822 '; ADMIN_IPS=192.168.1.50; PANEL_ACCESS=''; PANEL_IP=''; EXPOSE_WEB=no; EXTRA_PORTS=''; PENDING=0
 before="$(rules)"
 out="$(ufw_plan_cleanup 2>&1)"
-[[ $out == *"Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule that is not server-prep's blocks allow from 192.168.1.50 to any port 822 proto tcp"* &&
+[[ $out == *"Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule the firewall step does not manage blocks allow from 192.168.1.50 to any port 822 proto tcp"* &&
     $out != *'limit 822/tcp  #'* ]] ||
     fail "ufw_plan_cleanup with the operator deny rule on an SSH source: the plan is:"$'\n'"$out"
 DRY_RUN=1
@@ -544,7 +544,7 @@ FAKE_RULES=('allow 822/tcp' "allow 80/tcp comment 'server-prep: http'" "route al
 ADMIN_IPS=''
 before="$(rules)"
 out="$(ufw_plan_cleanup 2>&1)"
-[[ $out == *"Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule that is not server-prep's blocks limit 822/tcp"* &&
+[[ $out == *"Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule the firewall step does not manage blocks limit 822/tcp"* &&
     $out != *'allow 80/tcp  #'* ]] ||
     fail "ufw_plan_cleanup with the operator's allow 822/tcp: the plan is:"$'\n'"$out"
 fw "with the operator's allow 822/tcp where limit is wanted" 1
