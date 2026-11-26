@@ -73,7 +73,7 @@ Highlights of each release. The full list of merged pull requests is in each
   adds log rotation only for the `json-file` (Docker's default) and `local` drivers, and leaves `daemon.json` as it is
   for another driver. A logging plugin, such as Loki's, no longer gets them either: when it keeps a copy of the logs on
   the server, set its `max-size` and `max-file` yourself. When `max-size` or `max-file` is already set for a driver
-  that refuses them, the step warns and adds a to-do with the command that removes them. A failed Docker restart now
+  that refuses them, the step fails and adds a to-do with the command that removes them. A failed Docker restart also
   fails the step, with a to-do.
   `dock.log_rotation` reads the driver: PASS for `local` and `journald`, which limit their own size, FAIL when Docker
   will not start because of these options, and INFO for another driver.

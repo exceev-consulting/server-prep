@@ -549,8 +549,8 @@ DRY_RUN=0
 
 # step_docker and the log driver (issue #239): only json-file and local take max-size and max-file.
 # Another driver keeps daemon.json as it is, max-size already set for a built-in driver that refuses
-# it gives a warning and a to-do (no write) with DOCKER_LOG_OPTS_FIX (tests/audit-docker-logs.sh runs
-# it), a log-opts that is not an object fails the step with no write (a failed merge gave an empty
+# it fails the step with a warning and a to-do (no write) with DOCKER_LOG_OPTS_FIX (tests/audit-docker-logs.sh
+# runs it), a log-opts that is not an object fails the step with no write (a failed merge gave an empty
 # file), and a failed Docker restart fails the step. The step reads $tmp/daemon.json instead of
 # /etc/docker/daemon.json; the real jq does the work.
 if command -v jq >/dev/null 2>&1; then
@@ -614,11 +614,11 @@ if command -v jq >/dev/null 2>&1; then
     expect_docker_driver 'a plugin with max-size: no warning' \
         '{"log-driver": "grafana/loki-docker-driver:2.9.2", "log-opts": {"max-size": "10m"}}' 0 untouched \
         'log driver grafana/loki-docker-driver:2.9.2: rotation is left to it'
-    expect_docker_driver 'journald with max-size already set: warning and to-do, no write' \
-        '{"log-driver": "journald", "log-opts": {"max-size": "10m", "max-file": "3"}}' 0 untouched \
+    expect_docker_driver 'journald with max-size already set: warning, to-do and status 1, no write' \
+        '{"log-driver": "journald", "log-opts": {"max-size": "10m", "max-file": "3"}}' 1 untouched \
         'Docker will not start' "remove max-size and max-file from log-opts in /etc/docker/daemon.json (the journald log driver"
-    expect_docker_driver 'syslog with max-file already set: warning and to-do, no write' \
-        '{"log-driver": "syslog", "log-opts": {"max-file": "3"}}' 0 untouched \
+    expect_docker_driver 'syslog with max-file already set: warning, to-do and status 1, no write' \
+        '{"log-driver": "syslog", "log-opts": {"max-file": "3"}}' 1 untouched \
         'Docker will not start' "will not start): $DOCKER_LOG_OPTS_FIX"
     expect_docker_driver 'json-file with a log-opts string: no empty daemon.json' '{"log-opts": "x"}' 1 untouched \
         'log-opts is not a JSON object - left untouched'
