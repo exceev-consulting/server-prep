@@ -495,6 +495,35 @@ grep -qF "the answers ask for 'allow 80/tcp', but a UFW rule without the server-
 EXPOSE_WEB=no
 pass "step_firewall: a rule in the place of a wanted one stays; one that contradicts the answers gets a warning and a to-do"
 
+# The operator's deny rule holds the place of a wanted SSH rule: SSH was open to everyone (rate-limited),
+# and ADMIN_IPS now asks to allow the address the operator denies. That answer is not applied, so it
+# counts as missing: the old SSH rule stays (deleting it would leave no SSH opening), in the plan, the
+# dry run and the run, and the step fails. Once the deny rule is gone, the next run applies the answer
+# and deletes the old rule.
+FAKE_RULES=("limit 822/tcp comment 'server-prep: ssh'" 'deny from 192.168.1.50 to any port 822 proto tcp')
+SSH_PORT=822; CURRENT_SSH_PORTS='822 '; ADMIN_IPS=192.168.1.50; PANEL_ACCESS=''; PANEL_IP=''; EXPOSE_WEB=no; EXTRA_PORTS=''; PENDING=0
+before="$(rules)"
+out="$(ufw_plan_cleanup 2>&1)"
+[[ $out == *"Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule that is not server-prep's blocks allow from 192.168.1.50 to any port 822 proto tcp"* &&
+    $out != *'limit 822/tcp  #'* ]] ||
+    fail "ufw_plan_cleanup with the operator deny rule on an SSH source: the plan is:"$'\n'"$out"
+DRY_RUN=1
+fw 'dry run with the operator deny rule on an SSH source' 1
+grep -qF '[dry-run] ufw --force delete' "$tmp/out" && fail "step_firewall: the dry run would delete a rule although an SSH answer is not applied:"$'\n'"$(cat "$tmp/out")"
+DRY_RUN=0
+fw 'with the operator deny rule on an SSH source' 1
+[[ $(rules) == "$before" ]] ||
+    fail "step_firewall: changed the rules although an SSH answer is not applied:"$'\n'"$(rules)"
+[[ " ${CALLS[*]} " != *' delete '* ]] || fail "step_firewall: deleted rules although an SSH answer is not applied: $(printf '%s; ' "${CALLS[@]}")"
+[[ $STEP_NOTES == *'UFW rules of earlier answers kept: not applied: allow from 192.168.1.50 to any port 822 proto tcp'* &&
+    ${MANUAL_TODO[*]} == *"sudo ufw allow from 192.168.1.50 to any port 822 proto tcp comment 'server-prep: ssh admin'"* ]] ||
+    fail "step_firewall with the operator deny rule on an SSH source: notes '$STEP_NOTES', todo '${MANUAL_TODO[*]}'"
+FAKE_RULES=("limit 822/tcp comment 'server-prep: ssh'")
+fw 'once the operator deny rule is gone' 0
+[[ $(rules) == "allow from 192.168.1.50 to any port 822 proto tcp comment 'server-prep: ssh admin'" ]] ||
+    fail "step_firewall once the operator deny rule is gone: the rules are:"$'\n'"$(rules)"
+pass "step_firewall: while a rule that is not server-prep's blocks a wanted one, the rules of earlier answers stay and the step fails"
+
 # The operator's rule with the log option holds the key of a wanted rule as well: ufw writes the option
 # after the interface, and its add would replace the operator's rule (ufw's match ignores the log type)
 FAKE_RULES=('allow in on tailscale0 log to any port 822 proto tcp')

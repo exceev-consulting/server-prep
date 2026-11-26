@@ -2067,13 +2067,19 @@ ufw_stale_rules() {
 # ufw_plan_cleanup: for the plan, the rules of earlier answers the firewall step will delete. Nothing
 # when UFW is not installed yet, or ufw show added does not run (a dry run without root).
 ufw_plan_cleanup() {
-    local stale keep_temp=0 spec c ssh=0
+    local added stale keep_temp=0 spec c ssh=0 unapplied
     ufw_wanted_rules
     ssh_move_pending && keep_temp=1
-    stale="$(ufw_added 2>/dev/null | ufw_stale_rules "$keep_temp")"
+    added="$(ufw_added 2>/dev/null)"
+    stale="$(ufw_stale_rules "$keep_temp" <<<"$added")"
     [[ -n $stale ]] || return 0
     if [[ $UFW_WANT_EXACT -ne 1 ]]; then
         echo "  Firewall cleanup .. none, the rules of earlier answers stay: in ADMIN_IPS / PANEL_IP, ${UFW_WANT_BAD}"
+        return 0
+    fi
+    unapplied="$(ufw_unapplied <<<"$added")"
+    if [[ -n $unapplied ]]; then
+        echo "  Firewall cleanup .. none, the rules of earlier answers stay: a UFW rule that is not server-prep's blocks ${unapplied}"
         return 0
     fi
     echo "  Firewall cleanup .. deletes the UFW rules server-prep added for earlier answers:"
@@ -2092,7 +2098,7 @@ ufw_plan_cleanup() {
 # by its words and comment, not its number: ufw deletes its IPv6 copy too, and nothing else. Returns 1
 # when a delete fails.
 ufw_prune_rules() {
-    local keep_temp=0 added stale spec c k list="" n=0 failed="" absent=""
+    local keep_temp=0 added stale spec c k list="" n=0 failed="" absent="" unapplied
     local -a words=()
     local -A have=() bad=()
     ssh_move_pending && keep_temp=1
@@ -2103,6 +2109,16 @@ ufw_prune_rules() {
         warn "the UFW rules of earlier answers are kept: in ADMIN_IPS / PANEL_IP, ${UFW_WANT_BAD}"
         note "UFW rules of earlier answers kept: in ADMIN_IPS / PANEL_IP, ${UFW_WANT_BAD}"
         todo "Fix ADMIN_IPS / PANEL_IP in /etc/server-prep/server-prep.conf (${UFW_WANT_BAD}), then re-run the firewall step: it deletes the UFW rules server-prep added for earlier answers"
+        return 1
+    fi
+    # A wanted rule held by a rule the step does not manage with another action is not applied: it counts
+    # as missing, so nothing is deleted (an old SSH rule may be the only SSH opening left). In a dry run
+    # too: the rules that hold wanted ones are there before any add.
+    unapplied="$(ufw_unapplied <<<"$added")"
+    if [[ -n $unapplied ]]; then
+        warn "the UFW rules of earlier answers are kept: a rule that is not server-prep's blocks ${unapplied} (see above)"
+        note "UFW rules of earlier answers kept: not applied: ${unapplied}"
+        todo "UFW: the rules server-prep added for earlier answers stay while ${unapplied} is not applied. Apply it with the command of the to-do above, or change the answers, then re-run the firewall step: it deletes them"
         return 1
     fi
     if [[ $DRY_RUN -eq 0 ]]; then
@@ -2199,6 +2215,20 @@ ufw_keep_held() {
     note "not applied: ${want} (${whose} is in its place: ${rule})"
     todo "UFW: the answers ask for '${want}', but ${whose} is in its place: ${rule}. server-prep never changes it. To apply the answers, run (it replaces that rule): sudo ufw ${want} comment '${wc}'"
     return 1
+}
+
+# ufw_unapplied: "ufw show added" on stdin, the wanted rules in UFW_WANT. Prints, ", " between them, the
+# wanted rules that a rule the firewall step does not manage holds with another action (ufw_keep_held
+# returns 1): those answers are not applied. Then the rules of earlier answers must stay, like when a
+# wanted rule is missing: with the operator's "deny from ADDR to any port 822" where ADMIN_IPS asks to
+# allow ADDR, the old server-prep SSH rule may be the only SSH opening left.
+ufw_unapplied() {
+    local spec c hspec hc out=""
+    while IFS=$'\t' read -r spec c hspec hc; do
+        [[ -n $spec ]] || continue
+        [[ $(ufw_rule_action "$hspec") == "$(ufw_rule_action "$spec")" ]] || out+="${out:+, }${spec}"
+    done <<<"$(ufw_held_rules)"
+    [[ -z $out ]] || printf '%s\n' "$out"
 }
 
 step_firewall() {
