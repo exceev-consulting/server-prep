@@ -66,6 +66,15 @@ Highlights of each release. The full list of merged pull requests is in each
   whitelisted, and the audit's `ips.f2b_ignoreip` warns when the IPv6 one is missing. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only ips --dry-run`, then the same command with
   `--yes`. The `PANEL_ACCESS` help in `server-prep.conf.example` and the setup console now names both ranges.
+- Fix: on a server whose containers log to the journal or to a log server (`"log-driver": "journald"`, `syslog`,
+  `gelf`... in `/etc/docker/daemon.json`), the `docker` step added `max-size` and `max-file` to that driver, which
+  refuses them, so Docker did not start again: right after the run, or at the next restart, update or reboot when
+  containers were running. The step still said CHANGED, and the audit's `dock.log_rotation` passed. The step now
+  adds log rotation only for the `json-file` (Docker's default) and `local` drivers, and leaves `daemon.json` as it is
+  for another driver. When `max-size` or `max-file` is already set for a driver that refuses them, it warns and adds a
+  to-do with the command that removes them. A failed Docker restart now fails the step, with a to-do.
+  `dock.log_rotation` reads the driver: PASS for `local` and `journald`, which limit their own size, FAIL when Docker
+  will not start because of these options, and INFO for another driver.
 - `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
   reports (`kern.suid`, `kern.world_writable`, `net.exposure`) no longer makes the `--json` report invalid or reaches
   your terminal as an escape sequence. Any local user can create such a name. The JSON report writes these characters

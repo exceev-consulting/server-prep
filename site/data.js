@@ -1272,7 +1272,9 @@ window.SERVER_PREP_DATA = {
             "title": "Container log rotation",
             "statuses": [
               "PASS",
-              "WARN"
+              "WARN",
+              "FAIL",
+              "INFO"
             ]
           },
           {

@@ -547,6 +547,102 @@ unset -f jq docker
 unset OS_ID OS_CODENAME
 DRY_RUN=0
 
+# step_docker and the log driver (issue #239): only json-file and local take max-size and max-file.
+# Another driver keeps daemon.json as it is, max-size already set for a built-in driver that refuses
+# it gives a warning and a to-do (no write), and a failed Docker restart fails the step. The step
+# reads $tmp/daemon.json instead of /etc/docker/daemon.json; the real jq does the work.
+if command -v jq >/dev/null 2>&1; then
+    real_step_docker="$(declare -f step_docker)"
+    real_have="$(declare -f have)"
+    real_pkg_from="$(declare -f pkg_from)"
+    real_run="$(declare -f run)"
+    real_write_file="$(declare -f write_file)"
+    eval "$(declare -f step_docker | sed 's#\[\[ -s /etc/docker/daemon.json \]\]#[[ -s $tmp/daemon.json ]]#')"
+    if [[ "$(declare -f step_docker)" != *'$tmp/daemon.json'* ]]; then
+        printf 'not ok: docker log driver: step_docker no longer reads [[ -s /etc/docker/daemon.json ]], update this test\n'
+        exit 1
+    fi
+    pkg_install() { :; }
+    pkg_from() { return 1; }           # not Docker CE from download.docker.com: the host's apt sources stay out
+    have() { [[ "$1" == docker || "$1" == jq ]]; }
+    docker() { :; }                    # docker ps -q: no container running, so a change restarts Docker
+    cat() { if [[ "$*" == /etc/docker/daemon.json ]]; then command cat "$tmp/daemon.json"; else command cat "$@"; fi; }
+    write_file() { printf 'write %s\n' "$1" >> "$tmp/docker-calls"; command cat > "$tmp/docker-written"; changed; }
+    run() {
+        printf '%s\n' "$*" >> "$tmp/docker-calls"
+        [[ "$*" != 'systemctl restart docker' || $RESTART_FAILS -eq 0 ]]
+    }
+    OS_ID=debian; OS_CODENAME=trixie
+    INSTALL_DOCKER=yes; DRY_RUN=0; RESTART_FAILS=0
+    expect_docker_driver() {   # expect_docker_driver LABEL DAEMON_JSON WANT_STATUS written|untouched NOTE [TODO]
+        local label="$1" status=0 out
+        rm -f "$tmp/daemon.json" "$tmp/docker-written"; : > "$tmp/docker-calls"
+        [[ -z $2 ]] || printf '%s\n' "$2" > "$tmp/daemon.json"
+        STEP_NOTES=""; STEP_CHANGED=0; MANUAL_TODO=()
+        step_docker > "$tmp/docker-output" 2>&1 || status=$?
+        out="$(command cat "$tmp/docker-output"; printf '%s\n' "$STEP_NOTES")"
+        local bad=""
+        [[ $status -eq $3 ]] || bad="status $status, want $3"
+        [[ $out == *"$5"* ]] || bad="no '$5' in the output and notes"
+        if [[ $4 == written ]]; then
+            grep -qx 'write /etc/docker/daemon.json' "$tmp/docker-calls" || bad="daemon.json not written"
+            grep -qx 'systemctl restart docker' "$tmp/docker-calls" || bad="Docker not restarted"
+            [[ "$(jq -r '.["log-opts"]["max-size"]' "$tmp/docker-written" 2>/dev/null)" =~ ^[0-9]+m$ ]] || bad="no max-size written"
+        else
+            grep -q 'daemon.json' "$tmp/docker-calls" && bad="daemon.json written"
+            grep -q 'restart docker' "$tmp/docker-calls" && bad="Docker restarted"
+            [[ $STEP_CHANGED -eq 0 ]] || bad="the step says CHANGED"
+        fi
+        if [[ -n ${6:-} && "${MANUAL_TODO[*]}" != *"$6"* ]]; then bad="no to-do with '$6'"; fi
+        if [[ -z ${6:-} && ${#MANUAL_TODO[@]} -ne 0 ]]; then bad="unexpected to-do: ${MANUAL_TODO[*]}"; fi
+        if [[ -n $bad ]]; then
+            printf 'not ok: docker log driver %s: %s\n' "$label" "$bad"
+            printf '%s\n' "$out" "calls:"; command cat "$tmp/docker-calls"
+            [[ -f $tmp/docker-written ]] && { printf 'written:\n'; command cat "$tmp/docker-written"; }
+            exit 1
+        fi
+        printf 'ok: docker log driver %s\n' "$label"
+    }
+    expect_docker_driver 'journald: daemon.json left as it is' '{"log-driver": "journald"}' 0 untouched \
+        "log driver journald: rotation is left to it (the journal's SystemMaxUse"
+    expect_docker_driver 'syslog: daemon.json left as it is' \
+        '{"log-driver": "syslog", "log-opts": {"syslog-address": "udp://192.168.1.50:514"}}' 0 untouched \
+        'log driver syslog: rotation is left to it'
+    expect_docker_driver 'none: daemon.json left as it is' '{"log-driver": "none"}' 0 untouched 'containers keep no logs'
+    expect_docker_driver 'a plugin with max-size: no warning' \
+        '{"log-driver": "grafana/loki-docker-driver:2.9.2", "log-opts": {"max-size": "10m"}}' 0 untouched \
+        'log driver grafana/loki-docker-driver:2.9.2: rotation is left to it'
+    expect_docker_driver 'journald with max-size already set: warning and to-do, no write' \
+        '{"log-driver": "journald", "log-opts": {"max-size": "10m", "max-file": "3"}}' 0 untouched \
+        'Docker will not start' "remove max-size and max-file from log-opts in /etc/docker/daemon.json (the journald log driver"
+    expect_docker_driver 'syslog with max-file already set: warning and to-do, no write' \
+        '{"log-driver": "syslog", "log-opts": {"max-file": "3"}}' 0 untouched \
+        'Docker will not start' "jq 'del(.[\"log-opts\"][\"max-size\", \"max-file\"])'"
+    expect_docker_driver 'no daemon.json: json-file rotation merged' '' 0 written 'container log rotation set (10m x 3)'
+    [[ "$(jq -r '.["log-driver"]' "$tmp/docker-written")" == json-file ]] || { printf 'not ok: docker log driver: no daemon.json did not get json-file\n'; exit 1; }
+    expect_docker_driver 'json-file: rotation merged, max-size kept' '{"log-driver": "json-file", "log-opts": {"max-size": "50m"}}' 0 written \
+        'container log rotation set'
+    [[ "$(jq -r '.["log-opts"] | .["max-size"] + " " + .["max-file"]' "$tmp/docker-written")" == '50m 3' ]] || { printf 'not ok: docker log driver: json-file lost its max-size\n'; exit 1; }
+    expect_docker_driver 'local: rotation merged, driver kept' '{"log-driver": "local"}' 0 written 'container log rotation set'
+    [[ "$(jq -r '.["log-driver"]' "$tmp/docker-written")" == local ]] || { printf 'not ok: docker log driver: local was not kept\n'; exit 1; }
+    expect_docker_driver 'json-file already rotated: nothing to do' \
+        '{"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}' 0 untouched 'Docker already installed'
+    RESTART_FAILS=1
+    expect_docker_driver 'a failed restart fails the step' '{}' 1 written \
+        'docker restart failed: check /etc/docker/daemon.json (journalctl -u docker)' 'journalctl -u docker'
+    RESTART_FAILS=0
+    eval "$real_step_docker"
+    eval "$real_have"
+    eval "$real_pkg_from"
+    eval "$real_run"
+    eval "$real_write_file"
+    unset -f docker cat
+    unset OS_ID OS_CODENAME RESTART_FAILS
+    MANUAL_TODO=()
+else
+    printf 'skip: step_docker log driver cases (jq not found)\n'
+fi
+
 # CI runs only this file, so it also runs the audit's DOCKER-USER matcher test (issue #69), the
 # audit's lid-switch parser test (issue #80), the server-preconfig.sh --check --json test (issue #13)
 # and the server-preconfig.sh hostname, /etc/hosts and cloud-init test (issue #81).
@@ -563,6 +659,8 @@ bash "$SCRIPT_DIR/tests/validate-config.sh" || exit 1
 bash "$SCRIPT_DIR/tests/saved-answers.sh" || exit 1
 # ... and the audit's UFW port matcher test (issue #78).
 bash "$SCRIPT_DIR/tests/audit-ufw-ports.sh" || exit 1
+# ... and the audit's container log rotation check, with and without jq: the log driver decides (issue #239).
+bash "$SCRIPT_DIR/tests/audit-docker-logs.sh" || exit 1
 # ... and the audit on a server set to French: ufw and free read in English (issue #197).
 bash "$SCRIPT_DIR/tests/audit-locale.sh" || exit 1
 # ... and the audit's server-prep release check on sample release lists (hotfix lane, ADR 0003).
