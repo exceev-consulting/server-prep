@@ -71,8 +71,10 @@ Highlights of each release. The full list of merged pull requests is in each
   refuses them, so Docker did not start again: right after the run, or at the next restart, update or reboot when
   containers were running. The step still said CHANGED, and the audit's `dock.log_rotation` passed. The step now
   adds log rotation only for the `json-file` (Docker's default) and `local` drivers, and leaves `daemon.json` as it is
-  for another driver. When `max-size` or `max-file` is already set for a driver that refuses them, it warns and adds a
-  to-do with the command that removes them. A failed Docker restart now fails the step, with a to-do.
+  for another driver. A logging plugin, such as Loki's, no longer gets them either: when it keeps a copy of the logs on
+  the server, set its `max-size` and `max-file` yourself. When `max-size` or `max-file` is already set for a driver
+  that refuses them, the step warns and adds a to-do with the command that removes them. A failed Docker restart now
+  fails the step, with a to-do.
   `dock.log_rotation` reads the driver: PASS for `local` and `journald`, which limit their own size, FAIL when Docker
   will not start because of these options, and INFO for another driver.
 - `server-audit.sh`: a control character, such as the escape character, in a file or process name that a check
