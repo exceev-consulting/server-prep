@@ -1960,6 +1960,8 @@ if have docker; then
         result dock.running WARN "Docker engine" "Installed but not running"
     fi
     docker_log_rotation /etc/docker/daemon.json
+    # a daemon.json only root can read (600) looks like no file: say so
+    [[ -e /etc/docker/daemon.json && ! -r /etc/docker/daemon.json ]] && DLR_MSG+="$(need_root_note)"
     case $DLR_STATUS in
         PASS) result dock.log_rotation PASS "Container log rotation" "$DLR_MSG" ;;
         WARN) result dock.log_rotation WARN "Container log rotation" "$DLR_MSG" "$DLR_FIX" ;;
