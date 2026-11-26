@@ -2238,9 +2238,11 @@ step_firewall() {
     local -A held=() unapplied=()
     before="$(ufw_state)"
     ufw_status 2>/dev/null | grep -q "Status: active" && was_on=1
-    # rollback.sh copies them back when UFW was on before (see below)
+    # rollback.sh copies them back when UFW was on before (see below), the default policies too: with the
+    # rules of before the run and this run's "deny incoming", SSH could be closed
     backup_file /etc/ufw/user.rules
     backup_file /etc/ufw/user6.rules
+    backup_file /etc/default/ufw
     # 'ufw default' reloads the whole firewall even when the policy does not change, and a reload
     # drops CrowdSec from DOCKER-USER: set the policies only when they differ.
     if [[ "$(ufw_status verbose 2>/dev/null)" != *"Default: deny (incoming), allow (outgoing)"* ]]; then
@@ -3905,10 +3907,10 @@ write_rollback() {
         [[ $f == /etc/ssh/sshd_config || $f == /etc/ssh/sshd_config.d/* ]] && ssh_files=1
         [[ $f == /etc/fail2ban/* ]] && f2b_files=1
     done
-    # The UFW rules of before the run, when UFW was on then (step_firewall): what the firewall step
-    # added and deleted, Endlessh's rule and phase B's deletes are all undone by the copy.
+    # The UFW rules and default policies of before the run, when UFW was on then (step_firewall): what
+    # the firewall step added and deleted, Endlessh's rule and phase B's deletes are all undone by the copy.
     if [[ $UFW_RULES_RESTORE -eq 1 ]]; then
-        for f in /etc/ufw/user.rules /etc/ufw/user6.rules; do
+        for f in /etc/ufw/user.rules /etc/ufw/user6.rules /etc/default/ufw; do
             [[ -f $BACKUP_DIR$f ]] && ! cmp -s "$BACKUP_DIR$f" "$f" && ufw_files+=("$f")
         done
     fi

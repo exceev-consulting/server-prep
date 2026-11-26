@@ -431,6 +431,8 @@ ufw_backups() {   # the UFW rule files as the firewall step backed them up
     mkdir -p "$BACKUP_DIR/etc/ufw"
     printf '### tuple ### limit tcp 22 0.0.0.0/0 any 0.0.0.0/0 in\n' > "$BACKUP_DIR/etc/ufw/user.rules"
     printf '### tuple ### limit tcp 22 ::/0 any ::/0 in\n' > "$BACKUP_DIR/etc/ufw/user6.rules"
+    mkdir -p "$BACKUP_DIR/etc/default"
+    printf 'DEFAULT_INPUT_POLICY="ACCEPT"\n' > "$BACKUP_DIR/etc/default/ufw"
 }
 setup
 UFW_RULES_RESTORE=1
@@ -441,7 +443,9 @@ unset -f cmp
 run_rb 'UFW on before'
 called "cp -a $BACKUP_DIR/etc/ufw/user.rules /etc/ufw/user.rules" || fail 'UFW on before: user.rules is not copied back'
 called "cp -a $BACKUP_DIR/etc/ufw/user6.rules /etc/ufw/user6.rules" || fail 'UFW on before: user6.rules is not copied back'
-copy=$(last "$tmp/calls" '^cp -a .*/etc/ufw/user6?\.rules ')
+called "cp -a $BACKUP_DIR/etc/default/ufw /etc/default/ufw" ||
+    fail 'UFW on before: /etc/default/ufw is not copied back (the default policies of before the run)'
+copy=$(last "$tmp/calls" '^cp -a .*/etc/(ufw/user6?\.rules|default/ufw) ')
 allow1=$(first "$tmp/calls" '^ufw (allow|limit) ')
 reload=$(first "$tmp/calls" '^ufw reload$')
 ((copy > 0 && allow1 > copy && reload > allow1)) ||
@@ -454,23 +458,24 @@ pass 'UFW on before the run: its rule files go back first, then the old SSH port
 setup
 UFW_RULES_RESTORE=1
 ufw_backups
-cmp() { [[ $2 == */user6.rules ]]; }   # only user.rules changed (an IPv4 rule)
+cmp() { [[ $2 == */user6.rules || $2 == */default/ufw ]]; }   # only user.rules changed (an IPv4 rule)
 generate 'only user.rules changed'
 unset -f cmp
 grep -qF "cp -a '$BACKUP_DIR/etc/ufw/user.rules'" "$rb" || fail 'only user.rules changed: it is not copied back'
 grep -qF "cp -a '$BACKUP_DIR/etc/ufw/user6.rules'" "$rb" && fail 'only user.rules changed: user6.rules is copied back too'
+grep -qF "cp -a '$BACKUP_DIR/etc/default/ufw'" "$rb" && fail 'only user.rules changed: /etc/default/ufw is copied back too'
 setup
 UFW_RULES_RESTORE=1
 cmp() { return 1; }
 generate 'no UFW backup'
 unset -f cmp
-grep -qF "cp -a '$BACKUP_DIR/etc/ufw" "$rb" && fail 'no UFW backup: rollback.sh copies a UFW file it has no backup of'
+grep -qE "cp -a '$BACKUP_DIR/etc/(ufw|default/ufw)" "$rb" && fail 'no UFW backup: rollback.sh copies a UFW file it has no backup of'
 setup
 ufw_backups
 cmp() { return 1; }
 generate 'UFW off before'
 unset -f cmp
-grep -qF "cp -a '$BACKUP_DIR/etc/ufw" "$rb" && fail 'UFW off before: the rule files are copied back on a UFW the run turned on'
+grep -qE "cp -a '$BACKUP_DIR/etc/(ufw|default/ufw)" "$rb" && fail 'UFW off before: the rule files are copied back on a UFW the run turned on'
 grep -qF 'UFW stays on, with every rule this run added' "$rb" || fail 'UFW off before: the output no longer says the rules stay'
 pass 'only a UFW rule file that changed and has a backup goes back, and none when the run turned UFW on'
 

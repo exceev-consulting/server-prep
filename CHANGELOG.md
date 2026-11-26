@@ -23,7 +23,7 @@ Highlights of each release. The full list of merged pull requests is in each
   at the end, so read `sudo ufw status numbered` before you change `ADMIN_IPS`. The temporary SSH rules of the old port
   stay while SSH is moving to its new port, also after the automatic login check of `--yes` failed and kept the old
   port: until the SSH step finishes the move. When UFW was on before a run, its `rollback.sh` now also puts back the UFW
-  rules of that time. On a server prepared earlier, run
+  rules and default policies of that time. On a server prepared earlier, run
   `sudo ./server-prep.sh --config /etc/server-prep/server-prep.conf --only firewall --dry-run` to see what goes.
 - `--validate` refuses `0.0.0.0/0` and `::/0` in `ADMIN_IPS` and `PANEL_IP`: they are every address, so SSH would be
   open to everyone and fail2ban and CrowdSec would ban no one. To open SSH to everyone (rate-limited), leave
